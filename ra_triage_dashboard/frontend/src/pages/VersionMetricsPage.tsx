@@ -1409,188 +1409,197 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
       </section>
 
       <section className="page-card vm-report-panel" aria-labelledby="vmWorkloadTitle">
-        <header className="vm-report-heading">
-          <h2 id="vmWorkloadTitle">
-            {bilingual(lang, "低置信标注量", "Low-confidence review volume")}
-          </h2>
-          <span className="muted" id="vmWorkloadThreshold">
-            {bilingual(
-              lang,
-              `人工模拟 conf < ${routeState.threshold.toFixed(2)}`,
-              `Simulated review conf < ${routeState.threshold.toFixed(2)}`,
-            )}
-          </span>
-        </header>
+        {(() => {
+          const byThreshold = routeState.thresholdExpanded;
+          const workloadRows = busyReport ? [] : reportRows;
+          const workloadScope = byThreshold
+            ? workloadRows.filter((row) => row.family === activeThresholdFamily)
+            : workloadRows;
+          const baselineCounts = workloadScope.map((row) =>
+            row.status === "ready"
+              ? (row.thresholds?.find((t) => t.threshold === 0.9)?.full_low ?? null)
+              : null,
+          );
+          const baselineComplete =
+            baselineCounts.length > 0 &&
+            baselineCounts.every((c): c is number => Number.isInteger(c));
+          const baselineTotal = baselineComplete
+            ? baselineCounts.reduce((sum, count) => sum + count, 0).toLocaleString(vmLocale(lang))
+            : "—";
+          const baselineLabel =
+            workloadScope.length > 1
+              ? bilingual(lang, "标注量合计", "total reviews")
+              : bilingual(lang, "标注量", "reviews");
+          const workloadBaselineText = `conf = 0.90 ${baselineLabel} ${baselineTotal}`;
 
-        <div
-          className="segmented vm-workload-mode"
-          role="radiogroup"
-          aria-label={bilingual(lang, "比较方式", "Comparison mode")}
-        >
-          <label>
-            <input
-              type="radio"
-              name="vmWorkloadMode"
-              value="release"
-              checked={!routeState.thresholdExpanded}
-              onChange={() => updateRoute({ thresholdExpanded: false }, { local: true })}
-            />
-            <span>{bilingual(lang, "按版本", "By release")}</span>
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="vmWorkloadMode"
-              value="threshold"
-              checked={routeState.thresholdExpanded}
-              onChange={() => updateRoute({ thresholdExpanded: true }, { local: true })}
-            />
-            <span>{bilingual(lang, "按阈值", "By threshold")}</span>
-          </label>
-        </div>
-
-        <div id="vmWorkloadReleasePicker" hidden={!routeState.thresholdExpanded}>
-          <div className="vm-threshold-controls">
-            <div className="vm-field">
-              <label htmlFor="vmThresholdFamily">{bilingual(lang, "版本", "Release")}</label>
-              <UiSelect
-                id="vmThresholdFamily"
-                value={activeThresholdFamily}
-                options={thresholdFamilyOptions}
-                disabled={busyReport || !sortedDescRows.length}
-                ariaLabel={bilingual(lang, "版本", "Release")}
-                onChange={(val) => updateRoute({ thresholdFamily: val }, { local: true })}
-              />
-            </div>
-            <span id="vmThresholdScope" className="muted">
-              {thresholdAvailable && activeThresholdRow
-                ? bilingual(
-                    lang,
-                    `已发布 ${activeThresholdRow.published_total ?? 0} · 有效抽样 ${activeThresholdRow.valid_total}`,
-                    `Published ${activeThresholdRow.published_total ?? 0} · Valid samples ${activeThresholdRow.valid_total}`,
-                  )
-                : ""}
-            </span>
-          </div>
-        </div>
-
-        <div className="rd-table-wrap">
-          <table className="rd-table vm-workload-table" aria-labelledby="vmWorkloadTitle">
-            <thead>
-              <tr>
-                <th scope="col" id="vmWorkloadDimension">
-                  {routeState.thresholdExpanded ? "conf" : bilingual(lang, "版本", "Release")}
-                </th>
-                <th scope="col">{bilingual(lang, "需标注 / 已发布", "For review / published")}</th>
-                <th scope="col">{bilingual(lang, "较 0.90 少标", "Fewer than at 0.90")}</th>
-                <th
-                  scope="col"
-                  id="vmWorkloadSampleHead"
-                  hidden={!routeState.thresholdExpanded}
-                >
-                  {bilingual(lang, "抽样人工量", "Sample review count")}
-                </th>
-                <th scope="col">{bilingual(lang, "抽样模拟 ACC", "Simulated sample ACC")}</th>
+          const renderRow = (
+            rowKey: string,
+            label: string,
+            point: VmThresholdRow | undefined,
+          ) => {
+            if (!point) {
+              return (
+                <tr key={rowKey}>
+                  <th scope="row">{label}</th>
+                  <td colSpan={3} className="vm-table-empty">
+                    {bilingual(lang, "暂无阈值数据", "No threshold data")}
+                  </td>
+                </tr>
+              );
+            }
+            const reductionNum = Number(point.reduction);
+            const baseline = Number(point.full_low) + reductionNum;
+            const reductionRate =
+              Number.isFinite(baseline) && baseline > 0
+                ? vmPct(reductionNum / baseline, lang, 1)
+                : "—";
+            const selected = byThreshold && point.threshold === routeState.threshold;
+            return (
+              <tr
+                key={rowKey}
+                className={selected ? "is-selected" : undefined}
+                aria-current={selected ? "true" : undefined}
+              >
+                <th scope="row">{label}</th>
+                <td>
+                  <strong>{`${point.full_low} / ${point.full_total}`}</strong>
+                  {byThreshold && point.full_total ? (
+                    <small>{vmPct(point.full_low / point.full_total, lang)}</small>
+                  ) : null}
+                </td>
+                <td>
+                  <strong>{point.reduction}</strong>
+                  <small>{reductionRate}</small>
+                </td>
+                {byThreshold ? <td>{renderCountRate(point.human_count, point.total)}</td> : null}
+                <td>
+                  <strong>{vmPct(point.accuracy, lang)}</strong>
+                  <small>{`${point.correct}/${point.total}`}</small>
+                </td>
               </tr>
-            </thead>
-            <tbody id="vmWorkloadRows">
-              {(() => {
-                const byThreshold = routeState.thresholdExpanded;
-                const renderRow = (
-                  rowKey: string,
-                  label: string,
-                  point: VmThresholdRow | undefined,
-                ) => {
-                  if (!point) {
-                    return (
-                      <tr key={rowKey}>
-                        <th scope="row">{label}</th>
-                        <td colSpan={3} className="vm-table-empty">
-                          {bilingual(lang, "暂无阈值数据", "No threshold data")}
-                        </td>
-                      </tr>
-                    );
-                  }
-                  const reductionNum = Number(point.reduction);
-                  const baseline = Number(point.full_low) + reductionNum;
-                  const reductionRate =
-                    Number.isFinite(baseline) && baseline > 0
-                      ? vmPct(reductionNum / baseline, lang, 1)
-                      : "—";
-                  const selected = byThreshold && point.threshold === routeState.threshold;
-                  return (
-                    <tr
-                      key={rowKey}
-                      className={selected ? "is-selected" : undefined}
-                      aria-current={selected ? "true" : undefined}
-                    >
-                      <th scope="row">{label}</th>
-                      <td>
-                        <strong>{`${point.full_low} / ${point.full_total}`}</strong>
-                        {byThreshold && point.full_total ? (
-                          <small>{vmPct(point.full_low / point.full_total, lang)}</small>
-                        ) : null}
-                      </td>
-                      <td>
-                        <strong>{point.reduction}</strong>
-                        <small>{reductionRate}</small>
-                      </td>
-                      {byThreshold ? <td>{renderCountRate(point.human_count, point.total)}</td> : null}
-                      <td>
-                        <strong>{vmPct(point.accuracy, lang)}</strong>
-                        <small>{`${point.correct}/${point.total}`}</small>
-                      </td>
-                    </tr>
-                  );
-                };
+            );
+          };
 
-                if (!byThreshold) {
-                  if (busyReport || !reportRows.length) {
-                    return (
-                      <tr>
-                        <td colSpan={4} className="vm-table-empty">
-                          {reportEmptyMsg}
-                        </td>
-                      </tr>
-                    );
-                  }
-                  return reportRows.map((row) =>
-                    renderRow(
-                      row.family,
-                      row.family,
-                      row.status === "ready"
-                        ? row.thresholds?.find((t) => t.threshold === routeState.threshold)
-                        : undefined,
-                    ),
-                  );
-                }
+          return (
+            <>
+              <header className="vm-report-heading vm-workload-heading">
+                <h2 id="vmWorkloadTitle">
+                  {bilingual(lang, "低置信标注量", "Low-confidence review volume")}
+                </h2>
+                <div
+                  className="segmented vm-workload-mode"
+                  role="radiogroup"
+                  aria-label={bilingual(lang, "比较方式", "Comparison mode")}
+                >
+                  <label>
+                    <input
+                      type="radio"
+                      name="vmWorkloadMode"
+                      value="release"
+                      checked={!byThreshold}
+                      onChange={() => updateRoute({ thresholdExpanded: false }, { local: true })}
+                    />
+                    <span>{bilingual(lang, "按版本", "By release")}</span>
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="vmWorkloadMode"
+                      value="threshold"
+                      checked={byThreshold}
+                      onChange={() => updateRoute({ thresholdExpanded: true }, { local: true })}
+                    />
+                    <span>{bilingual(lang, "按阈值", "By threshold")}</span>
+                  </label>
+                </div>
+                <div id="vmWorkloadReleasePicker" hidden={!byThreshold}>
+                  <UiSelect
+                    id="vmThresholdFamily"
+                    value={activeThresholdFamily}
+                    options={thresholdFamilyOptions}
+                    disabled={busyReport || !sortedDescRows.length}
+                    ariaLabel={bilingual(lang, "版本", "Release")}
+                    onChange={(val) => updateRoute({ thresholdFamily: val }, { local: true })}
+                  />
+                </div>
+                <div className="vm-workload-summary muted">
+                  <strong id="vmWorkloadBaseline">{workloadBaselineText}</strong>
+                  <span id="vmWorkloadThreshold">
+                    {bilingual(
+                      lang,
+                      `人工模拟 conf < ${routeState.threshold.toFixed(2)}`,
+                      `Simulated review conf < ${routeState.threshold.toFixed(2)}`,
+                    )}
+                  </span>
+                </div>
+              </header>
 
-                const points =
-                  !busyReport && thresholdAvailable ? activeThresholdRow?.thresholds || [] : [];
-                if (!points.length) {
-                  return (
+              <div className="rd-table-wrap">
+                <table className="rd-table vm-workload-table" aria-labelledby="vmWorkloadTitle">
+                  <thead>
                     <tr>
-                      <td colSpan={5} className="vm-table-empty">
-                        {!busyReport && reportRows.length
-                          ? bilingual(lang, "当前版本暂无阈值数据", "No threshold data for this release")
-                          : reportEmptyMsg}
-                      </td>
+                      <th scope="col" id="vmWorkloadDimension">
+                        {byThreshold ? "conf" : bilingual(lang, "版本", "Release")}
+                      </th>
+                      <th scope="col">
+                        {bilingual(lang, "需标注 / 已发布", "For review / published")}
+                      </th>
+                      <th scope="col">{bilingual(lang, "较 0.90 少标", "Fewer than at 0.90")}</th>
+                      <th scope="col" id="vmWorkloadSampleHead" hidden={!byThreshold}>
+                        {bilingual(lang, "抽样人工量", "Sample review count")}
+                      </th>
+                      <th scope="col">{bilingual(lang, "抽样模拟 ACC", "Simulated sample ACC")}</th>
                     </tr>
-                  );
-                }
-                return points.map((t) => renderRow(String(t.threshold), t.threshold.toFixed(2), t));
-              })()}
-            </tbody>
-          </table>
-        </div>
-
-        <p className="vm-threshold-note">
-          {bilingual(
-            lang,
-            "标注量统计已发布 Issue 中模型置信度低于阈值的条数，含已标注项。减少比例以 0.90 的低置信量为分母。模拟 ACC 仅统计有效抽样，假设转人工后全部判对。",
-            "Review volume counts published issues with model confidence below the threshold, including those already labeled. The reduction is relative to review volume at 0.90. Simulated ACC uses valid samples and assumes every review is correct.",
-          )}
-        </p>
+                  </thead>
+                  <tbody id="vmWorkloadRows">
+                    {!byThreshold
+                      ? !workloadRows.length
+                        ? (
+                          <tr>
+                            <td colSpan={4} className="vm-table-empty">
+                              {reportEmptyMsg}
+                            </td>
+                          </tr>
+                        )
+                        : workloadRows.map((row) =>
+                            renderRow(
+                              row.family,
+                              row.family,
+                              row.status === "ready"
+                                ? row.thresholds?.find((t) => t.threshold === routeState.threshold)
+                                : undefined,
+                            ),
+                          )
+                      : (() => {
+                          const points =
+                            !busyReport && thresholdAvailable
+                              ? activeThresholdRow?.thresholds || []
+                              : [];
+                          if (!points.length) {
+                            return (
+                              <tr>
+                                <td colSpan={5} className="vm-table-empty">
+                                  {!busyReport && reportRows.length
+                                    ? bilingual(
+                                        lang,
+                                        "当前版本暂无阈值数据",
+                                        "No threshold data for this release",
+                                      )
+                                    : reportEmptyMsg}
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return points.map((t) =>
+                            renderRow(String(t.threshold), t.threshold.toFixed(2), t),
+                          );
+                        })()}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          );
+        })()}
       </section>
 
       <section className="page-card vm-report-panel">

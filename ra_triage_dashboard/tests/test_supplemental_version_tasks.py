@@ -62,6 +62,15 @@ class SupplementalVersionTaskTests(unittest.TestCase):
         manual_only = module.merge_version_task_list([old_ver], [other_manual, new_manual_same_run, self.old_source], manual_only=True)
         self.assertEqual([item['split_id'] for item in manual_only], ['manual-on-version-run', 'ordinary'])
 
+    def test_recently_migrated_joint_tasks_stay_at_bottom(self):
+        historical = dict(self.other, split_id='partition', source_split_id='old-label-task',
+                          workflow_mode='model_review_and_case_label', created_at='2026-11-26')
+        tasks = [historical, self.other]
+        self.assertEqual(module.merge_version_task_list([self.parent], tasks),
+                         [self.parent, self.other, historical])
+        self.assertEqual(module.merge_version_task_list([], tasks, manual_only=True),
+                         [self.other, historical])
+
     def test_automatic_version_tasks_keep_version_order_even_when_older_version_backfills_later(self):
         v1113_samp = dict(
             split_id='v1113-s', model_run_id='r1113', release_family='20261113',

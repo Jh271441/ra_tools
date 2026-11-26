@@ -250,10 +250,13 @@ describe("VersionMetricsPage component", () => {
     fireEvent.click(chartThreshold!);
 
     expect(container.querySelector("#vmWorkloadTitle")?.textContent).toBe("低置信标注量");
+    expect(container.querySelector(".vm-workload-heading")).not.toBeNull();
+    expect(container.querySelector("#vmWorkloadBaseline")?.textContent).toBe("conf = 0.90 标注量合计 330");
     expect(container.querySelector("#vmWorkloadReleasePicker")).toHaveAttribute("hidden");
     expect(container.querySelector("#vmWorkloadSampleHead")).toHaveAttribute("hidden");
     expect(container.querySelector("#vmWorkloadRows")?.textContent).toContain("20261030");
     fireEvent.click(container.querySelector('input[name="vmWorkloadMode"][value="threshold"]')!);
+    expect(container.querySelector("#vmWorkloadBaseline")?.textContent).toBe("conf = 0.90 标注量 150");
     expect(container.querySelector("#vmWorkloadReleasePicker")).not.toHaveAttribute("hidden");
     expect(container.querySelector("#vmWorkloadSampleHead")).not.toHaveAttribute("hidden");
     expect(container.querySelector("#vmWorkloadDimension")?.textContent).toBe("conf");
@@ -285,6 +288,10 @@ describe("VersionMetricsPage component", () => {
       expect(screen.getByText("132/153")).toBeInTheDocument();
     });
     expect(container.querySelector(".vm-chart-threshold #vmThreshold")).not.toBeNull();
+    expect(container.querySelector("#vmWorkloadBaseline")?.textContent).toBe("conf = 0.90 total reviews 330");
+    fireEvent.click(container.querySelector('input[name="vmWorkloadMode"][value="threshold"]')!);
+    expect(container.querySelector("#vmWorkloadBaseline")?.textContent).toBe("conf = 0.90 reviews 150");
+    fireEvent.click(container.querySelector('input[name="vmWorkloadMode"][value="release"]')!);
 
     expect(screen.getByRole("button", { name: "Update metrics" })).toBeDisabled();
 

@@ -306,4 +306,136 @@ describe("ReviewAssignmentsPage", () => {
     expect(lastFilters.baselines).toBe("0821-odd2");
     window.sessionStorage.removeItem("manual-review-allocation-draft-v1");
   });
+
+  it("preserves baselines and existing URL params during batch search enter/edit/clear, restores on cold boot, and does not push history entries", async () => {
+    mockApi.mockImplementation(async (path: string) => {
+      if (path.startsWith("/api/cases/work-splits?")) {
+        return {
+          items: [
+            {
+              split_id: "ver-1113",
+              appendable: true,
+              actively_appending: true,
+              release_family: "20261113",
+              role_cohort: "sampling",
+              is_current: true,
+              lifecycle: "active",
+              workflow_mode: "model_review_and_case_label",
+              total_count: 119,
+              assignment_count: 238,
+              completed_count: 77,
+              pending_count: 161,
+              completion_ratio: 0.32,
+              last_target_added_at: "2026-11-26T00:00:00Z",
+              members: [],
+            },
+            {
+              split_id: "ver-1106",
+              appendable: true,
+              actively_appending: false,
+              release_family: "20261106",
+              role_cohort: "low",
+              is_current: true,
+              lifecycle: "active",
+              workflow_mode: "model_review_and_case_label",
+              total_count: 348,
+              assignment_count: 348,
+              completed_count: 200,
+              pending_count: 148,
+              completion_ratio: 0.57,
+              last_target_added_at: "2026-11-20T00:00:00Z",
+              members: [],
+            },
+          ],
+          metrics: { assignment_count: 586, completed_count: 277, pending_count: 309 },
+        };
+      }
+      if (path.startsWith("/api/model-runs")) return { items: [] };
+      if (path === "/api/access-users") return { items: [] };
+      return {};
+    });
+
+    // Scenario 1: URL with baselines only — enter, edit, clear search step-by-step
+    window.history.replaceState({}, "", "/manual-s6/review-assignments?baselines=0821-odd2");
+    const historyLenBefore = window.history.length;
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+    const pushSpy = vi.spyOn(window.history, "pushState");
+
+    const first = renderPage({ selectedBaselines: ["0821-odd2"] });
+    expect(await screen.findByText(/1113 · 抽样集/)).toBeInTheDocument();
+    expect(screen.getByText(/1106 · 低置信集/)).toBeInTheDocument();
+
+    const input1 = first.container.querySelector<HTMLInputElement>("#reviewAssignmentBatchSearch")!;
+    fireEvent.change(input1, { target: { value: "1113" } });
+    expect(window.location.pathname + window.location.search).toBe(
+      "/manual-s6/review-assignments?baselines=0821-odd2&batch_search=1113",
+    );
+    expect(screen.getByText(/1113 · 抽样集/)).toBeInTheDocument();
+    expect(screen.queryByText(/1106 · 低置信集/)).not.toBeInTheDocument();
+    expect(first.container.querySelector("#reviewAssignmentListStatus")?.textContent).toBe("匹配 1 / 2 个任务");
+
+    // Modify search term
+    fireEvent.change(input1, { target: { value: "1106" } });
+    expect(window.location.pathname + window.location.search).toBe(
+      "/manual-s6/review-assignments?baselines=0821-odd2&batch_search=1106",
+    );
+    expect(screen.getByText(/1106 · 低置信集/)).toBeInTheDocument();
+    expect(screen.queryByText(/1113 · 抽样集/)).not.toBeInTheDocument();
+
+    // Clear search term — deletes ONLY batch_search, preserves baselines
+    fireEvent.change(input1, { target: { value: "" } });
+    expect(window.location.pathname + window.location.search).toBe(
+      "/manual-s6/review-assignments?baselines=0821-odd2",
+    );
+    expect(screen.getByText(/1113 · 抽样集/)).toBeInTheDocument();
+    expect(screen.getByText(/1106 · 低置信集/)).toBeInTheDocument();
+    expect(first.container.querySelector("#reviewAssignmentListStatus")?.textContent).toBe("2 个任务");
+    expect(window.history.length).toBe(historyLenBefore);
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(replaceSpy).toHaveBeenCalled();
+
+    // Copy searched URL for cold-boot test (Scenario 3)
+    fireEvent.change(input1, { target: { value: "1113" } });
+    const copiedUrl = window.location.pathname + window.location.search;
+    expect(copiedUrl).toBe("/manual-s6/review-assignments?baselines=0821-odd2&batch_search=1113");
+    first.unmount();
+
+    // Scenario 3: Cold boot from copied URL restores baselines, search input, and filtered results
+    window.history.replaceState({}, "", copiedUrl);
+    const cold = renderPage({ selectedBaselines: ["0821-odd2"] });
+    expect(await screen.findByText(/1113 · 抽样集/)).toBeInTheDocument();
+    expect(screen.queryByText(/1106 · 低置信集/)).not.toBeInTheDocument();
+    expect(cold.container.querySelector<HTMLInputElement>("#reviewAssignmentBatchSearch")?.value).toBe("1113");
+    expect(window.location.pathname + window.location.search).toBe(copiedUrl);
+    expect(window.history.length).toBe(historyLenBefore);
+    cold.unmount();
+
+    // Scenario 2: URL with baselines + lifecycle + assigned_to_me preserves all params verbatim
+    window.history.replaceState(
+      {},
+      "",
+      "/manual-s6/review-assignments?baselines=0821-odd2&lifecycle=versions&assigned_to_me=true",
+    );
+    const second = renderPage({ selectedBaselines: ["0821-odd2"] });
+    expect(await screen.findByText(/1113 · 抽样集/)).toBeInTheDocument();
+    const input2 = second.container.querySelector<HTMLInputElement>("#reviewAssignmentBatchSearch")!;
+    fireEvent.change(input2, { target: { value: "1113" } });
+    const pWithSearch = new URLSearchParams(window.location.search);
+    expect(pWithSearch.get("baselines")).toBe("0821-odd2");
+    expect(pWithSearch.get("lifecycle")).toBe("versions");
+    expect(pWithSearch.get("assigned_to_me")).toBe("true");
+    expect(pWithSearch.get("batch_search")).toBe("1113");
+
+    fireEvent.change(input2, { target: { value: "   " } });
+    const pCleared = new URLSearchParams(window.location.search);
+    expect(pCleared.get("baselines")).toBe("0821-odd2");
+    expect(pCleared.get("lifecycle")).toBe("versions");
+    expect(pCleared.get("assigned_to_me")).toBe("true");
+    expect(pCleared.get("batch_search")).toBeNull();
+    expect(window.history.length).toBe(historyLenBefore);
+    expect(pushSpy).not.toHaveBeenCalled();
+
+    replaceSpy.mockRestore();
+    pushSpy.mockRestore();
+  });
 });

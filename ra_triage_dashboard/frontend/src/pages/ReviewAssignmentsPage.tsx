@@ -106,6 +106,18 @@ function readInitialRoute() {
   return { lifecycle, assignedToMe, batchSearch, splitId, assignee, status, query, page, pageSize };
 }
 
+function replaceBatchSearchParam(value: string): void {
+  const url = new URL(window.location.href);
+  const trimmed = value.trim();
+  if (trimmed) url.searchParams.set("batch_search", trimmed);
+  else url.searchParams.delete("batch_search");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
+
 function buildAssignmentsUrl(opts: {
   lifecycle: LifecycleScope;
   assignedToMe: boolean;
@@ -118,11 +130,16 @@ function buildAssignmentsUrl(opts: {
   pageSize?: number;
   includeDetailFilters?: boolean;
   taskOnly?: boolean;
+  preserveCurrentBaselines?: boolean;
 }): string {
   const url = new URL(withWorkbenchBase("/review-assignments"), window.location.origin);
   if (opts.taskOnly) {
     url.searchParams.set("lifecycle", "all");
   } else {
+    if (opts.preserveCurrentBaselines !== false && typeof window !== "undefined") {
+      const currentBaselines = new URLSearchParams(window.location.search).get("baselines");
+      if (currentBaselines) url.searchParams.set("baselines", currentBaselines);
+    }
     if (opts.lifecycle) url.searchParams.set("lifecycle", opts.lifecycle);
     if (opts.assignedToMe) url.searchParams.set("assigned_to_me", "true");
     if (opts.batchSearch?.trim()) url.searchParams.set("batch_search", opts.batchSearch.trim());
@@ -807,6 +824,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       const rel = buildAssignmentsUrl({
         lifecycle,
         assignedToMe,
+        batchSearch: taskOnly ? "" : batchSearch,
         splitId,
         assignee: detailAssignee,
         status: detailStatus,
@@ -815,6 +833,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
         pageSize: detailPageSize,
         includeDetailFilters: !taskOnly,
         taskOnly,
+        preserveCurrentBaselines: !taskOnly,
       });
       const fullUrl = new URL(rel, window.location.origin).href;
       if (navigator.clipboard?.writeText) {
@@ -832,6 +851,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       selectedSplitId,
       lifecycle,
       assignedToMe,
+      batchSearch,
       detailAssignee,
       detailStatus,
       detailQuery,
@@ -1444,7 +1464,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                     onChange={(e) => {
                       const nextValue = e.target.value;
                       setBatchSearch(nextValue);
-                      pushRoute({ batchSearch: nextValue });
+                      replaceBatchSearchParam(nextValue);
                     }}
                   />
                 </label>

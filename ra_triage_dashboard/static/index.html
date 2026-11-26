@@ -76,7 +76,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-899` + bundleRev;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-900` + bundleRev;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -146,7 +146,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-899` + cssRev;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-900` + cssRev;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1880,14 +1880,15 @@
               <div class="vm-chart-scroll" id="vmChart"></div>
             </section>
             <section class="page-card vm-report-panel" aria-labelledby="vmWorkloadTitle">
-              <header class="vm-report-heading"><h2 id="vmWorkloadTitle" data-vm-zh="低置信标注量" data-vm-en="Low-confidence review volume">低置信标注量</h2><span class="muted" id="vmWorkloadThreshold"></span></header>
-              <div class="segmented vm-workload-mode" role="radiogroup" data-vm-aria-zh="比较方式" data-vm-aria-en="Comparison mode">
-                <label><input type="radio" name="vmWorkloadMode" value="release" checked><span data-vm-zh="按版本" data-vm-en="By release">按版本</span></label>
-                <label><input type="radio" name="vmWorkloadMode" value="threshold"><span data-vm-zh="按阈值" data-vm-en="By threshold">按阈值</span></label>
-              </div>
-              <div id="vmWorkloadReleasePicker" hidden>
-              <div class="vm-threshold-controls"><label for="vmThresholdFamily"><span class="ui-lang-zh">版本</span><span class="ui-lang-en">Release</span><select id="vmThresholdFamily" disabled></select></label><span id="vmThresholdScope" class="muted"></span></div>
-              </div>
+              <header class="vm-report-heading vm-workload-heading">
+                <h2 id="vmWorkloadTitle" data-vm-zh="低置信标注量" data-vm-en="Low-confidence review volume">低置信标注量</h2>
+                <div class="segmented vm-workload-mode" role="radiogroup" data-vm-aria-zh="比较方式" data-vm-aria-en="Comparison mode">
+                  <label><input type="radio" name="vmWorkloadMode" value="release" checked><span data-vm-zh="按版本" data-vm-en="By release">按版本</span></label>
+                  <label><input type="radio" name="vmWorkloadMode" value="threshold"><span data-vm-zh="按阈值" data-vm-en="By threshold">按阈值</span></label>
+                </div>
+                <div id="vmWorkloadReleasePicker" hidden><select id="vmThresholdFamily" data-vm-aria-zh="版本" data-vm-aria-en="Release" aria-label="版本" disabled></select></div>
+                <div class="vm-workload-summary muted"><strong id="vmWorkloadBaseline"></strong><span id="vmWorkloadThreshold"></span></div>
+              </header>
               <div class="rd-table-wrap"><table class="rd-table vm-workload-table" aria-labelledby="vmWorkloadTitle"><thead><tr>
                 <th scope="col" id="vmWorkloadDimension">版本</th>
                 <th scope="col" data-vm-zh="需标注 / 已发布" data-vm-en="For review / published">需标注 / 已发布</th>
@@ -1895,7 +1896,6 @@
                 <th scope="col" id="vmWorkloadSampleHead" hidden data-vm-zh="抽样人工量" data-vm-en="Sample review count">抽样人工量</th>
                 <th scope="col" data-vm-zh="抽样模拟 ACC" data-vm-en="Simulated sample ACC">抽样模拟 ACC</th>
               </tr></thead><tbody id="vmWorkloadRows"></tbody></table></div>
-              <p class="vm-threshold-note" data-vm-zh="标注量统计已发布 Issue 中模型置信度低于阈值的条数，含已标注项。减少比例以 0.90 的低置信量为分母。模拟 ACC 仅统计有效抽样，假设转人工后全部判对。" data-vm-en="Review volume counts published issues with model confidence below the threshold, including those already labeled. The reduction is relative to review volume at 0.90. Simulated ACC uses valid samples and assumes every review is correct."></p>
             </section>
             <section class="page-card vm-report-panel">
               <header class="vm-report-heading"><h2 data-vm-zh="各版本指标" data-vm-en="Release metrics">各版本指标</h2><span id="vmTableMetric" class="muted"></span></header>
@@ -2711,7 +2711,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-899` + (window.__RA_BUNDLE_REV__ || "");
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-900` + (window.__RA_BUNDLE_REV__ || "");
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -63,11 +63,11 @@ body[data-active-page="version-metrics"] .top-actions {margin-left:auto}
 .vm-report-table small {display:block;margin-top:3px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .vm-table-empty {padding:24px 12px!important;color:var(--muted)}
 .vm-cell-stack {display:block}
-.vm-threshold-controls {display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin:14px 0}
-.vm-threshold-controls>label {display:flex;flex-direction:column;gap:6px;min-width:160px;color:var(--muted);font-size:12px}
-.vm-threshold-controls>span,.vm-threshold-note {font-size:12px;line-height:1.5;color:var(--muted)}
-.vm-threshold-note {margin:12px 0 0}
 .vm-workload-table th,.vm-workload-table td {text-align:center;font-variant-numeric:tabular-nums}
 .vm-workload-table strong {display:block;font-weight:500}
 .vm-workload-table small {display:block;color:var(--muted)}
-.vm-workload-mode {margin-bottom:10px;max-width:100%}
+.vm-workload-heading {justify-content:flex-start;gap:4px 10px;margin-bottom:6px}
+.vm-workload-mode {max-width:100%}
+#vmWorkloadReleasePicker {width:118px;max-width:100%}
+.vm-workload-summary {margin-inline-start:auto;text-align:end;font-size:12px;font-variant-numeric:tabular-nums}
+.vm-workload-summary strong {display:block;color:var(--text);font-weight:500}

@@ -1258,7 +1258,7 @@
   .vm-workload-table th[scope="row"] {white-space:nowrap;}
   .vm-report-link {min-height:44px;}
   .vm-workload-mode label {min-height:44px;box-sizing:border-box;}
-  .vm-threshold-controls .ui-select-trigger {min-height:44px;}
+  #vmWorkloadReleasePicker .ui-select-trigger {min-height:44px;}
   .vm-toolbar .ui-select-trigger,.vm-toolbar .multi-filter-trigger,.vm-scope-filters .ui-select-trigger,.vm-chart-threshold .ui-select-trigger {min-height:44px;}
 }
 
