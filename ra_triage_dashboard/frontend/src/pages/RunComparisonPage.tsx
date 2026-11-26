@@ -307,6 +307,7 @@ function parseComparisonRouteFromLocation(): ComparisonRouteState {
 
 function normalizeRunIds(
   runs: ModelRunItem[],
+  aliases: Record<string, string> | undefined,
   baselineRunId: string,
   candidateRunId: string,
   repairCoverage: boolean,
@@ -315,9 +316,16 @@ function normalizeRunIds(
   if (!available.length) return { baselineRunId, candidateRunId };
   const covered = available.filter((run) => Number(run.baseline_prediction_count || 0) > 0);
   const ids = new Set(available.map((run) => String(run.id)));
+  const resolveRunId = (value: string) => {
+    if (!value || ids.has(value)) return value;
+    const alias = aliases?.[value];
+    if (alias && ids.has(alias)) return alias;
+    const named = available.filter((run) => run.name === value);
+    return named.length === 1 ? named[0].id : "";
+  };
   const hadSelection = Boolean(baselineRunId || candidateRunId);
-  let nextBase = baselineRunId && ids.has(String(baselineRunId)) ? String(baselineRunId) : "";
-  let nextCand = candidateRunId && ids.has(String(candidateRunId)) ? String(candidateRunId) : "";
+  let nextBase = resolveRunId(baselineRunId);
+  let nextCand = resolveRunId(candidateRunId);
 
   if (!hadSelection) {
     nextCand = String(covered[0]?.id || available[0]?.id || "");
@@ -625,7 +633,11 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
   }, [active]);
 
   // Fetch all runs for the current baselines
-  const runsQuery = useQuery<{ items?: ModelRunItem[]; runs?: ModelRunItem[] }>({
+  const runsQuery = useQuery<{
+    items?: ModelRunItem[];
+    runs?: ModelRunItem[];
+    aliases?: Record<string, string>;
+  }>({
     queryKey: ["comparison-model-runs", baselinesParam],
     queryFn: ({ signal }) => {
       const qs = new URLSearchParams({ page: "1", page_size: "200" });
@@ -640,8 +652,26 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
     () => runsQuery.data?.items || runsQuery.data?.runs || [],
     [runsQuery.data],
   );
+  const runAliases = runsQuery.data?.aliases;
+  const selectedRunIds = useMemo(
+    () => [route.baselineRunId, route.candidateRunId].filter(Boolean),
+    [route.baselineRunId, route.candidateRunId],
+  );
+  const selectedRuns = useMemo(
+    () =>
+      selectedRunIds
+        .map((id) => modelRuns.find((r) => String(r.id) === String(id)))
+        .filter((r): r is ModelRunItem => Boolean(r)),
+    [selectedRunIds, modelRuns],
+  );
+  // Wait for the catalog before sending comparison requests with IDs from a bookmark.
+  const needsRunResolution = selectedRuns.length !== selectedRunIds.length;
+  const selectionValid =
+    selectedRunIds.length > 0 &&
+    new Set(selectedRunIds).size === selectedRunIds.length &&
+    !needsRunResolution;
 
-  // Auto-select / repair coverage when runs arrive or topbar dataset changes
+  // Reconcile the selection when the catalog, dataset or an unresolved bookmark changes.
   useEffect(() => {
     if (!active || !modelRuns.length) return;
     const datasetChanged = prevBaselinesRef.current !== baselinesParam;
@@ -649,6 +679,7 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
     setRoute((prev) => {
       const normalized = normalizeRunIds(
         modelRuns,
+        runAliases,
         prev.baselineRunId,
         prev.candidateRunId,
         true,
@@ -669,29 +700,14 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
       syncUrl(next, "replace");
       return next;
     });
-  }, [active, modelRuns, baselinesParam, syncUrl]);
-
-  const selectedRunIds = useMemo(
-    () => [route.baselineRunId, route.candidateRunId].filter(Boolean),
-    [route.baselineRunId, route.candidateRunId],
-  );
-  const selectedRuns = useMemo(
-    () =>
-      selectedRunIds
-        .map((id) => modelRuns.find((r) => String(r.id) === String(id)))
-        .filter((r): r is ModelRunItem => Boolean(r)),
-    [selectedRunIds, modelRuns],
-  );
-  const selectionValid =
-    selectedRunIds.length > 0 &&
-    new Set(selectedRunIds).size === selectedRunIds.length &&
-    (modelRuns.length === 0 || selectedRuns.length === selectedRunIds.length);
+  }, [active, modelRuns, runAliases, baselinesParam, needsRunResolution, syncUrl]);
 
   const comparisonQuery = useQuery({
     ...comparisonPageQuery(route, baselinesParam),
     enabled: active && selectionValid,
     placeholderData: (prev) => prev,
   });
+  const loadError = comparisonQuery.error || (modelRuns.length === 0 ? runsQuery.error : null);
 
   const payload = comparisonQuery.data || null;
   const hasPayload = Boolean(payload?.summary);
@@ -1499,15 +1515,15 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
       {!hasPayload ? (
         <section className="comparison-empty page-card" id="comparisonEmptyState">
           <strong>
-            {comparisonQuery.isError
+            {loadError
               ? bilingual(lang, "加载对比结果失败", "Failed to load comparison")
-              : comparisonQuery.isLoading && selectionValid
+              : runsQuery.isLoading || comparisonQuery.isLoading
                 ? bilingual(lang, "正在加载对比结果…", "Loading comparison…")
                 : bilingual(lang, "至少选择一个 Run", "Select at least one Run")}
           </strong>
           <p className="muted">
-            {comparisonQuery.isError
-              ? (comparisonQuery.error as Error)?.message || ""
+            {loadError
+              ? loadError.message
               : bilingual(
                   lang,
                   "结果不会修改 Review、GT、Run 或 Trail。",

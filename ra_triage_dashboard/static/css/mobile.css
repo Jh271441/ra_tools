@@ -1255,7 +1255,7 @@
   .vm-info-button {width:44px;min-height:44px;}
   .vm-report-panel {padding:12px;}
   .vm-workload-table th,.vm-workload-table td {padding:8px 4px;font-size:12px;}
-  .vm-workload-table th[scope="row"] {white-space:nowrap;}
+  .vm-workload-table th[scope="row"], .vm-workload-table #vmWorkloadDimension {white-space:nowrap;}
   .vm-report-link {min-height:44px;}
   .vm-workload-mode label {min-height:44px;box-sizing:border-box;}
   #vmWorkloadReleasePicker .ui-select-trigger {min-height:44px;}

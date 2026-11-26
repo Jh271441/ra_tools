@@ -211,6 +211,55 @@ describe("RunComparisonPage", () => {
     window.history.replaceState({}, "", "/");
   });
 
+  it.each([
+    ["Run name", "Baseline V1"],
+    ["archived ID", "archived-base"],
+  ])("resolves a bookmark with a %s before requesting a comparison", async (_, runReference) => {
+    let deliverCatalog: (response: Response) => void = () => {};
+    const catalog = new Promise<Response>((resolve) => {
+      deliverCatalog = resolve;
+    });
+    const comparisons: Array<[string | null, string | null]> = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith("/api/model-runs")) return catalog;
+      if (url.pathname.endsWith("/api/model-run-comparison")) {
+        comparisons.push([
+          url.searchParams.get("baseline_run_id"),
+          url.searchParams.get("candidate_run_id"),
+        ]);
+        return Response.json(makeComparisonPayload());
+      }
+      return Response.json({});
+    });
+
+    const bookmark = new URLSearchParams({
+      baselines: "version-20261106",
+      baseline_run: runReference,
+      candidate_run: "run-cand",
+    });
+    window.history.replaceState({}, "", `/run-comparison?${bookmark.toString()}`);
+    renderWithClient(<RunComparisonPage active lang="zh" selectedBaselines={["version-20261106"]} />);
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining("/api/model-runs?"),
+      expect.anything(),
+    ));
+    expect(comparisons).toEqual([]);
+
+    await act(async () => {
+      deliverCatalog(Response.json({
+        items: MOCK_RUNS,
+        aliases: { "archived-base": "run-base" },
+      }));
+    });
+    expect(await screen.findByText("cn-case-1")).toBeInTheDocument();
+    expect(comparisons).toEqual([["run-base", "run-cand"]]);
+    const restored = new URLSearchParams(window.location.search);
+    expect(restored.get("baseline_run")).toBe("run-base");
+    expect(restored.get("candidate_run")).toBe("run-cand");
+    expect(restored.get("baselines")).toBe("version-20261106");
+  });
+
   it("serves current page rows to the media dialog without a legacy state global", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = new URL(String(input), window.location.origin);
