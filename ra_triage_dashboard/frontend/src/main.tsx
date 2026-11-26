@@ -597,6 +597,49 @@ const handle: ReactWorkbenchHandle = {
 (window as unknown as { __RA_REACT_WORKBENCH__?: ReactWorkbenchHandle }).__RA_REACT_WORKBENCH__ =
   handle;
 
+function installVitePreloadErrorGuard() {
+  if (typeof window === "undefined") return;
+  const flag = "__RA_VITE_PRELOAD_GUARD__";
+  const win = window as unknown as Record<string, unknown>;
+  if (win[flag]) return;
+  win[flag] = true;
+
+  window.addEventListener("vite:preloadError", (event) => {
+    event.preventDefault();
+    if (document.getElementById("raVersionUpdateNotice")) return;
+    const isEn =
+      (document.documentElement?.dataset?.uiLang || document.documentElement?.lang || "")
+        .toLowerCase()
+        .startsWith("en");
+    const banner = document.createElement("div");
+    banner.id = "raVersionUpdateNotice";
+    banner.className = "ra-version-update-banner";
+    banner.setAttribute("role", "status");
+    banner.setAttribute("aria-live", "polite");
+    const text = document.createElement("span");
+    text.textContent = isEn
+      ? "A newer dashboard version is live. Reload to load the latest page; unsaved local drafts are preserved."
+      : "检测到新版看板已发布，请刷新页面以加载最新资源（本地未保存草稿已保留）。";
+    const actions = document.createElement("div");
+    actions.className = "ra-version-update-actions";
+    const reloadBtn = document.createElement("button");
+    reloadBtn.type = "button";
+    reloadBtn.className = "button button-primary";
+    reloadBtn.textContent = isEn ? "Reload page" : "立即刷新";
+    reloadBtn.addEventListener("click", () => window.location.reload());
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "button button-quiet";
+    closeBtn.textContent = isEn ? "Later" : "稍后";
+    closeBtn.addEventListener("click", () => banner.remove());
+    actions.append(reloadBtn, closeBtn);
+    banner.append(text, actions);
+    document.body.append(banner);
+  });
+}
+
+installVitePreloadErrorGuard();
+
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", mountAllIslands, { once: true });
 } else {

@@ -787,6 +787,74 @@ class IntentExperimentTest(unittest.TestCase):
             self.assertEqual(database.intent_assigned_case_ids("test-v1", ["alice"]), ())
             self.assertEqual(database.list_intent_case_assignees("test-v1", "cn1_1"), [])
 
+    def test_intent_labeling_idempotency_replay_and_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = Database(Path(tmp) / "triage.sqlite3")
+            database.init()
+            overrides = [
+                {
+                    "timepoint_id": "t0",
+                    "offset_ms": 0,
+                    "routing_intent": "left_turn",
+                    "lane_change_intent": "lane_change",
+                }
+            ]
+            first = database.save_intent_labels(
+                dataset_id="test-v1",
+                case_id="cn1_1",
+                routing_default="straight",
+                lane_change_default="no_lane_change",
+                overrides=overrides,
+                expected_revision_id=None,
+                author="alice",
+                author_source="sso",
+                author_verified=True,
+                idempotency_key="intent-idem-1",
+            )
+            # Replaying with the same key and stale expected_revision_id=None
+            # returns the committed revision without raising a spurious 409.
+            replay = database.save_intent_labels(
+                dataset_id="test-v1",
+                case_id="cn1_1",
+                routing_default="straight",
+                lane_change_default="no_lane_change",
+                overrides=overrides,
+                expected_revision_id=None,
+                author="alice",
+                author_source="sso",
+                author_verified=True,
+                idempotency_key="intent-idem-1",
+            )
+            self.assertEqual(replay["revision_id"], first["revision_id"])
+            self.assertEqual(replay["overrides"], first["overrides"])
+            # Different content with same Idempotency-Key must conflict.
+            with self.assertRaises(IntentAnnotationConflictError):
+                database.save_intent_labels(
+                    dataset_id="test-v1",
+                    case_id="cn1_1",
+                    routing_default="right_turn",
+                    lane_change_default="no_lane_change",
+                    overrides=[],
+                    expected_revision_id=None,
+                    author="alice",
+                    author_source="sso",
+                    author_verified=True,
+                    idempotency_key="intent-idem-1",
+                )
+            # Without Idempotency-Key, stale expected_revision_id still conflicts.
+            with self.assertRaises(IntentAnnotationConflictError):
+                database.save_intent_labels(
+                    dataset_id="test-v1",
+                    case_id="cn1_1",
+                    routing_default="straight",
+                    lane_change_default="no_lane_change",
+                    overrides=overrides,
+                    expected_revision_id=None,
+                    author="alice",
+                    author_source="sso",
+                    author_verified=True,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

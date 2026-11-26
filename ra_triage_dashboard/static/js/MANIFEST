@@ -61,6 +61,7 @@ review-navigation.js
 review-shortcuts.js
 review-submit.js
 case-label-explanation.js
+case-labeling-draft.js
 case-labeling.js
 labeling-combined-tasks.js
 case-label-decision.js

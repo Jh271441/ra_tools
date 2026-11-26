@@ -1,5 +1,6 @@
 """Labeling common HTTP contracts."""
 from __future__ import annotations
+from collections.abc import Mapping
 from typing import Any
 from fastapi import Request
 from ...support.identity import _admin_identity
@@ -18,10 +19,35 @@ import re
 from ...auth import request_identity
 from ...review_workflow import resolve_expected_output
 from ...runtime import settings
+from ...db_parts.shared import normalize_idempotency_key
 from ...support.issue_tag_filters import parse_issue_tag_groups
 from ...runtime_catalogs import REVIEW_TAG_ALIASES
 
 _COMMENT_ATTACHMENT_TOKEN_RE = re.compile(r"^[A-Za-z0-9-]{1,80}$")
+
+
+def _optional_idempotency_key(
+    request: Request, body: dict[str, Any] | None = None
+) -> str:
+    headers = getattr(request, "headers", None)
+    header_raw = headers.get("idempotency-key") if isinstance(headers, Mapping) else None
+    body_raw = body.get("idempotency_key") if isinstance(body, dict) else None
+    if header_raw is not None and (not isinstance(header_raw, str) or not header_raw.strip()):
+        raise _detail(
+            400,
+            "Idempotency-Key 长度必须在 1 到 160 个可见字符之间。 / Idempotency-Key must be 1 to 160 printable characters.",
+        )
+    try:
+        header_key = normalize_idempotency_key(header_raw)
+        body_key = normalize_idempotency_key(body_raw)
+    except ValueError as exc:
+        raise _detail(400, str(exc)) from exc
+    if header_key and body_key and header_key != body_key:
+        raise _detail(
+            400,
+            "Idempotency-Key 请求头与请求体不一致。 / Idempotency-Key header disagrees with request body.",
+        )
+    return header_key or body_key
 
 
 def _labeling_issue_tag_groups(value):

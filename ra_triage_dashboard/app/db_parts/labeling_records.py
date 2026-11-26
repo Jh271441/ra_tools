@@ -8,6 +8,8 @@ from .shared import (
     LabelAnnotationConflictError,
     _json,
     _json_load,
+    idempotency_fingerprint,
+    normalize_idempotency_key,
     utc_now,
 )
 from .labeling_shared import _clean_values
@@ -323,8 +325,10 @@ class LabelingRecordsMixin:
         expected_allocation_revision: int | None = None,
         attachments: Sequence[dict[str, Any]] = (),
         mention_recipients: Sequence[str] = (),
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
         self._validate_allocation_revision(expected_allocation_revision)
+        idem_key = normalize_idempotency_key(idempotency_key)
         label = str(expected_output or "").strip()
         if label and label not in LABELS:
             raise ValueError("期望输出仅支持：误触发、正确触发、无需协助。")
@@ -334,12 +338,32 @@ class LabelingRecordsMixin:
         normalized_rationale = str(rationale or "").strip()
         if len(normalized_rationale) > 8000:
             raise ValueError("标注依据不能超过 8000 个字符。")
+        cleaned_tags = _clean_values(tags)
+        cleaned_gaps = _clean_values(evidence_gaps)
+        idem_fp = (
+            idempotency_fingerprint(
+                {
+                    "issue_id": str(issue_id or "").strip(),
+                    "task_id": str(task_id or "").strip(),
+                    "source_run_id": str(source_run_id or "").strip(),
+                    "expected_output": label,
+                    "tags": cleaned_tags,
+                    "evidence_gaps": cleaned_gaps,
+                    "rationale": normalized_rationale,
+                    "is_excluded": bool(is_excluded),
+                    "attachments": sorted(str(item.get("sha256") or "") for item in attachments),
+                }
+            )
+            if idem_key
+            else ""
+        )
         label_case = self.ensure_label_case(
             issue_id=issue_id,
             task_id=task_id,
             source_run_id=source_run_id,
         )
         now = utc_now()
+        replayed_result: dict[str, Any] | None = None
         with self._write_lock, self.connect() as conn:
             self._lock_task_work_shared(conn)
             if self.backend == "postgresql":
@@ -351,6 +375,7 @@ class LabelingRecordsMixin:
                     "SELECT id FROM label_cases WHERE id = ? FOR UPDATE",
                     (label_case["id"],),
                 ).fetchone()
+            campaign = None
             if task_id:
                 campaign = conn.execute(
                     "SELECT purpose, lifecycle, legacy_read_only, config_revision FROM issue_work_splits WHERE id = ?",
@@ -363,9 +388,6 @@ class LabelingRecordsMixin:
                     or str(campaign["purpose"] or "labeling") != "labeling"
                 ):
                     raise ValueError("该 Campaign 当前只读，不能提交标注。")
-                if expected_allocation_revision is not None and campaign["config_revision"] != expected_allocation_revision:
-                    raise LabelAnnotationConflictError("任务分配已变化，草稿保留，请刷新任务后确认 / Allocation changed; your draft is retained. Reload the task and confirm")
-            if task_id:
                 assigned = conn.execute(
                     """
                     SELECT 1 FROM review_work_assignments
@@ -375,72 +397,128 @@ class LabelingRecordsMixin:
                 ).fetchone()
                 if assigned is None:
                     raise PermissionError("当前账号不在该标注任务中。")
-            previous = conn.execute(
-                """
-                SELECT id FROM label_revisions
-                WHERE label_case_id = ? AND lower(author) = lower(?)
-                  AND revision_kind IN ('submission', 'legacy')
-                ORDER BY id DESC LIMIT 1
-                """,
-                (label_case["id"], actor),
-            ).fetchone()
-            current_id = int(previous["id"]) if previous is not None else None
-            if current_id != expected_previous_revision_id:
-                raise LabelAnnotationConflictError("标注已被更新，请刷新后再保存。")
-            sql = """
-                INSERT INTO label_revisions (
-                    label_case_id, expected_output, tags_json, evidence_gaps_json,
-                    rationale, is_excluded, author, author_source,
-                    author_verified, revision_kind, supersedes_id,
-                    source_annotation_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submission', ?, NULL, ?)
-            """
-            if self.backend == "postgresql":
-                sql += " RETURNING id"
-            cursor = conn.execute(
-                sql,
-                (
-                    label_case["id"],
-                    label or None,
-                    _json(_clean_values(tags)),
-                    _json(_clean_values(evidence_gaps)),
-                    normalized_rationale,
-                    bool(is_excluded),
-                    actor,
-                    str(author_source or "legacy").strip() or "legacy",
-                    bool(author_verified),
-                    current_id,
-                    now,
-                ),
-            )
-            revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
-            for attachment in attachments:
-                conn.execute(
+            if idem_key:
+                existing = conn.execute(
                     """
-                    INSERT INTO label_attachments (
-                        id, revision_id, source_review_attachment_id,
-                        original_name, stored_name, media_type, size_bytes,
-                        width, height, sha256, created_at
-                    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+                    SELECT * FROM label_revisions
+                    WHERE label_case_id = ? AND lower(author) = lower(?) AND idempotency_key = ?
+                    ORDER BY id DESC LIMIT 1
                     """,
+                    (label_case["id"], actor, idem_key),
+                ).fetchone()
+                if existing is not None:
+                    if str(existing["idempotency_fingerprint"] or "") != idem_fp:
+                        raise LabelAnnotationConflictError(
+                            "幂等键已用于不同的标注内容，请刷新后重新提交。 / Idempotency-Key was already used for different label content."
+                        )
+                    attachment_rows = conn.execute(
+                        "SELECT * FROM label_attachments WHERE revision_id = ? ORDER BY created_at, id",
+                        (int(existing["id"]),),
+                    ).fetchall()
+                    replayed_result = self._label_revision_dict(existing)
+                    replayed_result["attachments"] = [
+                        self._label_attachment_dict(item) for item in attachment_rows
+                    ]
+                    replayed_result["notification"] = {
+                        "status": "replayed",
+                        "mentions": [],
+                        "queued": [],
+                    }
+                    replayed_result["_idempotency_replayed"] = True
+            if replayed_result is None:
+                if (
+                    task_id
+                    and campaign is not None
+                    and expected_allocation_revision is not None
+                    and campaign["config_revision"] != expected_allocation_revision
+                ):
+                    raise LabelAnnotationConflictError(
+                        "任务分配已变化，草稿保留，请刷新任务后确认 / Allocation changed; your draft is retained. Reload the task and confirm"
+                    )
+                previous = conn.execute(
+                    """
+                    SELECT id FROM label_revisions
+                    WHERE label_case_id = ? AND lower(author) = lower(?)
+                      AND revision_kind IN ('submission', 'legacy')
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (label_case["id"], actor),
+                ).fetchone()
+                current_id = int(previous["id"]) if previous is not None else None
+                if current_id != expected_previous_revision_id:
+                    raise LabelAnnotationConflictError("标注已被更新，请刷新后再保存。")
+                sql = """
+                    INSERT INTO label_revisions (
+                        label_case_id, expected_output, tags_json, evidence_gaps_json,
+                        rationale, is_excluded, author, author_source,
+                        author_verified, revision_kind, supersedes_id,
+                        source_annotation_id, idempotency_key, idempotency_fingerprint, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'submission', ?, NULL, ?, ?, ?)
+                """
+                if self.backend == "postgresql":
+                    sql += " RETURNING id"
+                cursor = conn.execute(
+                    sql,
                     (
-                        str(attachment["id"]),
-                        revision_id,
-                        str(attachment.get("original_name") or ""),
-                        str(attachment["stored_name"]),
-                        str(attachment["media_type"]),
-                        int(attachment["size_bytes"]),
-                        int(attachment["width"]),
-                        int(attachment["height"]),
-                        str(attachment["sha256"]),
+                        label_case["id"],
+                        label or None,
+                        _json(cleaned_tags),
+                        _json(cleaned_gaps),
+                        normalized_rationale,
+                        bool(is_excluded),
+                        actor,
+                        str(author_source or "legacy").strip() or "legacy",
+                        bool(author_verified),
+                        current_id,
+                        idem_key,
+                        idem_fp,
                         now,
                     ),
                 )
-            self._mark_labeling_change(conn)
-            row = conn.execute("SELECT * FROM label_revisions WHERE id = ?", (revision_id,)).fetchone()
-            notification = append_label_mention_event(self, conn, revision=self._label_revision_dict(row),
-                issue_id=issue_id, baseline_scope=label_case["baseline_scope"], recipients=mention_recipients)
+                revision_id = int(cursor.fetchone()["id"]) if self.backend == "postgresql" else int(cursor.lastrowid)
+                for attachment in attachments:
+                    conn.execute(
+                        """
+                        INSERT INTO label_attachments (
+                            id, revision_id, source_review_attachment_id,
+                            original_name, stored_name, media_type, size_bytes,
+                            width, height, sha256, created_at
+                        ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(attachment["id"]),
+                            revision_id,
+                            str(attachment.get("original_name") or ""),
+                            str(attachment["stored_name"]),
+                            str(attachment["media_type"]),
+                            int(attachment["size_bytes"]),
+                            int(attachment["width"]),
+                            int(attachment["height"]),
+                            str(attachment["sha256"]),
+                            now,
+                        ),
+                    )
+                self._mark_labeling_change(conn)
+                row = conn.execute("SELECT * FROM label_revisions WHERE id = ?", (revision_id,)).fetchone()
+                stored_attachment_rows = conn.execute(
+                    "SELECT * FROM label_attachments WHERE revision_id = ? ORDER BY created_at, id",
+                    (revision_id,),
+                ).fetchall()
+                notification = append_label_mention_event(
+                    self,
+                    conn,
+                    revision=self._label_revision_dict(row),
+                    issue_id=issue_id,
+                    baseline_scope=label_case["baseline_scope"],
+                    recipients=mention_recipients,
+                )
+        if replayed_result is not None:
+            replayed_result["label_case"] = self.get_label_case(label_case["id"])
+            return replayed_result
         result = self._label_revision_dict(row)
+        result["attachments"] = [
+            self._label_attachment_dict(item) for item in stored_attachment_rows
+        ]
         result["notification"] = notification
         result["label_case"] = self.get_label_case(label_case["id"])
         return result

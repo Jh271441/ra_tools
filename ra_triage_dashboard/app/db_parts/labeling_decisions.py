@@ -7,6 +7,8 @@ from .shared import (
     LabelAnnotationConflictError,
     _json,
     _json_load,
+    idempotency_fingerprint,
+    normalize_idempotency_key,
     utc_now,
 )
 from .labeling_shared import _clean_values, _source_fingerprint
@@ -155,7 +157,9 @@ class LabelingDecisionsMixin:
         expected_previous_decision_id: int | None = None,
         full_result: dict[str, Any] | None = None,
         attachments: Sequence[dict[str, Any]] = (),
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
+        idem_key = normalize_idempotency_key(idempotency_key)
         scope = str(baseline_scope or "").strip()
         issue_key = str(issue_id or "").strip()
         output = str(expected_output or "").strip()
@@ -169,6 +173,33 @@ class LabelingDecisionsMixin:
             raise ValueError("Issue 标签裁决必须填写裁决依据。")
         if len(explanation) > 8000:
             raise ValueError("裁决依据不能超过 8000 个字符。")
+        if full_result is not None and type(full_result.get("is_excluded")) is not bool:
+            raise ValueError("请明确确认是否排除。 / Confirm exclusion explicitly.")
+        idem_fp = ""
+        if idem_key:
+            full_fp = None
+            if full_result is not None:
+                raw_keep = full_result.get("retained_attachment_ids") or []
+                if not isinstance(raw_keep, list) or any(not isinstance(value, str) for value in raw_keep):
+                    raise ValueError("截图引用不合法。 / Invalid attachment references.")
+                full_fp = {
+                    "is_excluded": bool(full_result.get("is_excluded")),
+                    "tags": _clean_values(full_result.get("tags") or []),
+                    "evidence_gaps": _clean_values(full_result.get("evidence_gaps") or []),
+                    "label_rationale": str(full_result.get("label_rationale") or "").strip(),
+                    "adopted_revision_id": full_result.get("adopted_revision_id"),
+                    "retained_attachment_ids": sorted(str(value) for value in raw_keep),
+                }
+            idem_fp = idempotency_fingerprint(
+                {
+                    "baseline_scope": scope,
+                    "issue_id": issue_key,
+                    "expected_output": output,
+                    "rationale": explanation,
+                    "full_result": full_fp,
+                    "attachments": sorted(str(item.get("sha256") or "") for item in attachments),
+                }
+            )
         with self._write_lock, self.connect() as conn:
             self._lock_task_work_shared(conn)
             issue_sql = (
@@ -186,6 +217,29 @@ class LabelingDecisionsMixin:
             ).fetchone()
             if active is None or str(active["status"] or "") != "active":
                 raise PermissionError("当前数据集尚未启用 Case 标注写入。")
+            if idem_key:
+                existing = conn.execute(
+                    """
+                    SELECT * FROM issue_label_decisions
+                    WHERE baseline_scope = ? AND issue_id = ?
+                      AND lower(created_by) = lower(?) AND idempotency_key = ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (scope, issue_key, reviewer, idem_key),
+                ).fetchone()
+                if existing is not None:
+                    if str(existing["idempotency_fingerprint"] or "") != idem_fp:
+                        raise LabelAnnotationConflictError(
+                            "幂等键已用于不同的裁决内容，请刷新后重新提交。 / Idempotency-Key was already used for different decision content."
+                        )
+                    refreshed = self.project_issue_label_states(
+                        scope, [issue_key], include_sources=True, connection=conn
+                    )[issue_key]
+                    return {
+                        "decision": self._issue_label_decision_dict(existing),
+                        "label_state": refreshed,
+                        "_idempotency_replayed": True,
+                    }
             projection = self.project_issue_label_states(
                 scope, [issue_key], include_sources=True, connection=conn
             )[issue_key]
@@ -239,8 +293,6 @@ class LabelingDecisionsMixin:
             full = None
             attachment_records = list(attachments)
             if full_result is not None:
-                if type(full_result.get("is_excluded")) is not bool:
-                    raise ValueError("请明确确认是否排除。 / Confirm exclusion explicitly.")
                 full = self._prepare_full_issue_decision(conn, scope, issue_key, output, full_result, attachment_records)
             elif attachment_records:
                 raise ValueError("截图需要完整裁决。 / Attachments require a full decision.")
@@ -250,8 +302,9 @@ class LabelingDecisionsMixin:
                     baseline_scope, issue_id, expected_output,
                     source_case_ids_json, source_revision_ids_json,
                     source_fingerprint, rationale, supersedes_id,
-                    created_by, created_by_source, created_by_verified, created_at, full_result_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_by, created_by_source, created_by_verified,
+                    idempotency_key, idempotency_fingerprint, created_at, full_result_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 sql += " RETURNING id"
@@ -269,6 +322,8 @@ class LabelingDecisionsMixin:
                     reviewer,
                     str(actor_source or "legacy"),
                     bool(actor_verified),
+                    idem_key,
+                    idem_fp,
                     now,
                     _json(full) if full is not None else None,
                 ),

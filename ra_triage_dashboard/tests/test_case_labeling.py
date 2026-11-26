@@ -911,6 +911,348 @@ class CaseLabelingTest(unittest.TestCase):
             self.assertIn(review_split["split_id"], review_ids)
             self.assertNotIn(task["id"], review_ids)
 
+    def test_case_labeling_revision_and_decision_idempotency_replay_and_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            first = database.create_label_revision(
+                issue_id="cn1",
+                expected_output="误触发",
+                tags=["straight"],
+                evidence_gaps=[],
+                rationale="首次提交依据",
+                is_excluded=False,
+                author="alice",
+                author_source="sso",
+                author_verified=True,
+                expected_previous_revision_id=None,
+                idempotency_key="case-label-idem-1",
+            )
+            # Replaying with the same Idempotency-Key and same content returns the
+            # original revision even though the head has advanced past None.
+            replay = database.create_label_revision(
+                issue_id="cn1",
+                expected_output="误触发",
+                tags=["straight"],
+                evidence_gaps=[],
+                rationale="首次提交依据",
+                is_excluded=False,
+                author="alice",
+                author_source="sso",
+                author_verified=True,
+                expected_previous_revision_id=None,
+                idempotency_key="case-label-idem-1",
+            )
+            self.assertEqual(replay["id"], first["id"])
+            self.assertTrue(replay.get("_idempotency_replayed"))
+            label_case = database.get_label_case(first["label_case_id"])
+            self.assertEqual(len(label_case["revisions"]), 1)
+
+            # Reusing the same Idempotency-Key with different content fails with conflict.
+            with self.assertRaises(LabelAnnotationConflictError):
+                database.create_label_revision(
+                    issue_id="cn1",
+                    expected_output="正确触发",
+                    tags=["straight"],
+                    evidence_gaps=[],
+                    rationale="改动后的内容",
+                    is_excluded=False,
+                    author="alice",
+                    author_source="sso",
+                    author_verified=True,
+                    expected_previous_revision_id=None,
+                    idempotency_key="case-label-idem-1",
+                )
+
+            # Decision idempotency replay & conflict.
+            projection = database.project_issue_label_states("scope", ["cn1"], include_sources=True)["cn1"]
+            source_fp = projection["source_fingerprint"]
+            dec1 = database.adjudicate_issue_label(
+                baseline_scope="scope",
+                issue_id="cn1",
+                expected_output="误触发",
+                rationale="裁决依据",
+                actor="admin",
+                actor_source="sso",
+                actor_verified=True,
+                expected_source_fingerprint=source_fp,
+                expected_previous_decision_id=None,
+                idempotency_key="case-decision-idem-1",
+            )
+            dec_replay = database.adjudicate_issue_label(
+                baseline_scope="scope",
+                issue_id="cn1",
+                expected_output="误触发",
+                rationale="裁决依据",
+                actor="admin",
+                actor_source="sso",
+                actor_verified=True,
+                expected_source_fingerprint=source_fp,
+                expected_previous_decision_id=None,
+                idempotency_key="case-decision-idem-1",
+            )
+            self.assertEqual(dec_replay["decision"]["id"], dec1["decision"]["id"])
+            self.assertTrue(dec_replay.get("_idempotency_replayed"))
+            self.assertEqual(len(database.list_issue_label_decisions(baseline_scope="scope", issue_id="cn1")), 1)
+            with self.assertRaises(LabelAnnotationConflictError):
+                database.adjudicate_issue_label(
+                    baseline_scope="scope",
+                    issue_id="cn1",
+                    expected_output="正确触发",
+                    rationale="不同裁决",
+                    actor="admin",
+                    actor_source="sso",
+                    actor_verified=True,
+                    expected_source_fingerprint=source_fp,
+                    expected_previous_decision_id=None,
+                    idempotency_key="case-decision-idem-1",
+                )
+
+    def test_legacy_sqlite_database_upgrades_columns_before_creating_idempotency_indexes(self) -> None:
+        import sqlite3
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy.sqlite3"
+            # Construct pre-065 SQLite tables without idempotency_key / idempotency_fingerprint.
+            conn = sqlite3.connect(db_path)
+            conn.executescript(
+                """
+                CREATE TABLE issues (
+                    issue_id TEXT PRIMARY KEY,
+                    baseline_scope TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE label_cases (
+                    id TEXT PRIMARY KEY,
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL DEFAULT '',
+                    source_run_id TEXT NOT NULL DEFAULT '',
+                    seen_gt_label TEXT NOT NULL DEFAULT '',
+                    seen_gt_source TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE label_revisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    label_case_id TEXT NOT NULL,
+                    expected_output TEXT,
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    evidence_gaps_json TEXT NOT NULL DEFAULT '[]',
+                    rationale TEXT NOT NULL DEFAULT '',
+                    is_excluded INTEGER NOT NULL DEFAULT 0,
+                    author TEXT NOT NULL DEFAULT '',
+                    author_source TEXT NOT NULL DEFAULT 'legacy',
+                    author_verified INTEGER NOT NULL DEFAULT 0,
+                    revision_kind TEXT NOT NULL DEFAULT 'submission',
+                    supersedes_id INTEGER,
+                    source_annotation_id INTEGER UNIQUE,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE issue_label_decisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    baseline_scope TEXT NOT NULL,
+                    issue_id TEXT NOT NULL,
+                    expected_output TEXT NOT NULL,
+                    source_case_ids_json TEXT NOT NULL DEFAULT '[]',
+                    source_revision_ids_json TEXT NOT NULL DEFAULT '[]',
+                    source_fingerprint TEXT NOT NULL,
+                    rationale TEXT NOT NULL DEFAULT '',
+                    supersedes_id INTEGER,
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE intent_label_revisions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    dataset_id TEXT NOT NULL,
+                    case_id TEXT NOT NULL,
+                    routing_default TEXT,
+                    lane_change_default TEXT,
+                    author TEXT NOT NULL DEFAULT '',
+                    author_source TEXT NOT NULL DEFAULT 'legacy',
+                    author_verified INTEGER NOT NULL DEFAULT 0,
+                    supersedes_id INTEGER,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE batch_prediction_jobs (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL,
+                    requested_by TEXT NOT NULL DEFAULT '',
+                    requested_by_source TEXT NOT NULL DEFAULT 'legacy',
+                    requested_by_verified INTEGER NOT NULL DEFAULT 0,
+                    total_count INTEGER NOT NULL DEFAULT 0,
+                    completed_count INTEGER NOT NULL DEFAULT 0,
+                    success_count INTEGER NOT NULL DEFAULT 0,
+                    failed_count INTEGER NOT NULL DEFAULT 0,
+                    model_name TEXT NOT NULL DEFAULT '',
+                    prompt_version TEXT NOT NULL DEFAULT '',
+                    experiment_source TEXT NOT NULL DEFAULT '',
+                    config_sha256 TEXT NOT NULL DEFAULT '',
+                    model_run_id TEXT,
+                    publish_status TEXT NOT NULL DEFAULT 'not_requested',
+                    autotriage_batch_id TEXT NOT NULL DEFAULT '',
+                    autotriage_writer TEXT NOT NULL DEFAULT '',
+                    summary_json TEXT NOT NULL DEFAULT '{}',
+                    error_text TEXT NOT NULL DEFAULT '',
+                    log_path TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    finished_at TEXT
+                );
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            database = Database(db_path)
+            database.init()
+            with database.connect() as upgraded:
+                indexes = {
+                    row["name"]
+                    for row in upgraded.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'index'"
+                    ).fetchall()
+                }
+                for expected_index in (
+                    "idx_label_revisions_idempotency",
+                    "idx_issue_label_decisions_idempotency",
+                    "idx_intent_label_revisions_idempotency",
+                    "idx_batch_prediction_jobs_publish_queue",
+                ):
+                    self.assertIn(expected_index, indexes)
+                batch_cols = {
+                    row["name"]
+                    for row in upgraded.execute("PRAGMA table_info(batch_prediction_jobs)").fetchall()
+                }
+                self.assertIn("publish_queued", batch_cols)
+                for table in ("label_revisions", "issue_label_decisions", "intent_label_revisions"):
+                    cols = {
+                        row["name"]
+                        for row in upgraded.execute(f"PRAGMA table_info({table})").fetchall()
+                    }
+                    self.assertIn("idempotency_key", cols)
+                    self.assertIn("idempotency_fingerprint", cols)
+
+    def test_reordered_attachments_replay_idempotently_for_revisions_and_decisions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            database = self.make_db(tmp)
+            database.set_labeling_scope_state(
+                baseline_scope="scope", status="active", policy_version="test-v1",
+                source_inventory_sha256="a" * 64, updated_by="test",
+            )
+            att_a = {
+                "id": "att-a",
+                "original_name": "a.png",
+                "stored_name": "a.png",
+                "media_type": "image/png",
+                "size_bytes": 100,
+                "width": 10,
+                "height": 10,
+                "sha256": "1" * 64,
+            }
+            att_b = {
+                "id": "att-b",
+                "original_name": "b.png",
+                "stored_name": "b.png",
+                "media_type": "image/png",
+                "size_bytes": 200,
+                "width": 20,
+                "height": 20,
+                "sha256": "2" * 64,
+            }
+            att_c = {**att_b, "id": "att-c", "sha256": "3" * 64}
+            rev1 = database.create_label_revision(
+                issue_id="cn1",
+                expected_output="误触发",
+                tags=["straight"],
+                evidence_gaps=[],
+                rationale="两张截图",
+                is_excluded=False,
+                author="alice",
+                author_source="sso",
+                author_verified=True,
+                expected_previous_revision_id=None,
+                attachments=[att_a, att_b],
+                idempotency_key="case-reordered-rev-1",
+            )
+            # Re-selecting [B, A] in reverse order after reload must replay cleanly (not 409).
+            rev_replay = database.create_label_revision(
+                issue_id="cn1",
+                expected_output="误触发",
+                tags=["straight"],
+                evidence_gaps=[],
+                rationale="两张截图",
+                is_excluded=False,
+                author="alice",
+                author_source="sso",
+                author_verified=True,
+                expected_previous_revision_id=None,
+                attachments=[att_b, att_a],
+                idempotency_key="case-reordered-rev-1",
+            )
+            self.assertEqual(rev_replay["id"], rev1["id"])
+            self.assertTrue(rev_replay.get("_idempotency_replayed"))
+            with self.assertRaises(LabelAnnotationConflictError):
+                database.create_label_revision(
+                    issue_id="cn1",
+                    expected_output="误触发",
+                    tags=["straight"],
+                    evidence_gaps=[],
+                    rationale="两张截图",
+                    is_excluded=False,
+                    author="alice",
+                    author_source="sso",
+                    author_verified=True,
+                    expected_previous_revision_id=None,
+                    attachments=[att_a, att_c],
+                    idempotency_key="case-reordered-rev-1",
+                )
+
+            projection = database.project_issue_label_states("scope", ["cn1"], include_sources=True)["cn1"]
+            source_fp = projection["source_fingerprint"]
+            full_payload = {
+                "is_excluded": False,
+                "tags": ["straight"],
+                "evidence_gaps": [],
+                "label_rationale": "裁决两张图",
+                "adopted_revision_id": None,
+                "retained_attachment_ids": [],
+            }
+            dec1 = database.adjudicate_issue_label(
+                baseline_scope="scope",
+                issue_id="cn1",
+                expected_output="误触发",
+                rationale="裁决两张图",
+                actor="admin",
+                actor_source="sso",
+                actor_verified=True,
+                expected_source_fingerprint=source_fp,
+                expected_previous_decision_id=None,
+                full_result=full_payload,
+                attachments=[{**att_a, "id": "dec-a"}, {**att_b, "id": "dec-b"}],
+                idempotency_key="case-reordered-dec-1",
+            )
+            dec_replay = database.adjudicate_issue_label(
+                baseline_scope="scope",
+                issue_id="cn1",
+                expected_output="误触发",
+                rationale="裁决两张图",
+                actor="admin",
+                actor_source="sso",
+                actor_verified=True,
+                expected_source_fingerprint=source_fp,
+                expected_previous_decision_id=None,
+                full_result=full_payload,
+                attachments=[{**att_b, "id": "dec-b2"}, {**att_a, "id": "dec-a2"}],
+                idempotency_key="case-reordered-dec-1",
+            )
+            self.assertEqual(dec_replay["decision"]["id"], dec1["decision"]["id"])
+            self.assertTrue(dec_replay.get("_idempotency_replayed"))
+
 
 if __name__ == "__main__":
     unittest.main()

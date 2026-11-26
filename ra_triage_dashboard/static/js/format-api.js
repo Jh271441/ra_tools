@@ -683,6 +683,72 @@ function apiResponseError(zh, en, properties = {}) {
   return Object.assign(new Error(uiText(zh, en)), { messages: { zh, en }, ...properties });
 }
 
+function parseRetryAfterSeconds(raw) {
+  if (!raw) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) {
+    const secs = Number(trimmed);
+    return Number.isFinite(secs) && secs >= 0 ? secs : null;
+  }
+  const ts = Date.parse(trimmed);
+  if (Number.isFinite(ts)) {
+    return Math.max(0, Math.ceil((ts - Date.now()) / 1000));
+  }
+  return null;
+}
+
+function requestHasIdempotencyKey(headers) {
+  if (!headers || typeof headers !== "object") return false;
+  return Object.entries(headers).some(
+    ([key, value]) => key.toLowerCase() === "idempotency-key" && String(value || "").trim().length > 0
+  );
+}
+
+function gatewayTransientMessages(status, retryAfterSeconds) {
+  if (status === 503) {
+    if (retryAfterSeconds && retryAfterSeconds > 0) {
+      return [
+        `系统正在维护或升级，当前未保存内容已保留，请约 ${retryAfterSeconds} 秒后重试。`,
+        `Service is under maintenance. Your unsaved draft is preserved; please retry in about ${retryAfterSeconds}s.`,
+      ];
+    }
+    return [
+      "系统正在维护或升级，当前未保存内容已保留，请稍后重试。",
+      "Service is under maintenance. Your unsaved draft is preserved; please retry shortly.",
+    ];
+  }
+  if (status === 502 || status === 504) {
+    return [
+      "服务正在切换或短暂不可用，当前未保存内容已保留，请稍后重试。",
+      "Service is switching or briefly unavailable. Your unsaved draft is preserved; please retry shortly.",
+    ];
+  }
+  return [
+    `请求暂时不可用 (${status})，当前未保存内容已保留，请稍后重试。`,
+    `Request temporarily unavailable (${status}). Your unsaved draft is preserved; please retry shortly.`,
+  ];
+}
+
+function sleepApiBackoff(delayMs, signal) {
+  if (delayMs <= 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason || Object.assign(new Error("Request cancelled"), { name: "AbortError" }));
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(signal?.reason || Object.assign(new Error("Request cancelled"), { name: "AbortError" }));
+    };
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /**
  * Execute one HTTP request.  ``api`` below adds a small single-flight layer
  * for concurrent, signal-less GETs; callers that own an AbortController keep
@@ -695,9 +761,15 @@ async function apiRequest(path, options = {}) {
   // Trail draft whose body contains a Comment).  They may be called from a
   // read-only session, but the server still owns the final write gate.
   const allowReadOnlyMutation = options.allowReadOnlyMutation === true;
+  const maxRetryAfterMs = Number.isFinite(Number(options.maxRetryAfterMs))
+    ? Math.max(0, Number(options.maxRetryAfterMs))
+    : 20000;
   const requestOptions = { ...options };
   delete requestOptions.allowReadOnlyMutation;
+  delete requestOptions.maxRetryAfterMs;
   const retryableGet = method === "GET";
+  const hasIdempotencyKey = isMutation && requestHasIdempotencyKey(options.headers);
+  const retryableRequest = retryableGet || hasIdempotencyKey;
   if (
     state.session?.read_only &&
     isMutation &&
@@ -711,7 +783,9 @@ async function apiRequest(path, options = {}) {
     );
   }
   let lastError = null;
-  for (let attempt = 0; attempt < (retryableGet ? API_GET_MAX_ATTEMPTS : 1); attempt += 1) {
+  let nextRetryDelayMs = 0;
+  let waitedRetryAfterMs = 0;
+  for (let attempt = 0; attempt < (retryableRequest ? API_GET_MAX_ATTEMPTS : 1); attempt += 1) {
     if (options.signal?.aborted) throw options.signal.reason || Object.assign(new Error("Request cancelled"), { name: "AbortError" });
     const initialReads = window.__RA_TRIAGE_INITIAL_READS__;
     const initialUrl = withBase(path);
@@ -738,6 +812,7 @@ async function apiRequest(path, options = {}) {
     let response;
     let initialBody;
     let payload = {};
+    nextRetryDelayMs = 250 * (attempt + 1);
     try {
       if (initialRead) {
         const result = await initialRead.result;
@@ -772,11 +847,11 @@ async function apiRequest(path, options = {}) {
       const timedOut = error?.name === "AbortError";
       const callerAborted = Boolean(options.signal?.aborted);
       if (callerAborted) throw error;
-      if (!retryableGet || callerAborted || error.code === "auth_required" || attempt >= API_GET_MAX_ATTEMPTS - 1) {
+      if (!retryableRequest || callerAborted || error.code === "auth_required" || attempt >= API_GET_MAX_ATTEMPTS - 1) {
         if (timedOut) throw apiResponseError("请求超时，请稍后重试。", "The request timed out. Please retry.",
-          { code: "timeout", ambiguous: isMutation });
-        if (error instanceof TypeError) throw apiResponseError("网络连接中断，请检查网络和登录状态。", "The connection was interrupted. Check your network and sign-in status.",
-          { code: "network", ambiguous: isMutation });
+          { code: "timeout", ambiguous: isMutation, transient: true });
+        if (error instanceof TypeError) throw apiResponseError("网络连接中断，未保存内容已保留，请检查网络后重试。", "The connection was interrupted. Your unsaved draft is preserved; please retry.",
+          { code: "network", ambiguous: isMutation, transient: true });
         throw error;
       }
     } finally {
@@ -786,23 +861,68 @@ async function apiRequest(path, options = {}) {
     }
     if (response) {
       if (response.ok) return payload;
-      const message = typeof payload?.detail === "string" ? payload.detail : uiText(`请求失败 (${response.status})`, `Request failed (${response.status})`);
-      const responseError = [401, 403].includes(response.status)
-        ? apiResponseError("登录状态或权限已变化，请重新登录后重试。", "Your session or permissions have changed. Sign in again and retry.",
-          { status: response.status, code: "auth_required", ambiguous: false })
-        : Object.assign(new Error(message), { status: response.status, code: "http", ambiguous: response.status >= 500 });
+      const headerRetryAfter = parseRetryAfterSeconds(response.headers?.get("retry-after"));
+      const payloadRetryAfter = typeof payload?.retry_after === "number" && Number.isFinite(payload.retry_after)
+        ? Math.max(0, Math.ceil(payload.retry_after))
+        : null;
+      const retryAfterSeconds = headerRetryAfter !== null ? headerRetryAfter : payloadRetryAfter;
+      const transient = API_GET_RETRYABLE_STATUSES.has(response.status);
+      let responseError;
+      if ([401, 403].includes(response.status)) {
+        responseError = apiResponseError(
+          "登录状态或权限已变化，请重新登录后重试。",
+          "Your session or permissions have changed. Sign in again and retry.",
+          { status: response.status, code: "auth_required", ambiguous: false, transient: false }
+        );
+      } else if (typeof payload?.detail === "string" && payload.detail.trim()) {
+        let detailMessage = payload.detail.trim();
+        if (transient && retryAfterSeconds && retryAfterSeconds > 0 && !detailMessage.includes(String(retryAfterSeconds))) {
+          detailMessage = `${detailMessage} (${uiText(`请约 ${retryAfterSeconds} 秒后重试`, `retry in ~${retryAfterSeconds}s`)})`;
+        }
+        responseError = Object.assign(new Error(detailMessage), {
+          status: response.status,
+          code: "http",
+          ambiguous: response.status >= 500,
+          transient,
+          retryAfterSeconds,
+        });
+      } else if (transient) {
+        const [zh, en] = gatewayTransientMessages(response.status, retryAfterSeconds);
+        responseError = apiResponseError(zh, en, {
+          status: response.status,
+          code: "http",
+          ambiguous: response.status >= 500,
+          transient: true,
+          retryAfterSeconds,
+        });
+      } else {
+        responseError = Object.assign(
+          new Error(uiText(`请求失败 (${response.status})`, `Request failed (${response.status})`)),
+          { status: response.status, code: "http", ambiguous: response.status >= 500, transient: false, retryAfterSeconds }
+        );
+      }
       if (
-        !retryableGet ||
-        !API_GET_RETRYABLE_STATUSES.has(response.status) ||
+        !retryableRequest ||
+        !transient ||
         attempt >= API_GET_MAX_ATTEMPTS - 1
       ) {
         throw responseError;
       }
+      if (retryAfterSeconds !== null) {
+        const requestedWaitMs = Math.max(0, retryAfterSeconds * 1000);
+        // Never truncate an explicit Retry-After to 5s and exhaust retries
+        // before the server maintenance window finishes.
+        if (requestedWaitMs > maxRetryAfterMs || waitedRetryAfterMs + requestedWaitMs > maxRetryAfterMs) {
+          throw responseError;
+        }
+        waitedRetryAfterMs += requestedWaitMs;
+        nextRetryDelayMs = requestedWaitMs;
+      }
       lastError = responseError;
     }
-    await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+    await sleepApiBackoff(nextRetryDelayMs, options.signal);
   }
-  throw lastError || new Error("请求失败，请稍后重试。");
+  throw lastError || new Error(uiText("请求失败，请稍后重试。", "Request failed. Please retry."));
 }
 
 function api(path, options = {}) {

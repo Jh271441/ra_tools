@@ -32,8 +32,22 @@ async def run_standalone_worker() -> None:
     )
 
     settings.ensure_directories()
-    database.init()
+    database.init(recover_interrupted_jobs=False)
+    batch_prediction_runner.set_lease_gating(True, held=False)
     lease_manager = WorkerLeaseManager(database, owner_id=make_worker_owner_id("standalone"))
+
+    async def _batch_prediction_leader() -> None:
+        await asyncio.to_thread(
+            database.recover_interrupted_jobs,
+            exclude_job_ids=batch_prediction_runner.active_job_ids(),
+        )
+        batch_prediction_runner.set_lease_held(True)
+        try:
+            while True:
+                await asyncio.to_thread(batch_prediction_runner.resume_queued_work)
+                await asyncio.sleep(5.0)
+        finally:
+            await asyncio.to_thread(batch_prediction_runner.revoke_lease)
 
     tasks: list[asyncio.Task[None]] = [
         asyncio.create_task(
@@ -43,7 +57,17 @@ async def run_standalone_worker() -> None:
                 lambda: run_human_publisher(database, settings),
             ),
             name="human-label-publication",
-        )
+        ),
+        asyncio.create_task(
+            run_with_lease(
+                lease_manager,
+                "batch-prediction-runner",
+                _batch_prediction_leader,
+                ttl_seconds=60.0,
+                retry_seconds=5.0,
+            ),
+            name="batch-prediction-runner",
+        ),
     ]
     if settings.trail_sync_on_start:
         tasks.append(
@@ -81,9 +105,6 @@ async def run_standalone_worker() -> None:
                 name="review-dchat-notifications",
             )
         )
-
-    if await asyncio.to_thread(lease_manager.try_acquire_or_renew, "batch-prediction-runner", ttl_seconds=120.0):
-        batch_prediction_runner.resume_queued_predictions()
 
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()

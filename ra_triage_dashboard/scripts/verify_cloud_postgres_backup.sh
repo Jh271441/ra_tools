@@ -62,8 +62,15 @@ source_counts="$(mktemp)"
 restored_counts="$(mktemp)"
 cleanup_files() { rm -f -- "$source_counts" "$restored_counts"; }
 trap 'cleanup_files; cleanup' EXIT
-table_counts "$DATABASE_NAME" > "$source_counts"
+snapshot_counts="${BACKUP_FILE}.counts"
+if [[ -f "$snapshot_counts" ]]; then
+  cp -- "$snapshot_counts" "$source_counts"
+  verify_source_label="snapshot table counts"
+else
+  table_counts "$DATABASE_NAME" > "$source_counts"
+  verify_source_label="live table counts"
+fi
 table_counts "$RESTORE_DATABASE" > "$restored_counts"
 diff -u "$source_counts" "$restored_counts"
 
-echo "Backup restore verified against live table counts: $BACKUP_FILE"
+echo "Backup restore verified against ${verify_source_label}: $BACKUP_FILE"

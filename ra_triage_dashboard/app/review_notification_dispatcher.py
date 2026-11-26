@@ -29,28 +29,58 @@ class ReviewNotificationDispatcher:
         self.settings = settings
         self.database = database
         self.baseline_ids_by_scope = dict(baseline_ids_by_scope or {})
-        self._wake = asyncio.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._wake: asyncio.Event | None = None
+        self._wake_pending = False
 
     def wake(self) -> None:
-        self._wake.set()
+        self._wake_pending = True
+        wake = self._wake
+        loop = self._loop
+        if wake is None:
+            return
+        if loop is not None and not loop.is_closed():
+            try:
+                if asyncio.get_running_loop() is loop:
+                    wake.set()
+                    return
+            except RuntimeError:
+                pass
+            try:
+                loop.call_soon_threadsafe(wake.set)
+                return
+            except RuntimeError:
+                return
+        wake.set()
 
     async def run(self) -> None:
-        await asyncio.to_thread(self.database.recover_review_notifications)
-        await asyncio.to_thread(self.database.recover_comment_notifications)
-        await asyncio.to_thread(self.database.recover_intent_comment_notifications)
-        while True:
-            handled = await asyncio.to_thread(self._dispatch_one)
-            if handled:
-                # DChat documents a common BotUser limit of 5 QPS.
-                await asyncio.sleep(0.21)
-                continue
-            self._wake.clear()
-            try:
-                await asyncio.wait_for(
-                    self._wake.wait(), timeout=self.settings.dchat_poll_seconds
-                )
-            except asyncio.TimeoutError:
-                pass
+        self._loop = asyncio.get_running_loop()
+        self._wake = asyncio.Event()
+        if self._wake_pending:
+            self._wake.set()
+        try:
+            await asyncio.to_thread(self.database.recover_review_notifications)
+            await asyncio.to_thread(self.database.recover_comment_notifications)
+            await asyncio.to_thread(self.database.recover_intent_comment_notifications)
+            while True:
+                self._wake_pending = False
+                self._wake.clear()
+                handled = await asyncio.to_thread(self._dispatch_one)
+                if handled:
+                    # DChat documents a common BotUser limit of 5 QPS.
+                    await asyncio.sleep(0.21)
+                    continue
+                if self._wake_pending:
+                    continue
+                try:
+                    await asyncio.wait_for(
+                        self._wake.wait(), timeout=self.settings.dchat_poll_seconds
+                    )
+                except asyncio.TimeoutError:
+                    pass
+        finally:
+            self._wake = None
+            self._loop = None
 
     def _dispatch_one(self) -> bool:
         now = datetime.now(timezone.utc)

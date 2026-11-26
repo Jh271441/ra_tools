@@ -3,8 +3,24 @@ from __future__ import annotations
 from .shared import _json, _json_load, utc_now
 
 
-def initialize_recovery(self, conn) -> None:
-    self.import_legacy_trail_history(connection=conn)
+def initialize_recovery(
+    self,
+    conn,
+    *,
+    exclude_job_ids: set[str] | None = None,
+    include_trail_history: bool = True,
+) -> None:
+    if include_trail_history:
+        self.import_legacy_trail_history(connection=conn)
+    excluded = sorted(
+        {str(job_id).strip() for job_id in (exclude_job_ids or ()) if str(job_id).strip()}
+    )
+    excluded_jobs_clause = ""
+    excluded_items_clause = ""
+    if excluded:
+        placeholders = ", ".join("?" for _ in excluded)
+        excluded_jobs_clause = f" AND id NOT IN ({placeholders})"
+        excluded_items_clause = f" AND bpj.id NOT IN ({placeholders})"
     interrupted_at = utc_now()
     # A hard restart can happen after an immutable manual-batch Run
     # commits but before the parent job/item linkage is finalized.
@@ -25,7 +41,7 @@ def initialize_recovery(self, conn) -> None:
         batch_job_id = str(
             metadata.get("batch_prediction_job_id") or ""
         ).strip()
-        if not batch_job_id:
+        if not batch_job_id or batch_job_id in excluded:
             continue
         experiment = metadata.get("experiment")
         if not isinstance(experiment, dict):
@@ -56,13 +72,14 @@ def initialize_recovery(self, conn) -> None:
             ),
         )
     recoverable = conn.execute(
-        """
+        f"""
                 SELECT id, model_run_id
                 FROM batch_prediction_jobs
                 WHERE status = 'running'
                   AND model_run_id IS NOT NULL
-                  AND TRIM(model_run_id) != ''
-                """
+                  AND TRIM(model_run_id) != ''{excluded_jobs_clause}
+                """,
+        tuple(excluded),
     ).fetchall()
     for job_row in recoverable:
         predictions = conn.execute(
@@ -102,7 +119,7 @@ def initialize_recovery(self, conn) -> None:
     # children first lets the parent query still identify queued/running
     # jobs without introducing a temporary migration marker.
     conn.execute(
-        """
+        f"""
                 UPDATE batch_prediction_items
                 SET status = 'failed',
                     finished_at = ?,
@@ -116,13 +133,13 @@ def initialize_recovery(self, conn) -> None:
                       SELECT 1
                       FROM batch_prediction_jobs bpj
                       WHERE bpj.id = batch_prediction_items.job_id
-                        AND bpj.status = 'running'
+                        AND bpj.status = 'running'{excluded_items_clause}
                   )
                 """,
-        (interrupted_at,),
+        (interrupted_at, *excluded),
     )
     conn.execute(
-        """
+        f"""
                 UPDATE batch_prediction_jobs
                 SET status = CASE
                         WHEN EXISTS (
@@ -174,12 +191,12 @@ def initialize_recovery(self, conn) -> None:
                             '服务重启前 Batch 预测未完成；请重新创建任务。'
                         ELSE error_text
                     END
-                WHERE status = 'running'
+                WHERE status = 'running'{excluded_jobs_clause}
                 """,
-        (interrupted_at,),
+        (interrupted_at, *excluded),
     )
     conn.execute(
-        """
+        f"""
                 UPDATE batch_prediction_jobs
                 SET publish_status = CASE
                         WHEN TRIM(autotriage_batch_id) != '' THEN 'partial'
@@ -190,6 +207,7 @@ def initialize_recovery(self, conn) -> None:
                             '服务重启前 AutoTriage 推送未完成；为避免重复建批，不会自动重试。'
                         ELSE error_text
                     END
-                WHERE publish_status = 'running'
-                """
+                WHERE publish_status = 'running'{excluded_jobs_clause}
+                """,
+        tuple(excluded),
     )

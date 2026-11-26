@@ -211,34 +211,55 @@ async def run_with_lease(
 
         logger.info("worker_lease_acquired lease=%s owner=%s", lease_key, lease_manager.owner_id)
         inner_task = asyncio.create_task(coro_factory(), name=f"leased:{lease_key}")
+        should_release = False
         try:
             while not inner_task.done():
                 await asyncio.sleep(renew_interval)
                 if inner_task.done():
                     break
-                still_held = await asyncio.to_thread(
-                    lease_manager.try_acquire_or_renew,
-                    lease_key,
-                    ttl_seconds=ttl_seconds,
-                )
+                still_held = False
+                try:
+                    still_held = await asyncio.to_thread(
+                        lease_manager.try_acquire_or_renew,
+                        lease_key,
+                        ttl_seconds=ttl_seconds,
+                    )
+                except Exception:
+                    logger.exception(
+                        "worker_lease_renew_error lease=%s owner=%s",
+                        lease_key,
+                        lease_manager.owner_id,
+                    )
+                    still_held = False
                 if not still_held:
                     logger.warning("worker_lease_lost lease=%s owner=%s", lease_key, lease_manager.owner_id)
                     inner_task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await inner_task
+                    should_release = True
                     break
             if inner_task.done() and not inner_task.cancelled():
                 exc = inner_task.exception()
                 if exc is not None:
                     logger.error("worker_task_failed lease=%s error=%r", lease_key, exc)
-                    await asyncio.sleep(retry_seconds)
+                    should_release = True
                 else:
                     # One-shot startup tasks (like trail-sync-startup) exit cleanly.
+                    should_release = True
                     return
-        except asyncio.CancelledError:
-            inner_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await inner_task
-            with contextlib.suppress(Exception):
-                await asyncio.to_thread(lease_manager.release, lease_key)
+        except BaseException:
+            if not inner_task.done():
+                inner_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await inner_task
+            should_release = True
             raise
+        finally:
+            if not inner_task.done():
+                inner_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await inner_task
+            if should_release:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(lease_manager.release, lease_key)
+        await asyncio.sleep(retry_seconds)

@@ -5,7 +5,7 @@ import uuid
 from typing import Any, Iterable, Sequence
 
 from ..sanitization import redact_sensitive_fields
-from .shared import BATCH_JOB_STATUSES, _json, _json_load, utc_now
+from .shared import BATCH_JOB_STATUSES, BATCH_PUBLISH_STATUSES, _json, _json_load, utc_now
 
 
 class DatabaseBatchMixin:
@@ -419,6 +419,138 @@ class DatabaseBatchMixin:
                 updated += 1
         return updated
 
+    def enqueue_batch_prediction_publish(
+        self,
+        job_id: str,
+        *,
+        requested_by: str,
+        identity_source: str,
+    ) -> dict[str, Any] | None:
+        """Atomically persist a confirmed AutoTriage publish request into the DB queue."""
+
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            select_sql = "SELECT * FROM batch_prediction_jobs WHERE id = ?"
+            if self.backend == "postgresql":
+                select_sql += " FOR UPDATE"
+            row = conn.execute(select_sql, (job_id,)).fetchone()
+            if row is None:
+                return None
+            if (
+                str(row["status"] or "") not in {"succeeded", "partial"}
+                or str(row["publish_status"] or "") not in {"not_requested", "failed"}
+                or bool(row["publish_queued"])
+                or str(row["autotriage_batch_id"] or "").strip()
+            ):
+                return None
+            summary = _json_load(row["summary_json"], {})
+            if not isinstance(summary, dict):
+                summary = {}
+            summary["autotriage_publish_request"] = {
+                "requested_by": str(requested_by or "").strip(),
+                "identity_source": str(identity_source or "").strip(),
+                "verified": True,
+                "queued": True,
+                "queued_at": now,
+            }
+            cursor = conn.execute(
+                """
+                UPDATE batch_prediction_jobs
+                SET publish_queued = ?,
+                    summary_json = ?
+                WHERE id = ?
+                  AND publish_queued = ?
+                  AND status IN ('succeeded', 'partial')
+                  AND publish_status IN ('not_requested', 'failed')
+                  AND TRIM(COALESCE(autotriage_batch_id, '')) = ''
+                """,
+                (True, _json(summary), job_id, False),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.get_batch_prediction_job(job_id)
+
+    def claim_queued_batch_prediction_publish(
+        self,
+        job_id: str,
+    ) -> dict[str, Any] | None:
+        """Atomically claim one queued AutoTriage publish request for execution.
+
+        Every execution entrypoint (API wake-up or background leased worker)
+        must go through this conditional update so a single request can never
+        launch two external AutoTriage batch creations.
+        """
+
+        with self._write_lock, self.connect() as conn:
+            select_sql = "SELECT * FROM batch_prediction_jobs WHERE id = ?"
+            if self.backend == "postgresql":
+                select_sql += " FOR UPDATE"
+            row = conn.execute(select_sql, (job_id,)).fetchone()
+            if row is None:
+                return None
+            if (
+                not bool(row["publish_queued"])
+                or str(row["status"] or "") not in {"succeeded", "partial"}
+                or str(row["publish_status"] or "") not in {"not_requested", "failed"}
+                or str(row["autotriage_batch_id"] or "").strip()
+            ):
+                return None
+            summary = _json_load(row["summary_json"], {})
+            if not isinstance(summary, dict):
+                return None
+            request_meta = summary.get("autotriage_publish_request")
+            if (
+                not isinstance(request_meta, dict)
+                or request_meta.get("verified") is not True
+                or request_meta.get("queued") is not True
+            ):
+                return None
+            updated_meta = dict(request_meta)
+            updated_meta["queued"] = False
+            updated_meta["claimed_at"] = utc_now()
+            summary["autotriage_publish_request"] = updated_meta
+            cursor = conn.execute(
+                """
+                UPDATE batch_prediction_jobs
+                SET publish_status = 'running',
+                    publish_queued = ?,
+                    error_text = '',
+                    summary_json = ?
+                WHERE id = ?
+                  AND publish_queued = ?
+                  AND status IN ('succeeded', 'partial')
+                  AND publish_status IN ('not_requested', 'failed')
+                  AND TRIM(COALESCE(autotriage_batch_id, '')) = ''
+                """,
+                (False, _json(summary), job_id, True),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.get_batch_prediction_job(job_id)
+
+    def claim_queued_batch_prediction_job(
+        self,
+        job_id: str,
+    ) -> dict[str, Any] | None:
+        """Atomically transition one queued prediction job to running."""
+
+        now = utc_now()
+        with self._write_lock, self.connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE batch_prediction_jobs
+                SET status = 'running',
+                    started_at = ?,
+                    error_text = ''
+                WHERE id = ?
+                  AND status = 'queued'
+                """,
+                (now, job_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.get_batch_prediction_job(job_id)
+
     def next_queued_batch_prediction_job(self) -> dict[str, Any] | None:
         """Return the oldest durable prediction job waiting for the runner."""
 
@@ -432,6 +564,26 @@ class DatabaseBatchMixin:
                 ORDER BY created_at ASC, {queue_order} ASC
                 LIMIT 1
                 """
+            ).fetchone()
+        return self.get_batch_prediction_job(str(row["id"])) if row else None
+
+    def next_queued_batch_publish_job(self) -> dict[str, Any] | None:
+        """Return the oldest queued AutoTriage publish job using the partial queue index."""
+
+        queue_order = "queue_order" if self.backend == "postgresql" else "rowid"
+        with self.connect() as conn:
+            row = conn.execute(
+                f"""
+                SELECT id
+                FROM batch_prediction_jobs
+                WHERE publish_queued = ?
+                  AND status IN ('succeeded', 'partial')
+                  AND publish_status IN ('not_requested', 'failed')
+                  AND TRIM(COALESCE(autotriage_batch_id, '')) = ''
+                ORDER BY created_at ASC, {queue_order} ASC
+                LIMIT 1
+                """,
+                (True,),
             ).fetchone()
         return self.get_batch_prediction_job(str(row["id"])) if row else None
 
@@ -678,6 +830,9 @@ class DatabaseBatchMixin:
             "config_sha256": row["config_sha256"],
             "model_run_id": row["model_run_id"] or "",
             "publish_status": row["publish_status"],
+            "publish_queued": bool(row["publish_queued"])
+            if "publish_queued" in row.keys()
+            else False,
             "autotriage_batch_id": row["autotriage_batch_id"],
             "autotriage_writer": row["autotriage_writer"],
             "summary": redact_sensitive_fields(_json_load(row["summary_json"], {})),

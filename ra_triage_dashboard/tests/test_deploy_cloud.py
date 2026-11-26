@@ -568,4 +568,494 @@ COMMIT;
         env={"a":"/repo/app/file","b":"/repo-other/file","c":"/data/media"}
         self.assertEqual(d.rebase_env(env,"/repo","/gray"),{"a":"/gray/app/file","b":"/repo-other/file","c":"/data/media"})
 
+    def test_065_labeling_idempotency_migration_requires_exact_review_and_additive_mode(self):
+        path = "ra_triage_dashboard/migrations/postgres/065_labeling_idempotency_keys.sql"
+        content = (Path(__file__).parents[2] / path).read_text()
+        d.validate_additive_migration_sql(path, content)
+        for changed_path, changed_content in (
+            (path.replace("065_", "066_"), content),
+            (path, content + "\n-- tampered"),
+            (path, content.replace("lower(created_by)", "created_by")),
+        ):
+            with self.assertRaises(d.DeployError):
+                d.validate_additive_migration_sql(changed_path, changed_content)
+
+    def test_gray_port_rejects_bluegreen_slot_ports(self):
+        for reserved in (8785, 18791, 18792):
+            with patch.dict(d.os.environ, {"RA_DASHBOARD_DEPLOY_GRAY_PORT": str(reserved)}):
+                with self.assertRaises(d.DeployError):
+                    d.configured_gray_port()
+        with patch.dict(d.os.environ, {}, clear=False):
+            d.os.environ.pop("RA_DASHBOARD_DEPLOY_GRAY_PORT", None)
+            self.assertEqual(d.configured_gray_port(), 19786)
+
+    def test_render_nginx_conf_enforces_proxy_security_headers_and_no_next_upstream(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = d.render_nginx_conf(Path(temp) / "nginx", public_port=8785)
+        self.assertIn("listen 0.0.0.0:8785;", conf)
+        self.assertIn("proxy_set_header X-Real-IP $remote_addr;", conf)
+        self.assertIn("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;", conf)
+        self.assertIn("proxy_pass_request_headers on;", conf)
+        self.assertIn("proxy_next_upstream off;", conf)
+        self.assertIn("include ", conf)
+        self.assertIn("maintenance_writes.conf;", conf)
+        self.assertIn("active_upstream.conf;", conf)
+
+    def test_render_maintenance_writes_conf_blocks_only_mutations_with_503_and_retry_after(self):
+        disabled = d.render_maintenance_writes_conf(False)
+        self.assertNotIn("return 503", disabled)
+        enabled = d.render_maintenance_writes_conf(True, retry_after=20)
+        self.assertIn("return 503", enabled)
+        self.assertIn("add_header Retry-After 20 always;", enabled)
+        self.assertIn("GET|HEAD|OPTIONS", enabled)
+        self.assertIn('"maintenance":true', enabled)
+        batch_only = d.render_maintenance_writes_conf("batch", retry_after=15)
+        self.assertIn("api/prediction-batches", batch_only)
+        self.assertIn('"scope":"batch"', batch_only)
+        self.assertIn("GET|HEAD|OPTIONS", batch_only)
+        self.assertIn("return 503", batch_only)
+
+    def test_switch_nginx_upstream_restores_previous_config_on_validation_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp)
+            d.ensure_nginx_layout(state, 18791)
+            upstream_path = d.nginx_dir(state) / "active_upstream.conf"
+            before = upstream_path.read_text()
+            with patch.object(d, "reload_nginx", side_effect=d.DeployError("bad config")):
+                with self.assertRaises(d.DeployError):
+                    d.switch_nginx_upstream(state, 18792)
+            self.assertEqual(upstream_path.read_text(), before)
+
+    def test_validate_live_candidate_accepts_bluegreen_success_receipt(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(d, "STATE", Path(temp)), patch.object(d, "validate_prepared_worktree") as validate:
+            folder = Path(temp) / "releases" / "20261126T100000Z-aaaaaaaaaaaa"
+            app = folder / "candidate" / "ra_triage_dashboard"
+            app.mkdir(parents=True)
+            d.save(folder / "result.json", {
+                "status": "success",
+                "deploy_mode": "bluegreen",
+                "target": "a" * 40,
+                "candidate": str(app.parent),
+            })
+            d.validate_live_candidate(app, "a" * 40)
+            validate.assert_called_once_with(app.parent, "a" * 40)
+
+    def test_cleanup_preserves_active_bluegreen_slot_release(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp)
+            folders = []
+            for i in range(4):
+                rid = f"20261126T10000{i}Z-aaaaaaaaaaaa"
+                folder = state / "releases" / rid
+                folder.mkdir(parents=True)
+                for name in ("candidate", "rollback", "gray-data"):
+                    (folder / name).mkdir()
+                d.save(folder / "result.json", {
+                    "status": "success",
+                    "deploy_mode": "bluegreen",
+                    "candidate": str(folder / "candidate"),
+                    "rollback": str(folder / "rollback"),
+                })
+                folders.append(folder)
+            d.save(state / "active_slot.json", {
+                "slot": "blue",
+                "port": 18791,
+                "session": "ra_triage_dashboard_blue",
+                "release_id": folders[0].name,
+            })
+            removed = []
+            def fake_run(*args, **kwargs):
+                p = Path(args[-1])
+                removed.append(p)
+                p.rmdir()
+            with patch.object(d, "git", return_value=""), patch.object(d, "in_use", return_value=False), patch.object(d, "run", side_effect=fake_run):
+                d.cleanup(state, folders[3])
+            self.assertTrue((folders[0] / "candidate").exists())
+            self.assertIn(folders[1] / "candidate", removed)
+
+    def simulate_bluegreen_release(
+        self,
+        *,
+        fail_candidate_smoke=False,
+        fail_public_smoke=False,
+        fail_post_stop_merge=False,
+        schema_migration=False,
+        already_applied_migration=False,
+        old_supports_deferred=True,
+        running_batch_jobs=0,
+    ):
+        with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
+            base = Path(temp)
+            repo = base / "repo"
+            repo.mkdir()
+            state = base / "state"
+            python = base / "python"
+            python.touch()
+            env = {"DASHBOARD_DATABASE_URL_FILE": "/db", "DASHBOARD_DATA_DIR": str(base / "data")}
+            target = "a" * 40
+            old = "b" * 40
+            d.ensure_nginx_layout(state, 18791)
+            d.save(state / "active_slot.json", {
+                "slot": "blue",
+                "port": 18791,
+                "session": "ra_triage_dashboard_blue",
+                "pid": 11,
+                "sha": old,
+                "release_id": "",
+            })
+            stack.enter_context(patch.object(d, "REPO", repo))
+            stack.enter_context(patch.object(d, "STATE", state))
+            stack.enter_context(patch.object(d, "PYTHON", python))
+            stack.enter_context(patch.object(d.sys, "platform", "linux"))
+            stack.enter_context(patch.object(d, "nginx_master_pid", return_value=999))
+            stack.enter_context(patch.object(d, "supports_deferred_batch_recovery", return_value=old_supports_deferred))
+            events = []
+            def fake_running_batch(check_env, *, app_dir=None):
+                events.append(("check_running_batch", running_batch_jobs))
+                return running_batch_jobs
+            stack.enter_context(patch.object(d, "read_running_batch_jobs", side_effect=fake_running_batch))
+            def git(*args, **kwargs):
+                if args[0] == "branch":
+                    return "master"
+                if args[0] == "rev-parse" and args[1].startswith("origin/"):
+                    return target
+                if args[0] == "rev-parse" and args[1] == "HEAD":
+                    if "cwd" not in kwargs:
+                        return old
+                    return old if Path(kwargs["cwd"]).name == "rollback" else target
+                return ""
+            stack.enter_context(patch.object(d, "git", side_effect=git))
+            stack.enter_context(patch.object(d, "read_live", return_value=(11, env)))
+            health = {"ok": True, "build_commit": old, "storage": "postgresql", "trail_rd_write_enabled": False}
+            applied_versions = [f"{i:03d}_m.sql" for i in range(1, 65)]
+            if already_applied_migration:
+                applied_versions.append("065_labeling_idempotency_keys.sql")
+            def get_json(port, route):
+                if route == "api/status":
+                    return {
+                        "database": {
+                            "ok": True,
+                            "persistent_data": True,
+                            "migration_count": len(applied_versions),
+                        },
+                        "overall": {"status": "healthy"},
+                    }
+                return health
+            stack.enter_context(patch.object(d, "get_json", side_effect=get_json))
+            stack.enter_context(patch.object(d, "read_applied_postgres_migrations", return_value=list(applied_versions)))
+            stack.enter_context(patch.object(d.socket, "socket"))
+            if schema_migration:
+                stack.enter_context(patch.object(d, "migration_changes", return_value=["ra_triage_dashboard/migrations/postgres/038_intent.sql"]))
+                stack.enter_context(patch.object(d, "apply_additive_migrations", return_value=("/backup.dump", 65)))
+            elif already_applied_migration:
+                stack.enter_context(patch.object(
+                    d,
+                    "migration_changes",
+                    return_value=["ra_triage_dashboard/migrations/postgres/065_labeling_idempotency_keys.sql"],
+                ))
+            def fake_run(*args, **kwargs):
+                if args[:4] == ("git", "worktree", "add", "--detach"):
+                    Path(args[4]).mkdir(parents=True)
+                elif args[:2] == ("git", "merge"):
+                    events.append(("git_merge", args[-1]))
+                    if fail_post_stop_merge:
+                        raise subprocess.CalledProcessError(1, ["git", "merge", "--ff-only", target])
+                return MagicMock()
+            stack.enter_context(patch.object(d, "run", side_effect=fake_run))
+            stack.enter_context(patch.object(d.subprocess, "Popen"))
+            stack.enter_context(patch.object(d.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)))
+            stack.enter_context(patch.object(d, "stop_child"))
+            def fake_start(record_dir, app, start_env, sha, name, **kw):
+                events.append(("start", kw.get("session"), kw.get("port"), kw.get("enable_lease_gating"), Path(app).parent.name))
+            stack.enter_context(patch.object(d, "start_production", side_effect=fake_start))
+            stack.enter_context(patch.object(d, "git_pane_pid", side_effect=lambda session=d.SESSION: 22 if session == "ra_triage_dashboard_green" else 11))
+            def fake_stop(pid, *, on_signal=None, session=d.SESSION):
+                events.append(("stop", session, pid))
+                if on_signal is not None:
+                    on_signal()
+            stack.enter_context(patch.object(d, "stop_production", side_effect=fake_stop))
+            def fake_workers(st=None):
+                events.append(("snapshot_nginx_workers",))
+                return [777]
+            stack.enter_context(patch.object(d, "nginx_worker_pids", side_effect=fake_workers))
+            def fake_drain(pids, **kw):
+                events.append(("drain_nginx_workers", list(pids)))
+            stack.enter_context(patch.object(d, "wait_nginx_workers_drained", side_effect=fake_drain))
+            def fake_switch(st, port, **kw):
+                events.append(("switch_nginx", port))
+            stack.enter_context(patch.object(d, "switch_nginx_upstream", side_effect=fake_switch))
+            def fake_maint(st, enabled, **kw):
+                events.append(("maintenance_writes", enabled))
+            stack.enter_context(patch.object(d, "set_nginx_maintenance_writes", side_effect=fake_maint))
+            stack.enter_context(patch.object(d, "cleanup", return_value=[]))
+            def fake_smoke(port, sha, storage):
+                events.append(("smoke", port, sha, storage))
+                if fail_candidate_smoke and port == 18792:
+                    raise d.DeployError("candidate slot failed")
+                if fail_public_smoke and port == 8785 and sha == target:
+                    raise d.DeployError("public entrance mismatch")
+                return dict(health, build_commit=sha, storage=storage)
+            stack.enter_context(patch.object(d, "smoke", side_effect=fake_smoke))
+            opts = {}
+            if schema_migration:
+                opts["allow_schema_migrations"] = True
+            elif already_applied_migration:
+                opts["allow_additive_migrations"] = True
+            if fail_candidate_smoke or fail_public_smoke or fail_post_stop_merge or (not old_supports_deferred and running_batch_jobs > 0):
+                with self.assertRaises((d.DeployError, subprocess.CalledProcessError)):
+                    d.deploy(target, **opts)
+            else:
+                d.deploy(target, **opts)
+            record_path = next((state / "releases").glob("*/result.json"))
+            record = json.loads(record_path.read_text())
+            slot_after = json.loads((state / "active_slot.json").read_text())
+            return events, record, slot_after, record_path.parent
+
+    def test_bluegreen_promote_starts_standby_slot_switches_nginx_then_drains_old_slot(self):
+        events, record, slot_after, _ = self.simulate_bluegreen_release()
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(record["deploy_mode"], "bluegreen")
+        self.assertEqual(record["slot"], "green")
+        self.assertEqual(record["port"], 18792)
+        self.assertEqual(slot_after["slot"], "green")
+        self.assertEqual(slot_after["port"], 18792)
+        # Critical zero-downtime ordering:
+        # start green -> smoke green -> snapshot old nginx workers -> switch nginx ->
+        # smoke 8785 -> drain pre-reload nginx workers -> stop old blue -> git merge
+        order = [
+            events.index(("start", "ra_triage_dashboard_green", 18792, True, "candidate")),
+            events.index(("smoke", 18792, "a" * 40, "postgresql")),
+            events.index(("snapshot_nginx_workers",)),
+            events.index(("switch_nginx", 18792)),
+            events.index(("smoke", 8785, "a" * 40, "postgresql")),
+            events.index(("drain_nginx_workers", [777])),
+            events.index(("stop", "ra_triage_dashboard_blue", 11)),
+            events.index(("git_merge", "a" * 40)),
+        ]
+        self.assertEqual(order, sorted(order))
+
+    def test_bluegreen_candidate_smoke_failure_leaves_nginx_and_old_slot_untouched(self):
+        events, record, slot_after, _ = self.simulate_bluegreen_release(fail_candidate_smoke=True)
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["rollback_status"], "unchanged")
+        self.assertEqual(slot_after["slot"], "blue")
+        self.assertNotIn(("switch_nginx", 18792), events)
+        self.assertNotIn(("stop", "ra_triage_dashboard_blue", 11), events)
+        self.assertIn(("stop", "ra_triage_dashboard_green", 22), events)
+
+    def test_bluegreen_post_switch_entrance_failure_verifies_old_slot_drains_workers_then_stops_green(self):
+        events, record, slot_after, _ = self.simulate_bluegreen_release(fail_public_smoke=True)
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["rollback_status"], "healthy")
+        self.assertEqual(slot_after["slot"], "blue")
+        self.assertIn(("switch_nginx", 18792), events)
+        self.assertIn(("smoke", 18791, "b" * 40, "postgresql"), events)
+        rollback_order = [
+            events.index(("smoke", 18791, "b" * 40, "postgresql")),
+            events.index(("switch_nginx", 18791)),
+            events.index(("smoke", 8785, "b" * 40, "postgresql")),
+            events.index(("drain_nginx_workers", [777])),
+            events.index(("stop", "ra_triage_dashboard_green", 22)),
+        ]
+        self.assertEqual(rollback_order, sorted(rollback_order))
+        self.assertGreaterEqual(events.count(("snapshot_nginx_workers",)), 2)
+        self.assertNotIn(("stop", "ra_triage_dashboard_blue", 11), events)
+
+    def test_bluegreen_refuses_promotion_when_old_slot_lacks_deferred_batch_recovery_and_job_running(self):
+        events, record, slot_after, _ = self.simulate_bluegreen_release(
+            old_supports_deferred=False,
+            running_batch_jobs=1,
+        )
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(slot_after["slot"], "blue")
+        # Must freeze Batch writes & drain workers BEFORE checking running jobs,
+        # and lift the freeze cleanly on abort.
+        order = [
+            events.index(("maintenance_writes", "batch")),
+            events.index(("drain_nginx_workers", [777])),
+            events.index(("check_running_batch", 1)),
+            events.index(("maintenance_writes", False)),
+        ]
+        self.assertEqual(order, sorted(order))
+        self.assertFalse(any(e[0] == "start" for e in events))
+        self.assertFalse(any(e[0] == "switch_nginx" for e in events))
+
+    def test_bluegreen_old_slot_promotion_holds_batch_freeze_until_old_slot_stops(self):
+        events, record, slot_after, _ = self.simulate_bluegreen_release(
+            old_supports_deferred=False,
+            running_batch_jobs=0,
+        )
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(slot_after["slot"], "green")
+        order = [
+            events.index(("maintenance_writes", "batch")),
+            events.index(("drain_nginx_workers", [777])),
+            events.index(("check_running_batch", 0)),
+            events.index(("start", "ra_triage_dashboard_green", 18792, True, "candidate")),
+            events.index(("switch_nginx", 18792)),
+            events.index(("stop", "ra_triage_dashboard_blue", 11)),
+            events.index(("maintenance_writes", False)),
+        ]
+        self.assertEqual(order, sorted(order))
+
+    def test_bluegreen_post_stop_merge_failure_keeps_healthy_new_slot_without_reverting_nginx(self):
+        events, record, slot_after, release_folder = self.simulate_bluegreen_release(
+            fail_post_stop_merge=True,
+        )
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["rollback_status"], "kept_new_slot")
+        self.assertEqual(slot_after["slot"], "green")
+        self.assertEqual(slot_after["port"], 18792)
+        self.assertIn(("stop", "ra_triage_dashboard_blue", 11), events)
+        self.assertNotIn(("switch_nginx", 18791), events)
+        self.assertNotIn(("stop", "ra_triage_dashboard_green", 22), events)
+        # Subsequent deploys must still recognize this kept new slot as an owned release.
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp)
+            folder = state / "releases" / release_folder.name
+            app = folder / "candidate" / "ra_triage_dashboard"
+            app.mkdir(parents=True)
+            d.save(folder / "result.json", dict(record, candidate=str(app.parent)))
+            with patch.object(d, "STATE", state), patch.object(d, "validate_prepared_worktree"):
+                d.validate_live_candidate(app, "a" * 40)
+
+    def test_bluegreen_redeploy_succeeds_after_065_already_applied_in_prior_failed_attempt(self):
+        events, record, slot_after, _ = self.simulate_bluegreen_release(
+            already_applied_migration=True,
+        )
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(record["pending_migrations"], [])
+        self.assertEqual(record["migration_count_before"], 65)
+        self.assertEqual(record["migration_count_after"], 65)
+        self.assertEqual(slot_after["slot"], "green")
+        self.assertNotIn(("maintenance_writes", True), events)
+
+    def test_bluegreen_schema_migration_enables_and_clears_maintenance_writes(self):
+        events, record, _, _ = self.simulate_bluegreen_release(schema_migration=True)
+        self.assertEqual(record["status"], "success")
+        self.assertIn(("maintenance_writes", True), events)
+        self.assertIn(("maintenance_writes", False), events)
+        self.assertLess(events.index(("maintenance_writes", True)), events.index(("switch_nginx", 18792)))
+        self.assertLess(events.index(("switch_nginx", 18792)), events.index(("maintenance_writes", False)))
+
+    def _simulate_bootstrap_nginx(
+        self,
+        *,
+        supports_deferred=False,
+        legacy_lease_gating=False,
+        running_batch_jobs=0,
+        fail_legacy_stop=False,
+    ):
+        with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
+            base = Path(temp)
+            repo = base / "repo"
+            live_cwd = repo / "ra_triage_dashboard"
+            live_cwd.mkdir(parents=True)
+            state = base / "state"
+            python = base / "python"
+            python.touch()
+            old_sha = "b" * 40
+            env = {"DASHBOARD_DATABASE_URL_FILE": "/db", "DASHBOARD_DATA_DIR": str(base / "data")}
+            if legacy_lease_gating:
+                env["DASHBOARD_WORKER_LEASE_GATING"] = "true"
+            health = {"ok": True, "build_commit": old_sha, "storage": "postgresql", "trail_rd_write_enabled": False}
+            stack.enter_context(patch.object(d, "REPO", repo))
+            stack.enter_context(patch.object(d, "STATE", state))
+            stack.enter_context(patch.object(d, "PYTHON", python))
+            stack.enter_context(patch.object(d.sys, "platform", "linux"))
+            stack.enter_context(patch.object(d, "read_live_on_port", return_value=(101, env)))
+            stack.enter_context(patch.object(d, "get_json", return_value=health))
+            stack.enter_context(patch.object(d, "verify_port_free"))
+            stack.enter_context(patch.object(d.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)))
+            stack.enter_context(patch.object(d, "validate_nginx_config"))
+            stack.enter_context(patch.object(d, "supports_deferred_batch_recovery", return_value=supports_deferred))
+            stack.enter_context(patch.object(d, "read_running_batch_jobs", return_value=running_batch_jobs))
+            stack.enter_context(patch.object(d, "git_pane_pid", return_value=202))
+            stack.enter_context(patch.object(d.Path, "resolve", return_value=live_cwd))
+            events = []
+            def fake_start(record_dir, app, start_env, sha, name, **kw):
+                events.append(("start", kw.get("session", d.SESSION), kw.get("port"), name))
+            stack.enter_context(patch.object(d, "start_production", side_effect=fake_start))
+            def fake_stop(pid, *, on_signal=None, session=d.SESSION):
+                events.append(("stop", session, pid))
+                if on_signal is not None:
+                    on_signal()
+                if fail_legacy_stop and session == d.SESSION:
+                    raise d.DeployError("Interrupted after SIGTERM")
+            stack.enter_context(patch.object(d, "stop_production", side_effect=fake_stop))
+            def fake_wait(pid, *, session=d.SESSION):
+                events.append(("wait_stopped", session, pid))
+            stack.enter_context(patch.object(d, "wait_production_stopped", side_effect=fake_wait))
+            def fake_start_nginx(st=None):
+                events.append(("start_nginx",))
+            stack.enter_context(patch.object(d, "start_nginx", side_effect=fake_start_nginx))
+            def fake_stop_nginx(st=None, **kw):
+                events.append(("stop_nginx",))
+            stack.enter_context(patch.object(d, "stop_nginx", side_effect=fake_stop_nginx))
+            stack.enter_context(patch.object(d, "check_metrics_blocked_via_proxy"))
+            def fake_smoke(port, sha, storage):
+                events.append(("smoke", port, sha))
+                return health
+            stack.enter_context(patch.object(d, "smoke", side_effect=fake_smoke))
+
+            if fail_legacy_stop or (not (supports_deferred and legacy_lease_gating) and running_batch_jobs > 0):
+                with self.assertRaises(d.DeployError):
+                    d.bootstrap_nginx()
+            else:
+                d.bootstrap_nginx()
+            return events, old_sha
+
+    def test_bootstrap_nginx_recovers_legacy_when_stop_fails_after_sigterm(self):
+        events, old_sha = self._simulate_bootstrap_nginx(fail_legacy_stop=True)
+        self.assertIn(("stop_nginx",), events)
+        self.assertIn(("wait_stopped", d.SESSION, 101), events)
+        self.assertIn(("start", d.SESSION, None, "bootstrap-rollback"), events)
+        self.assertIn(("smoke", 8785, old_sha), events)
+        self.assertLess(
+            events.index(("wait_stopped", d.SESSION, 101)),
+            events.index(("start", d.SESSION, None, "bootstrap-rollback")),
+        )
+
+    def test_bootstrap_nginx_old_sha_stops_legacy_before_starting_blue_and_blocks_running_batch(self):
+        # Running Batch job on old legacy blocks bootstrap without touching legacy or blue.
+        blocked_events, _ = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=1,
+        )
+        self.assertEqual(blocked_events, [])
+
+        # With no running Batch job, old-SHA bootstrap stops legacy BEFORE starting blue
+        # so two unleased/old-SHA processes never overlap on the shared database.
+        events, old_sha = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+        )
+        order = [
+            events.index(("stop", d.SESSION, 101)),
+            events.index(("start", "ra_triage_dashboard_blue", 18791, "bootstrap-blue")),
+            events.index(("smoke", 18791, old_sha)),
+            events.index(("start_nginx",)),
+            events.index(("smoke", 8785, old_sha)),
+        ]
+        self.assertEqual(order, sorted(order))
+
+    def test_migration_apply_code_runs_migrations_only_and_backup_scripts_use_snapshot(self):
+        self.assertIn("apply_postgres_migrations()", d.MIGRATION_APPLY_CODE)
+        self.assertNotIn("database.init()", d.MIGRATION_APPLY_CODE)
+        scripts_dir = Path(__file__).parents[1] / "scripts"
+        backup_src = (scripts_dir / "backup_cloud_postgres.sh").read_text(encoding="utf-8")
+        verify_src = (scripts_dir / "verify_cloud_postgres_backup.sh").read_text(encoding="utf-8")
+        self.assertIn("pg_export_snapshot()", backup_src)
+        self.assertIn("--snapshot", backup_src)
+        self.assertIn(".counts", backup_src)
+        self.assertIn(".counts", verify_src)
+
+    def test_wait_nginx_workers_drained_waits_until_all_pre_reload_workers_exit(self):
+        alive_checks = iter([True, True, False, False])
+        with patch.object(d, "process_alive", side_effect=lambda pid: next(alive_checks)), patch.object(
+            d.time, "sleep"
+        ) as sleep_mock:
+            d.wait_nginx_workers_drained([301], timeout=10)
+        sleep_mock.assert_called()
+
 if __name__ == "__main__": unittest.main()

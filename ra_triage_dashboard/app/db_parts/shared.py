@@ -8,6 +8,7 @@ depending on the aggregate ``Database`` class during module initialisation.
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -107,6 +108,27 @@ def utc_now() -> str:
 
 def _json(value: Any) -> str:
     return json.dumps(value if value is not None else {}, ensure_ascii=False)
+
+
+def normalize_idempotency_key(value: Any) -> str:
+    """Validate an optional 1..160 char idempotency key; empty/None disables idempotency."""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError("Idempotency-Key 必须是字符串。 / Idempotency-Key must be a string.")
+    cleaned = value.strip()
+    if not cleaned:
+        return ""
+    if len(cleaned) > 160 or any(ord(ch) < 32 or ord(ch) == 127 for ch in cleaned):
+        raise ValueError(
+            "Idempotency-Key 长度必须在 1 到 160 个可见字符之间。 / Idempotency-Key must be 1 to 160 printable characters."
+        )
+    return cleaned
+
+
+def idempotency_fingerprint(payload: Any) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _json_load(value: Any, default: Any) -> Any:

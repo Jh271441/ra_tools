@@ -15,6 +15,8 @@
                     author_source TEXT NOT NULL DEFAULT 'legacy',
                     author_verified INTEGER NOT NULL DEFAULT 0,
                     supersedes_id INTEGER REFERENCES intent_label_revisions(id),
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_intent_label_revisions_case

@@ -483,7 +483,49 @@ class DatabaseCoreMixin:
         result["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
         return result
 
-    def init(self) -> None:
+    def apply_postgres_migrations(self) -> list[str]:
+        """Apply pending PostgreSQL migrations without running startup job recovery."""
+        if self.backend != "postgresql":
+            return []
+        self._apply_postgres_migrations()
+        return self.applied_postgres_migrations()
+
+    def applied_postgres_migrations(self) -> list[str]:
+        """Return sorted PostgreSQL migration versions recorded in dashboard_schema_migrations."""
+        if self.backend != "postgresql":
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT version FROM dashboard_schema_migrations ORDER BY version"
+            ).fetchall()
+        return [str(row["version"]) for row in rows]
+
+    def recover_interrupted_jobs(
+        self,
+        *,
+        exclude_job_ids: Iterable[str] | None = None,
+    ) -> None:
+        """Mark truly orphaned running Batch prediction/publish jobs terminal.
+
+        Must only be invoked after ensuring no previous executor still owns
+        the running jobs (for example after acquiring the batch-prediction-runner
+        lease in blue-green or multi-worker deployments).
+        """
+        excluded = {str(item).strip() for item in (exclude_job_ids or ()) if str(item).strip()}
+        with self._write_lock, self.connect() as conn:
+            if self.backend == "postgresql" and hasattr(conn, "execute"):
+                conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(?))",
+                    ("dashboard-batch-recovery-v1",),
+                )
+            initialize_recovery(
+                self,
+                conn,
+                exclude_job_ids=excluded,
+                include_trail_history=False,
+            )
+
+    def init(self, *, recover_interrupted_jobs: bool = True) -> None:
         """Preserve migration, locking and transaction boundaries across phases."""
         if self.backend == "postgresql":
             self._apply_postgres_migrations()
@@ -497,7 +539,10 @@ class DatabaseCoreMixin:
             initialize_change_tracking(self, conn)
             initialize_campaign_compat(self, conn)
             initialize_columns(self, conn)
-            initialize_recovery(self, conn)
+            if recover_interrupted_jobs:
+                initialize_recovery(self, conn)
+            else:
+                self.import_legacy_trail_history(connection=conn)
             initialize_human_labels(self, conn)
 
     @staticmethod

@@ -173,7 +173,13 @@ async def lifespan(_: FastAPI):
     )
 
     settings.ensure_directories()
-    database.init()
+    # In lease-gated (blue-green / multi-worker) or standalone-worker modes,
+    # another live instance may currently own running Batch jobs. Defer
+    # interruption recovery until this process acquires the batch runner lease.
+    defer_batch_recovery = (lease_manager is not None) or (not embedded_workers)
+    database.init(recover_interrupted_jobs=not defer_batch_recovery)
+    batch_prediction_runner.set_lease_gating(defer_batch_recovery, held=False)
+    batch_runner_task: asyncio.Task[None] | None = None
     database.bootstrap_access_users(
         writers=settings.sso_write_users,
         administrators=settings.team_default_managers,
@@ -244,14 +250,43 @@ async def lifespan(_: FastAPI):
             name="review-dchat-notifications",
         )
     if embedded_workers:
-        if lease_manager is None or await asyncio.to_thread(
-            lease_manager.try_acquire_or_renew, "batch-prediction-runner", ttl_seconds=120.0
-        ):
-            batch_prediction_runner.resume_queued_predictions()
+        if lease_manager is None:
+            batch_prediction_runner.resume_queued_work()
+        else:
+            async def _batch_prediction_leader() -> None:
+                await asyncio.to_thread(
+                    database.recover_interrupted_jobs,
+                    exclude_job_ids=batch_prediction_runner.active_job_ids(),
+                )
+                batch_prediction_runner.set_lease_held(True)
+                try:
+                    while True:
+                        await asyncio.to_thread(batch_prediction_runner.resume_queued_work)
+                        await asyncio.sleep(5.0)
+                finally:
+                    await asyncio.to_thread(batch_prediction_runner.revoke_lease)
+
+            batch_runner_task = asyncio.create_task(
+                run_with_lease(
+                    lease_manager,
+                    "batch-prediction-runner",
+                    _batch_prediction_leader,
+                    ttl_seconds=60.0,
+                    retry_seconds=5.0,
+                ),
+                name="batch-prediction-runner",
+            )
     try:
         yield
     finally:
-        for task in (metric_task, human_label_task, review_notification_task, gt_sync_task, trail_sync_task):
+        for task in (
+            metric_task,
+            human_label_task,
+            review_notification_task,
+            gt_sync_task,
+            trail_sync_task,
+            batch_runner_task,
+        ):
             if task is not None:
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

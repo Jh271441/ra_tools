@@ -911,7 +911,16 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         raise _detail(404, "Batch 任务不存在。")
     if job.get("autotriage_batch_id"):
         return {"job": _public_batch_job(job), "idempotent": True}
-    if job.get("publish_status") == "running":
+    existing_publish_req = (
+        (job.get("summary") or {}).get("autotriage_publish_request")
+        if isinstance(job.get("summary"), dict)
+        else None
+    )
+    if (
+        job.get("publish_status") == "running"
+        or bool(job.get("publish_queued"))
+        or (isinstance(existing_publish_req, dict) and existing_publish_req.get("queued") is True)
+    ):
         raise _detail(409, "该 Batch 正在推送 AutoTriage。")
     if not MODEL_ID_RE.fullmatch(_as_text(job.get("resolved_model_id"))):
         raise _detail(
@@ -939,23 +948,18 @@ async def publish_batch_prediction(job_id: str, request: Request) -> dict[str, A
         or not job.get("config_sha256")
     ):
         raise _detail(409, "Batch 尚无可推送的成功预测。")
-    job = (
-        await asyncio.to_thread(
-            database.update_batch_prediction_job,
-            job_id,
-            summary={
-                **dict(job.get("summary") or {}),
-                "autotriage_publish_request": {
-                    "requested_by": publisher.username,
-                    "identity_source": publisher.source,
-                    "verified": True,
-                },
-            },
-        )
-        or job
+    # The API only enqueues atomically. All execution paths (immediate kick or
+    # background leased worker polling) compete through the single conditional
+    # DB claim so one request can never launch two AutoTriage pushes.
+    enqueued = await asyncio.to_thread(
+        database.enqueue_batch_prediction_publish,
+        job_id,
+        requested_by=publisher.username,
+        identity_source=publisher.source,
     )
-    if not batch_prediction_runner.launch_publish(job):
-        raise _detail(409, "已有 Batch 预测或 AutoTriage 推送正在执行，请稍后重试。")
+    if enqueued is None:
+        raise _detail(409, "该 Batch 正在推送或已排队推送 AutoTriage，请稍后重试。")
+    batch_prediction_runner.resume_queued_publishes()
     return {
         "job": _public_batch_job(
             await asyncio.to_thread(database.get_batch_prediction_job, job_id)

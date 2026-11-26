@@ -1150,11 +1150,226 @@ function syncCaseLabelingExpectedOutputFromTags() {
     status.classList.toggle("is-conflict", validation.conflict);
   }
   const save = $("#caseLabelingForm button[type='submit']");
-  if (save) save.disabled = validation.conflict || !hasDashboardWriteRole() || caseLabelDecisionUi.saving;
+  if (save) {
+    save.disabled = validation.conflict
+      || !hasDashboardWriteRole()
+      || caseLabelDecisionUi.saving
+      || caseLabelingSubmitBlocked(caseLabelDecisionUi.editor);
+  }
   if (caseLabelDecisionUi.editor) updateCaseDecisionPreview();
 }
 
-function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
+function caseLabelingSubmitBlocked(decision = caseLabelDecisionUi.editor) {
+  if (decision) {
+    return Boolean(
+      (decision.sourceConflict && !decision.sourceConflict.acknowledged)
+      || (Array.isArray(decision.missingAttachments) && decision.missingAttachments.length > 0)
+    );
+  }
+  return Boolean(
+    Array.isArray(state.caseLabeling.missingDraftAttachments)
+    && state.caseLabeling.missingDraftAttachments.length > 0
+  );
+}
+
+function caseLabelingAttachmentNamesText(items) {
+  return (items || [])
+    .map((item) => item?.name || uiText("未命名截图", "untitled"))
+    .join(uiText("、", ", "));
+}
+
+function buildCaseLabelingDraftNotice({ decision = null, kind = "restored", remoteChanged = false, message = "" } = {}) {
+  const missingAttachments = decision
+    ? (decision.missingAttachments || [])
+    : (state.caseLabeling.missingDraftAttachments || []);
+  const decisionSourceChanged = Boolean(decision?.sourceConflict && !decision.sourceConflict.acknowledged);
+  if (!decisionSourceChanged && !missingAttachments.length && !kind) return null;
+  return {
+    kind,
+    remoteChanged,
+    decisionSourceChanged,
+    missingAttachments,
+    message,
+  };
+}
+
+function refreshCaseLabelingDraftBanner(caseData, { decision = null } = {}) {
+  const host = $("#caseLabelingDraftBannerHost");
+  const current = state.caseLabeling.draftNotice;
+  const missing = decision
+    ? (decision.missingAttachments || [])
+    : (state.caseLabeling.missingDraftAttachments || []);
+  const decisionSourceChanged = Boolean(decision?.sourceConflict && !decision.sourceConflict.acknowledged);
+  let next = current
+    ? { ...current, missingAttachments: missing, decisionSourceChanged }
+    : (decisionSourceChanged || missing.length
+        ? buildCaseLabelingDraftNotice({ decision, kind: "restored" })
+        : null);
+  if (
+    next
+    && next.kind === "restored"
+    && !next.remoteChanged
+    && !next.decisionSourceChanged
+    && !next.missingAttachments?.length
+    && !next.message
+    && decision
+  ) {
+    next = null;
+  }
+  state.caseLabeling.draftNotice = next;
+  if (host) {
+    host.innerHTML = caseLabelingDraftBannerMarkup(next);
+    if (next) bindCaseLabelingDraftBanner(caseData, { decision });
+  }
+  syncCaseLabelingExpectedOutputFromTags();
+}
+
+function caseLabelingDraftBannerMarkup(info) {
+  if (!info) return "";
+  const isFailure = info.kind === "save_failed";
+  const decisionSourceChanged = Boolean(info.decisionSourceChanged);
+  const missingAttachments = Array.isArray(info.missingAttachments) ? info.missingAttachments : [];
+  const hasMissingAttachments = missingAttachments.length > 0;
+  const warning = isFailure || info.remoteChanged || decisionSourceChanged || hasMissingAttachments;
+  const heading = decisionSourceChanged
+    ? uiText("裁决来源已更新 · 需重新对照确认", "Decision sources changed · Recheck required")
+    : hasMissingAttachments
+      ? uiText("草稿待上传截图需补齐", "Draft screenshots must be re-attached")
+      : isFailure
+        ? uiText("保存未完成 · 草稿已保留", "Save incomplete · Draft preserved")
+        : uiText("已恢复本地草稿", "Local draft restored");
+  const parts = [];
+  if (info.message) parts.push(info.message);
+  else if (isFailure) {
+    parts.push(uiText("保存失败，本地草稿已保留。", "Save failed. Local draft preserved."));
+  }
+  if (decisionSourceChanged) {
+    parts.push(uiText(
+      "刷新期间来源标注或历史裁决已更新，已重置排除确认并暂停提交。请先点击“对照最新来源”确认最新来源，或放弃旧草稿。",
+      "Source labels or the prior decision changed while away. Exclusion confirmation was reset and submission is blocked until you review the latest sources or discard this draft."
+    ));
+  }
+  if (hasMissingAttachments) {
+    const names = caseLabelingAttachmentNamesText(missingAttachments);
+    parts.push(uiText(
+      `上次草稿包含 ${missingAttachments.length} 张待上传截图（${names}）。页面刷新后无法自动恢复本地文件，请重新选择截图后再保存，或确认不含原截图继续。`,
+      `Your previous draft included ${missingAttachments.length} pending screenshot(s) (${names}). Local files cannot be restored after reload; re-attach them before saving or continue without them.`
+    ));
+  }
+  if (!parts.length) {
+    parts.push(
+      info.remoteChanged
+        ? uiText(
+            "已恢复本地未保存的标注草稿，但远端标注版本已更新。请确认后再保存，或放弃草稿。",
+            "Restored an unsaved local draft, but the server revision changed. Review before saving or discard it."
+          )
+        : uiText(
+            "已恢复本地未保存的标注草稿，可点击保存或放弃草稿。",
+            "Restored an unsaved local labeling draft. Save now or discard it."
+          )
+    );
+  }
+  const canRetry = isFailure && !decisionSourceChanged && !hasMissingAttachments;
+  return `<div class="ra-draft-recovery-banner${warning ? " is-warning" : ""}" id="caseLabelingDraftBanner" role="status" aria-live="polite">
+    <div class="ra-draft-recovery-copy">
+      <strong>${escapeHtml(heading)}</strong>
+      <span>${escapeHtml(parts.join(" "))}</span>
+    </div>
+    <div class="ra-draft-recovery-actions">
+      ${decisionSourceChanged ? `<button type="button" class="button button-primary" id="caseLabelingDraftCompareSources">${escapeHtml(uiText("对照最新来源", "Compare latest sources"))}</button>` : ""}
+      ${hasMissingAttachments ? `<button type="button" class="button button-quiet" id="caseLabelingDraftDropAttachments">${escapeHtml(uiText("不含原截图继续", "Continue without screenshots"))}</button>` : ""}
+      ${canRetry ? `<button type="button" class="button button-primary" id="caseLabelingDraftRetry">${escapeHtml(uiText("重试保存", "Retry save"))}</button>` : ""}
+      <button type="button" class="button button-quiet" id="caseLabelingDraftDiscard">${escapeHtml(uiText("放弃草稿", "Discard draft"))}</button>
+    </div>
+  </div>`;
+}
+
+function bindCaseLabelingDraftBanner(caseData, { decision = null } = {}) {
+  const compareBtn = $("#caseLabelingDraftCompareSources");
+  compareBtn?.addEventListener("click", () => {
+    if (typeof refreshDecisionEditorSources === "function") {
+      void refreshDecisionEditorSources();
+    }
+  });
+  const dropAttachmentsBtn = $("#caseLabelingDraftDropAttachments");
+  dropAttachmentsBtn?.addEventListener("click", () => {
+    if (decision) {
+      decision.missingAttachments = [];
+      if (typeof rememberCaseLabelDecisionDraft === "function") {
+        rememberCaseLabelDecisionDraft({ forceNewIdempotencyKey: true });
+      }
+      refreshCaseLabelingDraftBanner(caseData, { decision });
+    } else {
+      state.caseLabeling.missingDraftAttachments = [];
+      persistCurrentCaseLabelingDraft(caseData, { decision, forceNewIdempotencyKey: true });
+      refreshCaseLabelingDraftBanner(caseData, { decision });
+    }
+    showToast(uiText("已确认不含原截图继续，可重新保存。", "Continuing without previous screenshots; ready to save."));
+  });
+  const discardBtn = $("#caseLabelingDraftDiscard");
+  discardBtn?.addEventListener("click", () => {
+    const taskId = decision ? "" : caseLabelingSubmissionTaskId();
+    if (typeof clearCaseLabelDraft === "function") {
+      clearCaseLabelDraft(caseData.issue_id, taskId, decision ? "decision" : "submission");
+    }
+    if (decision) {
+      caseLabelDecisionUi.drafts.delete(decision.key);
+      decision.sourceConflict = null;
+      decision.missingAttachments = [];
+      decision.source = decision.adopted || { expected_output: "", tags: [], rationale: "", is_excluded: false };
+      decision.rationale = "";
+      decision.excludedConfirmed = false;
+      decision.retained = (decision.adopted?.attachments || []).map((a) => a.id);
+      decision.images = [];
+      clearPendingCaseLabelingImages();
+      state.caseLabeling.draftNotice = null;
+      renderCaseLabelingEditor(caseData, { decision, skipDraftRestore: true });
+    } else {
+      state.caseLabeling.missingDraftAttachments = [];
+      state.caseLabeling.dirty = false;
+      state.caseLabeling.draftNotice = null;
+      clearPendingCaseLabelingImages();
+      renderCaseLabelingEditor(caseData, { decision, skipDraftRestore: true });
+    }
+    showToast(uiText("已放弃本地草稿。", "Local draft discarded."));
+  });
+  const retryBtn = $("#caseLabelingDraftRetry");
+  retryBtn?.addEventListener("click", () => {
+    if (caseLabelingSubmitBlocked(decision)) return;
+    const form = $("#caseLabelingForm");
+    if (!form) return;
+    if (typeof form.requestSubmit === "function") form.requestSubmit();
+    else form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+  });
+}
+
+function persistCurrentCaseLabelingDraft(caseData, { decision = null, forceNewIdempotencyKey = false } = {}) {
+  if (!caseData || decision || typeof writeCaseLabelDraft !== "function") return null;
+  const revision = currentLabelingRevision(caseData);
+  const fields = caseLabelingFormPayload();
+  const currentPending = typeof normalizeCaseLabelPendingAttachments === "function"
+    ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
+    : [];
+  const unresolvedMissing = Array.isArray(state.caseLabeling.missingDraftAttachments)
+    ? state.caseLabeling.missingDraftAttachments
+    : [];
+  const pendingAttachments = unresolvedMissing.length
+    ? [...currentPending, ...unresolvedMissing]
+    : currentPending;
+  return writeCaseLabelDraft(
+    caseData.issue_id,
+    fields.task_id,
+    "submission",
+    { ...fields, pending_attachments: pendingAttachments },
+    {
+      expectedPreviousId: revision?.id || null,
+      pendingAttachments,
+      forceNewIdempotencyKey,
+    }
+  );
+}
+
+function renderCaseLabelingEditor(caseData, {decision = null, skipDraftRestore = false} = {}) {
   const revision = currentLabelingRevision(caseData);
   const issueDecision = caseData.label_state?.decision;
   const decisionResult = issueDecision && !issueDecision.stale
@@ -1163,7 +1378,44 @@ function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
   const aggregateResolved = (caseData.label_cases || []).find(
     (item) => item.resolution?.state === "resolved"
   )?.resolution?.result_revision;
-  const source = decision?.source || revision || decisionResult || aggregateResolved || {};
+  const baseSource = decision?.source || revision || decisionResult || aggregateResolved || {};
+  let source = baseSource;
+  let draftNotice = null;
+  if (!decision) {
+    state.caseLabeling.missingDraftAttachments = [];
+  }
+  if (decision) {
+    const hasConflict = Boolean(decision.sourceConflict && !decision.sourceConflict.acknowledged);
+    const hasMissing = Array.isArray(decision.missingAttachments) && decision.missingAttachments.length > 0;
+    if (hasConflict || hasMissing || decision.restoredFromStorage) {
+      draftNotice = buildCaseLabelingDraftNotice({
+        decision,
+        kind: "restored",
+        remoteChanged: hasConflict,
+      });
+    }
+  } else if (!skipDraftRestore && typeof readCaseLabelDraft === "function") {
+    const submissionTaskId = caseLabelingSubmissionTaskId();
+    const savedDraft = readCaseLabelDraft(caseData.issue_id, submissionTaskId, "submission");
+    if (savedDraft) {
+      if (typeof caseLabelDraftMatchesBaseline === "function" && caseLabelDraftMatchesBaseline(savedDraft, baseSource, "submission")) {
+        if (typeof clearCaseLabelDraft === "function") clearCaseLabelDraft(caseData.issue_id, submissionTaskId, "submission");
+      } else {
+        source = { ...baseSource, ...savedDraft };
+        const missingAttachments = typeof caseLabelMissingAttachments === "function"
+          ? caseLabelMissingAttachments(savedDraft.pending_attachments || [], state.caseLabeling.pendingImages)
+          : [];
+        state.caseLabeling.missingDraftAttachments = missingAttachments;
+        draftNotice = {
+          kind: "restored",
+          remoteChanged: (revision?.id || null) !== (savedDraft.expected_previous_id ?? null),
+          decisionSourceChanged: false,
+          missingAttachments,
+        };
+      }
+    }
+  }
+  state.caseLabeling.draftNotice = draftNotice;
   const exactTaskCase = state.caseLabeling.taskId
     ? (caseData.label_cases || []).find((item) => item.task_id === state.caseLabeling.taskId)
     : null;
@@ -1194,6 +1446,7 @@ function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
   $("#caseLabelingEditor").innerHTML = `
     <form class="review-form" id="caseLabelingForm">
       ${decision ? caseDecisionEditorHeader(decision) : supplementalNotice}
+      <div id="caseLabelingDraftBannerHost">${caseLabelingDraftBannerMarkup(draftNotice)}</div>
       <section class="review-section issue-tag-section">
         <div class="review-section-heading"><div><h2><span class="ui-lang-zh">Issue 标签</span><span class="ui-lang-en">Issue tags</span></h2></div>${caseLabelFinalResultMarkup(caseData)}<span class="evidence-summary-count" id="tagSummaryCount" hidden aria-hidden="true">${escapeHtml(t("detail.selected_n", { n: chosenTags.size }))}</span></div>
         <div class="review-tag-groups-shell">${issueTagGroups}</div>
@@ -1262,8 +1515,18 @@ function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
   bindCaseLabelResultActions(caseData);
   refreshCaseExclusionSummary();
   $("#caseLabelingForm").addEventListener("submit", decision ? adjudicateIssueLabel : saveCaseLabelingRevision);
-  $("#caseLabelingForm").addEventListener("input", () => { state.caseLabeling.dirty = true; });
-  $("#caseLabelingForm").addEventListener("change", () => { state.caseLabeling.dirty = true; });
+  $("#caseLabelingForm").addEventListener("input", () => {
+    state.caseLabeling.dirty = true;
+    persistCurrentCaseLabelingDraft(caseData, { decision });
+  });
+  $("#caseLabelingForm").addEventListener("change", () => {
+    state.caseLabeling.dirty = true;
+    persistCurrentCaseLabelingDraft(caseData, { decision });
+  });
+  if (draftNotice) {
+    state.caseLabeling.dirty = true;
+    bindCaseLabelingDraftBanner(caseData, { decision });
+  }
   $("#caseLabelingOpenDiscussion")?.addEventListener("click", () => {
     openCaseLabelingDiscussion().catch((error) => showToast(error.message, true));
   });
@@ -1279,6 +1542,7 @@ function renderCaseLabelingEditor(caseData, {decision = null} = {}) {
       outputSelect.dataset.selectionSource = "manual";
       state.caseLabeling.dirty = true;
       syncCaseLabelingExpectedOutputFromTags();
+      persistCurrentCaseLabelingDraft(caseData, { decision });
     },
   });
   bindSelectedReviewTagControls(editor);
@@ -1308,6 +1572,7 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   state.caseLabeling.issueId = normalized;
   state.caseLabeling.caseData = caseData;
   state.caseLabeling.dirty = false;
+  state.caseLabeling.missingDraftAttachments = [];
   clearPendingCaseLabelingImages();
   $("#caseLabelingGalleryView")?.classList.add("hidden");
   $("#caseLabelingGallery")?.classList.add("hidden");
@@ -1353,6 +1618,7 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
   state.caseLabeling.issueId = "";
   state.caseLabeling.caseData = null;
   state.caseLabeling.dirty = false;
+  state.caseLabeling.missingDraftAttachments = [];
   clearPendingCaseLabelingImages();
   state.caseLabeling.detailSeq += 1;
   $("#caseLabelingDetail").classList.add("hidden");
@@ -1376,6 +1642,36 @@ function caseLabelingFormPayload() {
   };
 }
 
+function syncCaseLabelingAttachmentDraftState() {
+  const decision = caseLabelDecisionUi.editor;
+  if (decision) {
+    decision.images = state.caseLabeling.pendingImages;
+    if (Array.isArray(decision.missingAttachments) && decision.missingAttachments.length && typeof caseLabelMissingAttachments === "function") {
+      decision.missingAttachments = caseLabelMissingAttachments(decision.missingAttachments, state.caseLabeling.pendingImages);
+    }
+    if (typeof rememberCaseLabelDecisionDraft === "function") {
+      rememberCaseLabelDecisionDraft();
+    }
+    refreshCaseLabelingDraftBanner(decision.data, { decision });
+    return;
+  }
+  const caseData = state.caseLabeling.caseData;
+  if (!caseData) return;
+  if (
+    Array.isArray(state.caseLabeling.missingDraftAttachments)
+    && state.caseLabeling.missingDraftAttachments.length
+    && typeof caseLabelMissingAttachments === "function"
+  ) {
+    state.caseLabeling.missingDraftAttachments = caseLabelMissingAttachments(
+      state.caseLabeling.missingDraftAttachments,
+      state.caseLabeling.pendingImages
+    );
+  }
+  state.caseLabeling.dirty = true;
+  persistCurrentCaseLabelingDraft(caseData);
+  refreshCaseLabelingDraftBanner(caseData);
+}
+
 function addPendingCaseLabelingImages(files) {
   const limits = state.config?.review_attachment_limits || {};
   const maxCount = Number(limits.max_count || 4);
@@ -1383,6 +1679,7 @@ function addPendingCaseLabelingImages(files) {
   const maxTotalBytes = Number(limits.max_bytes_total || 24 * 1024 * 1024);
   const allowed = new Set(limits.media_types || ["image/png", "image/jpeg", "image/webp"]);
   let rejected = "";
+  let added = 0;
   files.forEach((file) => {
     if (state.caseLabeling.pendingImages.length >= maxCount) {
       rejected = `最多只能添加 ${maxCount} 张截图。`;
@@ -1409,8 +1706,10 @@ function addPendingCaseLabelingImages(files) {
       file,
       previewUrl: URL.createObjectURL(file),
     });
+    added += 1;
   });
   renderPendingCaseLabelingImages();
+  if (added > 0) syncCaseLabelingAttachmentDraftState();
   if (rejected) showToast(rejected, true);
 }
 
@@ -1434,6 +1733,7 @@ function renderPendingCaseLabelingImages() {
       const previewUrl = state.caseLabeling.pendingImages[index].previewUrl;
       state.caseLabeling.pendingImages.splice(index, 1);
       renderPendingCaseLabelingImages();
+      syncCaseLabelingAttachmentDraftState();
       releasePreviewUrlLater(previewUrl);
     });
   });
@@ -1534,6 +1834,16 @@ async function saveCaseLabelingRevision(event) {
     showToast("期望输出与所选标签冲突，请先调整。", true);
     return;
   }
+  if (caseLabelingSubmitBlocked(null)) {
+    showToast(
+      uiText(
+        "上次草稿包含未补齐的待上传截图，请重新选择截图或点击“不含原截图继续”后再保存。",
+        "Previous draft had pending screenshots. Re-attach them or choose 'Continue without screenshots' before saving."
+      ),
+      true
+    );
+    return;
+  }
   const revision = currentLabelingRevision(caseData);
   const payload = {
     ...caseLabelingFormPayload(),
@@ -1545,7 +1855,23 @@ async function saveCaseLabelingRevision(event) {
     showToast("标注截图最多 4 张。", true);
     return;
   }
+  const pendingAttachments = typeof normalizeCaseLabelPendingAttachments === "function"
+    ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
+    : [];
   const button = event.submitter || event.currentTarget.querySelector('[type="submit"]');
+  const savedDraft = typeof writeCaseLabelDraft === "function"
+    ? writeCaseLabelDraft(
+        caseData.issue_id,
+        payload.task_id,
+        "submission",
+        { ...payload, pending_attachments: pendingAttachments },
+        {
+          expectedPreviousId: revision?.id || null,
+          pendingAttachments,
+        }
+      )
+    : null;
+  const idempotencyKey = savedDraft?.idempotency_key || "";
   button.disabled = true;
   try {
     let result;
@@ -1556,25 +1882,49 @@ async function saveCaseLabelingRevision(event) {
       result = await api(`/api/labeling/cases/${encodeURIComponent(caseData.issue_id)}/revisions-with-attachments`, {
         method: "POST",
         body: form,
-        headers: { "X-RA-Triage-Request": "labeling-v1" },
+        headers: {
+          "X-RA-Triage-Request": "labeling-v1",
+          ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+        },
       });
     } else {
       result = await api(`/api/labeling/cases/${encodeURIComponent(caseData.issue_id)}/revisions`, {
-        method: "POST", body: JSON.stringify(payload),
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
       });
     }
     acknowledgeLocalChange(result);
+    if (typeof clearCaseLabelDraft === "function") {
+      clearCaseLabelDraft(caseData.issue_id, payload.task_id, "submission");
+    }
+    state.caseLabeling.missingDraftAttachments = [];
+    state.caseLabeling.draftNotice = null;
     state.caseLabeling.dirty = false;
     clearPendingCaseLabelingImages();
-    showToast("标注已保存。");
+    showToast(uiText("标注已保存。", "Label saved."));
     await Promise.all([
       selectCaseLabelingIssue(caseData.issue_id, { updateRoute: false }),
       loadCaseLabelingCases({ page: state.caseLabeling.page }),
     ]);
   } catch (error) {
-    showToast(error.message, true);
+    state.caseLabeling.dirty = true;
+    const notice = {
+      kind: "save_failed",
+      remoteChanged: error?.status === 409,
+      decisionSourceChanged: false,
+      missingAttachments: state.caseLabeling.missingDraftAttachments || [],
+      message: error?.message || "",
+    };
+    state.caseLabeling.draftNotice = notice;
+    const host = $("#caseLabelingDraftBannerHost");
+    if (host) {
+      host.innerHTML = caseLabelingDraftBannerMarkup(notice);
+      bindCaseLabelingDraftBanner(caseData);
+    }
+    showToast(notice.message || uiText("保存失败，本地草稿已保留。", "Save failed. Local draft preserved."), true);
   } finally {
-    button.disabled = false;
+    button.disabled = caseLabelingSubmitBlocked(null);
   }
 }
 

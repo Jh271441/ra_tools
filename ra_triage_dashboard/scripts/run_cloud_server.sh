@@ -140,9 +140,13 @@ export no_proxy="$NO_PROXY"
 # comparison is the read-only Trail field snapshot, not the historical 348 run.
 
 DASHBOARD_UVICORN_WORKERS="${DASHBOARD_UVICORN_WORKERS:-1}"
+DASHBOARD_UVICORN_GRACEFUL_TIMEOUT="${DASHBOARD_UVICORN_GRACEFUL_TIMEOUT:-30}"
 UVICORN_EXTRA_ARGS=()
 if [[ "$DASHBOARD_UVICORN_WORKERS" =~ ^[0-9]+$ ]] && (( DASHBOARD_UVICORN_WORKERS > 1 )); then
   UVICORN_EXTRA_ARGS+=(--workers "$DASHBOARD_UVICORN_WORKERS")
+fi
+if [[ "$DASHBOARD_UVICORN_GRACEFUL_TIMEOUT" =~ ^[0-9]+$ ]] && (( DASHBOARD_UVICORN_GRACEFUL_TIMEOUT > 0 )); then
+  UVICORN_EXTRA_ARGS+=(--timeout-graceful-shutdown "$DASHBOARD_UVICORN_GRACEFUL_TIMEOUT")
 fi
 
 exec "$PYTHON_BIN" -m uvicorn app.main:app --app-dir "$APP_ROOT" --host "$DASHBOARD_HOST" --port "$DASHBOARD_PORT" "${UVICORN_EXTRA_ARGS[@]}"

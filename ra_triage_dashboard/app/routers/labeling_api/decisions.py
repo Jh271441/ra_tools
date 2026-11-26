@@ -10,7 +10,7 @@ from ...support.common import _as_text
 from ...support.common import _detail
 import asyncio
 from ...runtime import database
-from .common import _labeling_actor, _labeling_payload, _public_label_case, _require_active_labeling_issue, _require_labeling_writer
+from .common import _labeling_actor, _labeling_payload, _optional_idempotency_key, _public_label_case, _require_active_labeling_issue, _require_labeling_writer
 
 from fastapi import Depends
 from ...core.deps import get_container
@@ -56,6 +56,7 @@ async def _save_issue_decision(issue_id, request, body, uploads=()):
     issue = await _require_active_labeling_issue(issue_id)
     if not isinstance(body, dict):
         raise _detail(400, "裁决请求必须是 JSON 对象。 / Decision must be a JSON object.")
+    idempotency_key = _optional_idempotency_key(request, body)
     full = None
     if "full_result" in body:
         if body["full_result"] is not True or type(body.get("is_excluded")) is not bool:
@@ -90,6 +91,7 @@ async def _save_issue_decision(issue_id, request, body, uploads=()):
             ),
             expected_previous_decision_id=expected_previous,
             full_result=full, attachments=records,
+            idempotency_key=idempotency_key,
         )
     # Cancellation must not remove images while the database worker may commit.
     worker = asyncio.create_task(commit())
@@ -97,7 +99,9 @@ async def _save_issue_decision(issue_id, request, body, uploads=()):
         result = await asyncio.shield(worker)
     except asyncio.CancelledError:
         def completed(task):
-            if task.cancelled() or task.exception() is not None:
+            if task.cancelled() or task.exception() is not None or (
+                isinstance(task.result(), dict) and task.result().get("_idempotency_replayed")
+            ):
                 for path in paths:
                     path.unlink(missing_ok=True)
         worker.add_done_callback(completed)
@@ -118,6 +122,10 @@ async def _save_issue_decision(issue_id, request, body, uploads=()):
         for path in paths:
             await asyncio.to_thread(path.unlink, missing_ok=True)
         raise
+    replayed = bool(result.pop("_idempotency_replayed", False))
+    if replayed:
+        for path in paths:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
     return {
         **result,
         "change_revision": await asyncio.to_thread(database.change_revision),

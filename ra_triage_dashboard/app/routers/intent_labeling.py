@@ -16,6 +16,7 @@ from ..auth import normalise_username
 from ..db_parts.shared import IntentAnnotationConflictError
 from ..support.common import _detail
 from ..support.identity import _action_actor, _admin_identity, _intent_identity
+from .labeling_api.common import _optional_idempotency_key
 from ..intent_experiments import build_intent_experiment_assignments
 from ..intent_name_suggestion import (
     IntentNameSuggestionError,
@@ -1690,6 +1691,7 @@ async def put_intent_labels(
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _action_actor, request, body.get("author")
     )
+    idempotency_key = _optional_idempotency_key(request, body)
     try:
         labels = await asyncio.to_thread(
             database.save_intent_labels,
@@ -1702,6 +1704,7 @@ async def put_intent_labels(
             author=actor or "anonymous",
             author_source=actor_source,
             author_verified=actor_verified,
+            idempotency_key=idempotency_key,
         )
     except IntentAnnotationConflictError as exc:
         raise _detail(409, str(exc))

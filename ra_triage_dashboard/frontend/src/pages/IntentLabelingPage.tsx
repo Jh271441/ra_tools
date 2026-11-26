@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "../api/client";
+import { ApiError, apiRequest } from "../api/client";
 import {
   bilingual,
   UiLanguage,
@@ -8,6 +8,12 @@ import {
 } from "../bridge/useWorkbenchBridge";
 import { ModalDialog } from "../components/ui/ModalDialog";
 import { MultiSelect, MultiSelectOption } from "../components/ui/MultiSelect";
+import {
+  clearIntentDraft,
+  intentDraftSignature,
+  readIntentDraft,
+  writeIntentDraft,
+} from "../features/intent/intentDraftStorage";
 
 interface IntentDatasetItem {
   id: string;
@@ -272,6 +278,17 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
   const [openMenuUser, setOpenMenuUser] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [draftNotice, setDraftNotice] = useState<{
+    kind: "restored" | "save_failed";
+    message: string;
+    remoteChanged: boolean;
+  } | null>(null);
+  const serverLabelsRef = useRef<{
+    revision_id: number | null;
+    routing_default: string;
+    lane_change_default: string;
+    overrides: Record<string, IntentOverride>;
+  } | null>(null);
 
   // Media zoom/pan per panel
   const [cameraZoom, setCameraZoom] = useState<ZoomTransform>({ scale: 1, x: 0, y: 0 });
@@ -291,6 +308,8 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
   // Auto-save & undo refs
   const undoStackRef = useRef<EditSnapshot[]>([]);
   const dirtyRef = useRef(false);
+  const draftBaseRevisionRef = useRef<number | null>(null);
+  const conflictBlockedRef = useRef(false);
   const editVersionRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
   const savePromiseRef = useRef<Promise<void> | null>(null);
@@ -417,124 +436,212 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
     [axisEnabled],
   );
 
+  // Sync pending intent edits to browser localStorage so reload/502/503 never loses work.
+  useEffect(() => {
+    if (!dirtyRef.current || !activeDatasetId || !caseData?.case_id) return;
+    writeIntentDraft({
+      datasetId: activeDatasetId,
+      caseId: caseData.case_id,
+      author: username || "",
+      routingDefault: aggregate.routing,
+      laneChangeDefault: aggregate.laneChange,
+      overrides,
+      expectedRevisionId: conflictBlockedRef.current
+        ? draftBaseRevisionRef.current
+        : (draftBaseRevisionRef.current ?? revisionId),
+    });
+  }, [aggregate, overrides, activeDatasetId, caseData?.case_id, revisionId, username]);
+
   // Flush auto-save
-  const flushSave = useCallback(async (): Promise<void> => {
-    if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-    if (savePromiseRef.current) {
-      await savePromiseRef.current;
-      if (dirtyRef.current) return flushSave();
-      return;
-    }
-    const cur = stateRef.current;
-    if (!dirtyRef.current || !cur.caseData?.case_id || !cur.activeDatasetId) return;
-    const savedEditVersion = editVersionRef.current;
-    dirtyRef.current = false;
-    setTopbarSaveState(bilingual(lang, "正在保存…", "Saving…"), "saving");
-    const promise = apiRequest<{
-      labels?: {
-        revision_id?: number | null;
-        routing_default?: string;
-        lane_change_default?: string;
-        overrides?: IntentOverride[];
-        created_at?: string;
-      };
-    }>(
-      `/api/intent-datasets/${encodeURIComponent(cur.activeDatasetId)}/cases/${encodeURIComponent(
-        cur.caseData.case_id,
-      )}/labels`,
-      {
-        method: "PUT",
-        body: {
-          expected_revision_id: cur.revisionId,
-          routing_default: cur.aggregate.routing,
-          lane_change_default: cur.aggregate.laneChange,
-          overrides: Object.values(cur.overrides).map((item) => ({
-            timepoint_id: item.timepoint_id,
-            offset_ms: item.offset_ms,
-            routing_intent: item.routing_intent || "",
-            lane_change_intent: item.lane_change_intent || "",
-          })),
-          author: cur.username || "",
+  const flushSave = useCallback(
+    async (options?: { allowConflictOverwrite?: boolean }): Promise<void> => {
+      const explicitOverwrite = Boolean(options?.allowConflictOverwrite);
+      if (conflictBlockedRef.current && !explicitOverwrite) {
+        return;
+      }
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      if (savePromiseRef.current) {
+        await savePromiseRef.current;
+        if (dirtyRef.current && !conflictBlockedRef.current) return flushSave();
+        return;
+      }
+      const cur = stateRef.current;
+      if ((!dirtyRef.current && !explicitOverwrite) || !cur.caseData?.case_id || !cur.activeDatasetId) {
+        return;
+      }
+      const savedEditVersion = editVersionRef.current;
+      const targetExpectedRevisionId = explicitOverwrite
+        ? (serverLabelsRef.current?.revision_id ?? cur.revisionId)
+        : draftBaseRevisionRef.current;
+      if (explicitOverwrite) {
+        // User explicitly confirmed overwriting against targetExpectedRevisionId.
+        // Commit this base revision and lift conflictBlockedRef BEFORE issuing PUT
+        // so a transient 503/502 retry replays the exact same overwrite key & target.
+        draftBaseRevisionRef.current = targetExpectedRevisionId;
+        conflictBlockedRef.current = false;
+      }
+      const persistedDraft = writeIntentDraft({
+        datasetId: cur.activeDatasetId,
+        caseId: cur.caseData.case_id,
+        author: cur.username || "",
+        routingDefault: cur.aggregate.routing,
+        laneChangeDefault: cur.aggregate.laneChange,
+        overrides: cur.overrides,
+        expectedRevisionId: targetExpectedRevisionId,
+        forceNewIdempotencyKey: explicitOverwrite,
+      });
+      const idemKey = persistedDraft?.idempotency_key || "";
+      dirtyRef.current = false;
+      let saveFailed = false;
+      setTopbarSaveState(bilingual(lang, "正在保存…", "Saving…"), "saving");
+      const promise = apiRequest<{
+        labels?: {
+          revision_id?: number | null;
+          routing_default?: string;
+          lane_change_default?: string;
+          overrides?: IntentOverride[];
+          created_at?: string;
+        };
+      }>(
+        `/api/intent-datasets/${encodeURIComponent(cur.activeDatasetId)}/cases/${encodeURIComponent(
+          cur.caseData.case_id,
+        )}/labels`,
+        {
+          method: "PUT",
+          headers: idemKey ? { "Idempotency-Key": idemKey } : undefined,
+          body: {
+            expected_revision_id: targetExpectedRevisionId,
+            routing_default: cur.aggregate.routing,
+            lane_change_default: cur.aggregate.laneChange,
+            overrides: Object.values(cur.overrides).map((item) => ({
+              timepoint_id: item.timepoint_id,
+              offset_ms: item.offset_ms,
+              routing_intent: item.routing_intent || "",
+              lane_change_intent: item.lane_change_intent || "",
+            })),
+            author: cur.username || "",
+          },
         },
-      },
-    )
-      .then((payload) => {
-        getLegacyWindow().acknowledgeLocalChange?.(payload);
-        const nextRev = payload.labels?.revision_id ?? null;
-        setRevisionId(nextRev);
-        if (editVersionRef.current === savedEditVersion) {
+      )
+        .then((payload) => {
+          getLegacyWindow().acknowledgeLocalChange?.(payload);
+          const nextRev = payload.labels?.revision_id ?? null;
+          conflictBlockedRef.current = false;
+          draftBaseRevisionRef.current = nextRev;
+          setRevisionId(nextRev);
           const nextOverrides: Record<string, IntentOverride> = {};
           for (const ov of payload.labels?.overrides || []) {
             nextOverrides[ov.timepoint_id] = { ...ov };
           }
-          setOverrides(nextOverrides);
-          setTopbarSaveState(bilingual(lang, "已自动保存", "Auto-saved"), "saved");
-          // Update contributor card locally
-          const lowerUser = String(cur.username || "").toLowerCase();
-          setCaseData((prev) => {
-            if (!prev) return prev;
-            const prevCollab = prev.collaboration || { contributors: [], comments: [] };
-            const contributors = [...(prevCollab.contributors || [])];
-            const idx = contributors.findIndex((c) => c.is_current || c.username === lowerUser);
-            const updated: IntentContributor = {
-              ...(idx >= 0 ? contributors[idx] : {}),
-              username: lowerUser,
-              is_current: true,
-              revealed: true,
-              labeled: true,
-              completed: labelsComplete(
-                payload.labels?.routing_default || "",
-                payload.labels?.lane_change_default || "",
-              ),
-              routing_default: payload.labels?.routing_default || "",
-              lane_change_default: payload.labels?.lane_change_default || "",
-              overrides: payload.labels?.overrides || [],
-              updated_at: payload.labels?.created_at || "",
-            };
-            if (idx >= 0) contributors[idx] = updated;
-            else contributors.push(updated);
-            return { ...prev, collaboration: { ...prevCollab, contributors } };
-          });
-          if (
-            autoAdvanceRef.current.enabled &&
-            autoAdvanceRef.current.tpId === stateRef.current.activeTimepointId
-          ) {
-            autoAdvanceRef.current = { enabled: false, tpId: "" };
-            const tps = stateRef.current.caseData?.timepoints || [];
-            const curIdx = tps.findIndex((t) => t.id === stateRef.current.activeTimepointId);
-            if (curIdx >= 0 && curIdx < tps.length - 1) {
-              const nextTp = tps[curIdx + 1];
-              setActiveTimepointId(nextTp.id);
-              setSelectedTimepointIds([nextTp.id]);
-              setSelectionAnchorId(nextTp.id);
+          serverLabelsRef.current = {
+            revision_id: nextRev,
+            routing_default: payload.labels?.routing_default || "",
+            lane_change_default: payload.labels?.lane_change_default || "",
+            overrides: nextOverrides,
+          };
+          if (editVersionRef.current === savedEditVersion) {
+            clearIntentDraft(cur.activeDatasetId, cur.caseData!.case_id, cur.username || "");
+            setDraftNotice(null);
+            setOverrides(nextOverrides);
+            setTopbarSaveState(bilingual(lang, "已自动保存", "Auto-saved"), "saved");
+            // Update contributor card locally
+            const lowerUser = String(cur.username || "").toLowerCase();
+            setCaseData((prev) => {
+              if (!prev) return prev;
+              const prevCollab = prev.collaboration || { contributors: [], comments: [] };
+              const contributors = [...(prevCollab.contributors || [])];
+              const idx = contributors.findIndex((c) => c.is_current || c.username === lowerUser);
+              const updated: IntentContributor = {
+                ...(idx >= 0 ? contributors[idx] : {}),
+                username: lowerUser,
+                is_current: true,
+                revealed: true,
+                labeled: true,
+                completed: labelsComplete(
+                  payload.labels?.routing_default || "",
+                  payload.labels?.lane_change_default || "",
+                ),
+                routing_default: payload.labels?.routing_default || "",
+                lane_change_default: payload.labels?.lane_change_default || "",
+                overrides: payload.labels?.overrides || [],
+                updated_at: payload.labels?.created_at || "",
+              };
+              if (idx >= 0) contributors[idx] = updated;
+              else contributors.push(updated);
+              return { ...prev, collaboration: { ...prevCollab, contributors } };
+            });
+            if (
+              autoAdvanceRef.current.enabled &&
+              autoAdvanceRef.current.tpId === stateRef.current.activeTimepointId
+            ) {
+              autoAdvanceRef.current = { enabled: false, tpId: "" };
+              const tps = stateRef.current.caseData?.timepoints || [];
+              const curIdx = tps.findIndex((t) => t.id === stateRef.current.activeTimepointId);
+              if (curIdx >= 0 && curIdx < tps.length - 1) {
+                const nextTp = tps[curIdx + 1];
+                setActiveTimepointId(nextTp.id);
+                setSelectedTimepointIds([nextTp.id]);
+                setSelectionAnchorId(nextTp.id);
+              }
             }
+          } else {
+            dirtyRef.current = true;
+            setTopbarSaveState(bilingual(lang, "等待自动保存…", "Pending auto-save…"), "dirty");
           }
-        } else {
-          dirtyRef.current = true;
-          setTopbarSaveState(bilingual(lang, "等待自动保存…", "Pending auto-save…"), "dirty");
-        }
-      })
-      .catch((err) => {
-        dirtyRef.current = true;
-        setTopbarSaveState(bilingual(lang, "保存失败", "Save failed"), "error");
-        getLegacyWindow().showToast?.((err as Error)?.message || "Save failed", true);
-      })
-      .finally(() => {
-        savePromiseRef.current = null;
-      });
-    savePromiseRef.current = promise;
-    await promise;
-    if (dirtyRef.current) return flushSave();
-  }, [lang, labelsComplete]);
+        })
+        .catch((err) => {
+          saveFailed = true;
+          const message =
+            (err as Error)?.message ||
+            bilingual(lang, "保存失败，本地草稿已保留。", "Save failed. Local draft preserved.");
+          const isConflict = err instanceof ApiError && err.status === 409;
+          if (isConflict) {
+            conflictBlockedRef.current = true;
+            dirtyRef.current = false;
+          } else {
+            dirtyRef.current = true;
+          }
+          setDraftNotice({
+            kind: "save_failed",
+            message,
+            remoteChanged: isConflict,
+          });
+          setTopbarSaveState(
+            isConflict
+              ? bilingual(lang, "远端版本冲突（需确认）", "Server conflict (review required)")
+              : bilingual(lang, "保存失败（草稿已保留）", "Save failed (draft kept)"),
+            "error",
+          );
+          getLegacyWindow().showToast?.(message, true);
+        })
+        .finally(() => {
+          savePromiseRef.current = null;
+        });
+      savePromiseRef.current = promise;
+      await promise;
+      if (!saveFailed && dirtyRef.current && !conflictBlockedRef.current) return flushSave();
+    },
+    [lang, labelsComplete],
+  );
 
   const markDirty = useCallback(() => {
     dirtyRef.current = true;
     editVersionRef.current += 1;
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (conflictBlockedRef.current) {
+      setTopbarSaveState(
+        bilingual(lang, "草稿与远端冲突（等待确认）", "Draft conflicts with server (review required)"),
+        "error",
+      );
+      return;
+    }
     setTopbarSaveState(bilingual(lang, "等待自动保存…", "Pending auto-save…"), "dirty");
-    if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(() => {
       void flushSave();
     }, 600);
@@ -640,24 +747,74 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         detail.previous_case = queueItem?.previous || null;
         detail.next_case = queueItem?.next || null;
 
+        const serverRevId = detail.labels?.revision_id ?? null;
+        const serverRouting = detail.labels?.routing_default || "";
+        const serverLaneChange = detail.labels?.lane_change_default || "";
+        const nextOv: Record<string, IntentOverride> = {};
+        for (const ov of detail.labels?.overrides || []) {
+          nextOv[ov.timepoint_id] = { ...ov };
+        }
+        serverLabelsRef.current = {
+          revision_id: serverRevId,
+          routing_default: serverRouting,
+          lane_change_default: serverLaneChange,
+          overrides: nextOv,
+        };
+        const savedDraft = readIntentDraft(resolvedDs, resolvedCaseId, stateRef.current.username || "");
+        const serverSig = intentDraftSignature(serverRouting, serverLaneChange, nextOv);
+        const shouldRestoreDraft = Boolean(savedDraft && savedDraft.signature !== serverSig);
+        if (savedDraft && !shouldRestoreDraft) {
+          clearIntentDraft(resolvedDs, resolvedCaseId, stateRef.current.username || "");
+        }
+
         setActiveDatasetId(resolvedDs);
         setCaseData(detail);
         setCaseInput(detail.issue_id || "");
         setCaseOrdinalInput(detail.ordinal ? String(detail.ordinal) : "");
         setAdminReveal(Boolean(opts.revealAnswers));
-        setRevisionId(detail.labels?.revision_id ?? null);
-        setAggregate({
-          routing: detail.labels?.routing_default || "",
-          laneChange: detail.labels?.lane_change_default || "",
-        });
-        const nextOv: Record<string, IntentOverride> = {};
-        for (const ov of detail.labels?.overrides || []) {
-          nextOv[ov.timepoint_id] = { ...ov };
+        setRevisionId(serverRevId);
+        if (shouldRestoreDraft && savedDraft) {
+          const remoteChanged = savedDraft.expected_revision_id !== serverRevId;
+          draftBaseRevisionRef.current = savedDraft.expected_revision_id;
+          conflictBlockedRef.current = remoteChanged;
+          setAggregate({
+            routing: savedDraft.routing_default || "",
+            laneChange: savedDraft.lane_change_default || "",
+          });
+          setOverrides(savedDraft.overrides || {});
+          undoStackRef.current = [];
+          // Never auto-submit or rewrite expected_revision_id on a conflicted draft;
+          // wait for an explicit user overwrite or discard decision.
+          dirtyRef.current = !remoteChanged;
+          editVersionRef.current = 1;
+          setDraftNotice({
+            kind: "restored",
+            remoteChanged,
+            message: remoteChanged
+              ? bilingual(
+                  lang,
+                  "已恢复本地未保存草稿，但远端标注版本已更新。切换 Case 不会自动覆盖远端；请明确选择覆盖保存或放弃本地草稿。",
+                  "Restored an unsaved local draft, but the server revision has changed. Switching cases will not overwrite the server; explicitly overwrite or discard the draft.",
+                )
+              : bilingual(
+                  lang,
+                  "已恢复本地未保存的标注草稿，可点击立即保存或放弃草稿。",
+                  "Restored an unsaved local labeling draft. Save now or discard it.",
+                ),
+          });
+        } else {
+          draftBaseRevisionRef.current = serverRevId;
+          conflictBlockedRef.current = false;
+          setAggregate({
+            routing: serverRouting,
+            laneChange: serverLaneChange,
+          });
+          setOverrides(nextOv);
+          undoStackRef.current = [];
+          dirtyRef.current = false;
+          editVersionRef.current = 0;
+          setDraftNotice(null);
         }
-        setOverrides(nextOv);
-        undoStackRef.current = [];
-        dirtyRef.current = false;
-        editVersionRef.current = 0;
 
         const tps = detail.timepoints || [];
         const targetOffset = opts.offsetMs !== undefined ? opts.offsetMs : requestedOffsetMs;
@@ -672,10 +829,12 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         setCameraZoom({ scale: 1, x: 0, y: 0 });
         setBevZoom({ scale: 1, x: 0, y: 0 });
         setTopbarSaveState(
-          detail.labels?.revision_id
-            ? bilingual(lang, "已自动保存", "Auto-saved")
-            : bilingual(lang, "尚未标注", "Not labeled yet"),
-          detail.labels?.revision_id ? "saved" : "",
+          shouldRestoreDraft
+            ? bilingual(lang, "已恢复本地草稿", "Local draft restored")
+            : serverRevId
+              ? bilingual(lang, "已自动保存", "Auto-saved")
+              : bilingual(lang, "尚未标注", "Not labeled yet"),
+          shouldRestoreDraft ? "dirty" : serverRevId ? "saved" : "",
         );
         if (completedFallback) {
           getLegacyWindow().showToast?.(
@@ -1093,6 +1252,16 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         { method: "DELETE" },
       );
       getLegacyWindow().acknowledgeLocalChange?.(result);
+      clearIntentDraft(activeDatasetId, caseData.case_id, username || "");
+      conflictBlockedRef.current = false;
+      draftBaseRevisionRef.current = null;
+      serverLabelsRef.current = {
+        revision_id: null,
+        routing_default: "",
+        lane_change_default: "",
+        overrides: {},
+      };
+      setDraftNotice(null);
       setRevisionId(null);
       setAggregate({ routing: "", laneChange: "" });
       setOverrides({});
@@ -1566,6 +1735,87 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
           </div>
         </div>
       </section>
+
+      {draftNotice ? (
+        <div
+          className={`ra-draft-recovery-banner${draftNotice.kind === "save_failed" || draftNotice.remoteChanged ? " is-warning" : ""}`}
+          id="intentDraftRecoveryBanner"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="ra-draft-recovery-copy">
+            <strong>
+              {draftNotice.kind === "save_failed"
+                ? bilingual(lang, "保存未完成 · 草稿已保留", "Save incomplete · Draft preserved")
+                : bilingual(lang, "已恢复本地草稿", "Local draft restored")}
+            </strong>
+            <span>{draftNotice.message}</span>
+          </div>
+          <div className="ra-draft-recovery-actions">
+            {draftNotice.remoteChanged && draftNotice.kind === "save_failed" ? (
+              <button
+                type="button"
+                className="button button-primary"
+                id="intentDraftReloadButton"
+                onClick={() => {
+                  if (activeDatasetId && caseData?.case_id) {
+                    void loadCase({ datasetId: activeDatasetId, caseId: caseData.case_id });
+                  }
+                }}
+              >
+                {bilingual(lang, "加载最新远端版本", "Load latest server")}
+              </button>
+            ) : canAnnotateIntent ? (
+              <button
+                type="button"
+                className="button button-primary"
+                id="intentDraftRetryButton"
+                onClick={() => {
+                  dirtyRef.current = true;
+                  void flushSave({ allowConflictOverwrite: Boolean(draftNotice.remoteChanged) });
+                }}
+              >
+                {draftNotice.remoteChanged
+                  ? bilingual(lang, "以草稿覆盖远端", "Overwrite server with draft")
+                  : draftNotice.kind === "save_failed"
+                    ? bilingual(lang, "重试保存", "Retry save")
+                    : bilingual(lang, "立即保存", "Save now")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="button button-quiet"
+              id="intentDraftDiscardButton"
+              onClick={() => {
+                if (activeDatasetId && caseData?.case_id) {
+                  clearIntentDraft(activeDatasetId, caseData.case_id, username || "");
+                }
+                const server = serverLabelsRef.current;
+                conflictBlockedRef.current = false;
+                draftBaseRevisionRef.current = server?.revision_id ?? null;
+                setAggregate({
+                  routing: server?.routing_default || "",
+                  laneChange: server?.lane_change_default || "",
+                });
+                setOverrides(server?.overrides ? { ...server.overrides } : {});
+                setRevisionId(server?.revision_id ?? null);
+                dirtyRef.current = false;
+                setDraftNotice(null);
+                setTopbarSaveState(
+                  server?.revision_id
+                    ? bilingual(lang, "已自动保存", "Auto-saved")
+                    : bilingual(lang, "尚未标注", "Not labeled yet"),
+                  server?.revision_id ? "saved" : "",
+                );
+              }}
+            >
+              {draftNotice.remoteChanged
+                ? bilingual(lang, "放弃草稿并采用远端", "Discard & use server")
+                : bilingual(lang, "放弃草稿", "Discard draft")}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {loadError && !caseData ? (
         <div className="page-card no-asset">{loadError}</div>

@@ -5,7 +5,14 @@ from typing import Any
 from ..intent_experiments import build_intent_experiment_assignments
 from .comment_mutations import comment_metadata
 
-from .shared import IntentAnnotationConflictError, _json, _json_load, utc_now
+from .shared import (
+    IntentAnnotationConflictError,
+    _json,
+    _json_load,
+    idempotency_fingerprint,
+    normalize_idempotency_key,
+    utc_now,
+)
 
 
 ROUTING_INTENTS = ("left_turn", "right_turn", "straight", "u_turn", "parking")
@@ -733,7 +740,9 @@ class DatabaseIntentMixin:
         author: str,
         author_source: str = "legacy",
         author_verified: bool = False,
+        idempotency_key: str = "",
     ) -> dict[str, Any]:
+        idem_key = normalize_idempotency_key(idempotency_key)
         routing_default = str(routing_default or "").strip()
         lane_change_default = str(lane_change_default or "").strip()
         if routing_default and routing_default not in ROUTING_INTENTS:
@@ -776,7 +785,61 @@ class DatabaseIntentMixin:
         normalized.sort(key=lambda item: (item["offset_ms"], item["timepoint_id"]))
         now = utc_now()
         normalized_author = author.strip().lower() or "anonymous"
+        idem_fp = (
+            idempotency_fingerprint(
+                {
+                    "dataset_id": str(dataset_id or ""),
+                    "case_id": str(case_id or ""),
+                    "routing_default": routing_default,
+                    "lane_change_default": lane_change_default,
+                    "overrides": normalized,
+                }
+            )
+            if idem_key
+            else ""
+        )
         with self._write_lock, self.connect() as conn:
+            if self.backend == "postgresql":
+                conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(?))",
+                    (f"intent-label:{dataset_id}:{case_id}:{normalized_author}",),
+                )
+            elif not conn.in_transaction:
+                conn.execute("BEGIN IMMEDIATE")
+            if idem_key:
+                existing = conn.execute(
+                    """
+                    SELECT * FROM intent_label_revisions
+                    WHERE dataset_id = ? AND case_id = ?
+                      AND lower(author) = lower(?) AND idempotency_key = ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (dataset_id, case_id, normalized_author, idem_key),
+                ).fetchone()
+                if existing is not None:
+                    if str(existing["idempotency_fingerprint"] or "") != idem_fp:
+                        raise IntentAnnotationConflictError(
+                            "幂等键已用于不同的意图标注内容，请刷新后重新保存。 / Idempotency-Key was already used for different intent labels."
+                        )
+                    override_rows = conn.execute(
+                        """
+                        SELECT timepoint_id, offset_ms, routing_intent, lane_change_intent
+                        FROM intent_frame_overrides
+                        WHERE revision_id = ?
+                        ORDER BY offset_ms ASC, timepoint_id ASC
+                        """,
+                        (int(existing["id"]),),
+                    ).fetchall()
+                    existing_overrides = [
+                        {
+                            "timepoint_id": str(item["timepoint_id"]),
+                            "offset_ms": int(item["offset_ms"]),
+                            "routing_intent": str(item["routing_intent"] or ""),
+                            "lane_change_intent": str(item["lane_change_intent"] or ""),
+                        }
+                        for item in override_rows
+                    ]
+                    return self._intent_revision_dict(existing, existing_overrides)
             head = conn.execute(
                 """
                 SELECT current_revision_id FROM intent_user_label_heads
@@ -792,8 +855,9 @@ class DatabaseIntentMixin:
             sql = """
                 INSERT INTO intent_label_revisions (
                     dataset_id, case_id, routing_default, lane_change_default,
-                    author, author_source, author_verified, supersedes_id, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    author, author_source, author_verified, supersedes_id,
+                    idempotency_key, idempotency_fingerprint, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             if self.backend == "postgresql":
                 sql += " RETURNING id"
@@ -808,6 +872,8 @@ class DatabaseIntentMixin:
                     author_source.strip() or "legacy",
                     bool(author_verified),
                     current_revision_id,
+                    idem_key,
+                    idem_fp,
                     now,
                 ),
             )

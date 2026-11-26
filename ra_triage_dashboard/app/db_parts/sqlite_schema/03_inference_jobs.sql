@@ -50,6 +50,7 @@
                         CHECK(publish_status IN (
                             'not_requested', 'running', 'succeeded', 'partial', 'failed'
                         )),
+                    publish_queued INTEGER NOT NULL DEFAULT 0,
                     autotriage_batch_id TEXT NOT NULL DEFAULT '',
                     autotriage_writer TEXT NOT NULL DEFAULT '',
                     summary_json TEXT NOT NULL DEFAULT '{}',

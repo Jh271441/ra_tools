@@ -11,6 +11,32 @@ def initialize_columns(self, conn) -> None:
     self._ensure_column(conn, "review_comments", "request_fingerprint", "TEXT NOT NULL DEFAULT ''")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_review_comments_client_request "
                  "ON review_comments(issue_id, lower(author), client_request_id) WHERE client_request_id <> ''")
+    for table in ("label_revisions", "issue_label_decisions", "intent_label_revisions"):
+        self._ensure_column(conn, table, "idempotency_key", "TEXT NOT NULL DEFAULT ''")
+        self._ensure_column(conn, table, "idempotency_fingerprint", "TEXT NOT NULL DEFAULT ''")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_label_revisions_idempotency "
+        "ON label_revisions(label_case_id, lower(author), idempotency_key) WHERE idempotency_key <> ''"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_issue_label_decisions_idempotency "
+        "ON issue_label_decisions(baseline_scope, issue_id, lower(created_by), idempotency_key) WHERE idempotency_key <> ''"
+    )
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_label_revisions_idempotency "
+        "ON intent_label_revisions(dataset_id, case_id, lower(author), idempotency_key) WHERE idempotency_key <> ''"
+    )
+    self._ensure_column(
+        conn,
+        "batch_prediction_jobs",
+        "publish_queued",
+        "INTEGER NOT NULL DEFAULT 0",
+    )
+    if self.backend == "sqlite":
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_batch_prediction_jobs_publish_queue "
+            "ON batch_prediction_jobs(publish_queued, created_at ASC) WHERE publish_queued = 1"
+        )
     for table in ("review_comments", "intent_case_comments"):
         self._ensure_column(conn, table, "version", "INTEGER NOT NULL DEFAULT 1")
         self._ensure_column(conn, table, "edited_at", "TEXT")

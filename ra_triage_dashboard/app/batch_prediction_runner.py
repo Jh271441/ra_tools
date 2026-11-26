@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -23,6 +24,10 @@ MAX_WORKER_OUTPUT_BYTES = 32 * 1024 * 1024
 MAX_WORKER_EVENTS = 1000
 
 
+class _BatchLeaseLostError(RuntimeError):
+    """Raised when a worker thread's lease epoch was invalidated before spawning."""
+
+
 class BatchPredictionRunner:
     """Run the RA worker outside the dashboard process.
 
@@ -43,97 +48,210 @@ class BatchPredictionRunner:
                 "DASHBOARD_BATCH_BAG_CACHE_DIR 必须位于 RA_AUTO_TRIAGE_ROOT 之外。"
             )
         self._lock = threading.Lock()
+        self._thread_local = threading.local()
         self._active_operation = ""
+        self._active_job_id = ""
         self._active_process: subprocess.Popen[bytes] | None = None
         self._active_thread: threading.Thread | None = None
+        self._running_threads: set[threading.Thread] = set()
         self._shutting_down = False
+        self._lease_gated = False
+        self._lease_held = True
+        self._lease_epoch = 0
+
+    def set_lease_gating(self, enabled: bool, *, held: bool = False) -> None:
+        with self._lock:
+            self._lease_gated = bool(enabled)
+            self._lease_held = bool(held) if enabled else True
+            self._lease_epoch += 1
+
+    def set_lease_held(self, held: bool) -> None:
+        with self._lock:
+            if self._lease_gated:
+                self._lease_held = bool(held)
+                self._lease_epoch += 1
+
+    def revoke_lease(self) -> None:
+        """Invalidate the active lease epoch and stop any running worker before release."""
+        with self._lock:
+            if self._lease_gated:
+                self._lease_held = False
+            self._lease_epoch += 1
+        self.stop_active()
+
+    def active_job_ids(self) -> set[str]:
+        with self._lock:
+            return {self._active_job_id} if self._active_job_id else set()
+
+    def _claim_prediction(self, job: dict[str, Any]) -> bool:
+        claimer = getattr(self.database, "claim_queued_batch_prediction_job", None)
+        if callable(claimer):
+            return claimer(job["id"]) is not None
+        self.database.update_batch_prediction_job(
+            job["id"],
+            status="running",
+            error_text="",
+        )
+        return True
 
     def launch_prediction(self, job: dict[str, Any]) -> bool:
         return self._launch(
             operation=f"predict:{job['id']}",
+            job_id=str(job["id"]),
             target=self._predict,
             args=(job["id"],),
             accept_if_busy=True,
-            claim=lambda: self.database.update_batch_prediction_job(
-                job["id"],
-                status="running",
-                error_text="",
-            ),
+            claim=lambda: self._claim_prediction(job),
         )
 
     def resume_queued_predictions(self) -> bool:
-        """Start the oldest durable queued job when the runner is idle."""
-
+        """Start the oldest durable queued prediction job when the runner is idle."""
+        with self._lock:
+            if self._shutting_down or (self._lease_gated and not self._lease_held):
+                return False
         job = self.database.next_queued_batch_prediction_job()
         return bool(job and self.launch_prediction(job))
 
+    def resume_queued_publishes(self) -> bool:
+        """Start the oldest durable confirmed AutoTriage publish request when idle."""
+        if not bool(getattr(self.settings, "autotriage_push_enabled", False)):
+            return False
+        with self._lock:
+            if self._shutting_down or (self._lease_gated and not self._lease_held):
+                return False
+        getter = getattr(self.database, "next_queued_batch_publish_job", None)
+        if not callable(getter):
+            return False
+        job = getter()
+        return bool(job and self.launch_publish(job))
+
+    def resume_queued_work(self) -> bool:
+        """Start queued predictions first, then queued AutoTriage publish requests."""
+        return self.resume_queued_predictions() or self.resume_queued_publishes()
+
+    def _claim_publish(self, job: dict[str, Any]) -> bool:
+        claimer = getattr(self.database, "claim_queued_batch_prediction_publish", None)
+        if callable(claimer):
+            return claimer(job["id"]) is not None
+        self.database.update_batch_prediction_job(
+            job["id"],
+            publish_status="running",
+            error_text="",
+        )
+        return True
+
     def launch_publish(self, job: dict[str, Any]) -> bool:
+        if not bool(getattr(self.settings, "autotriage_push_enabled", False)):
+            return False
         return self._launch(
             operation=f"publish:{job['id']}",
+            job_id=str(job["id"]),
             target=self._publish,
             args=(job["id"],),
-            claim=lambda: self.database.update_batch_prediction_job(
-                job["id"],
-                publish_status="running",
-                error_text="",
-            ),
+            accept_if_unleased=True,
+            claim=lambda: self._claim_publish(job),
         )
 
     def _launch(
         self,
         *,
         operation: str,
+        job_id: str,
         target: Any,
         args: tuple[Any, ...],
         claim: Any,
         accept_if_busy: bool = False,
+        accept_if_unleased: bool = False,
     ) -> bool:
         with self._lock:
             if self._shutting_down:
                 return False
+            if self._lease_gated and not self._lease_held:
+                return accept_if_busy or accept_if_unleased
             if self._active_operation:
                 return accept_if_busy
-            claim()
+            claimed = claim()
+            if claimed is False:
+                return False
+            launch_epoch = self._lease_epoch
             self._active_operation = operation
+            self._active_job_id = str(job_id or "").strip()
             thread = threading.Thread(
                 target=self._thread_entry,
-                args=(target, args),
+                args=(target, args, launch_epoch),
                 daemon=True,
                 name=f"ra-batch-{operation[:28]}",
             )
             self._active_thread = thread
+            self._running_threads.add(thread)
         thread.start()
         return True
 
-    def _thread_entry(self, target: Any, args: tuple[Any, ...]) -> None:
+    def _thread_entry(
+        self,
+        target: Any,
+        args: tuple[Any, ...],
+        lease_epoch: int,
+    ) -> None:
+        self._thread_local.lease_epoch = lease_epoch
+        current = threading.current_thread()
         try:
-            target(*args)
+            try:
+                target(*args)
+            finally:
+                self._thread_local.lease_epoch = None
+                with self._lock:
+                    if self._active_thread is current:
+                        self._active_operation = ""
+                        self._active_job_id = ""
+                        self._active_process = None
+                        self._active_thread = None
+                    should_resume = not self._shutting_down and (
+                        not self._lease_gated
+                        or (self._lease_held and self._lease_epoch == lease_epoch)
+                    )
+                if should_resume:
+                    self.resume_queued_work()
         finally:
             with self._lock:
-                self._active_operation = ""
-                self._active_process = None
-                self._active_thread = None
-            if not self._shutting_down:
-                self.resume_queued_predictions()
+                self._running_threads.discard(current)
 
-    def shutdown(self) -> None:
-        """Stop an active worker tree before the web process exits."""
+    def stop_active(self) -> None:
+        """Stop an active worker tree without marking the runner permanently shut down."""
+        current = threading.current_thread()
         with self._lock:
-            self._shutting_down = True
             process = self._active_process
-            thread = self._active_thread
+            threads = [t for t in self._running_threads if t is not current]
+            if (
+                self._active_thread is not None
+                and self._active_thread is not current
+                and self._active_thread not in threads
+            ):
+                threads.append(self._active_thread)
         if process is not None and process.poll() is None:
             self._kill_process_group(process)
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self._kill_process_group(process)
-        if (
-            thread is not None
-            and thread is not threading.current_thread()
-            and thread.is_alive()
-        ):
-            thread.join(timeout=5)
+        for thread in threads:
+            if thread.is_alive():
+                thread.join(timeout=5)
+        # Re-check in case a subprocess was attached right before epoch fence.
+        with self._lock:
+            lingering = self._active_process
+        if lingering is not None and lingering.poll() is None:
+            self._kill_process_group(lingering)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                lingering.wait(timeout=5)
+
+    def shutdown(self) -> None:
+        """Stop an active worker tree before the web process exits."""
+        with self._lock:
+            self._shutting_down = True
+            self._lease_held = False
+            self._lease_epoch += 1
+        self.stop_active()
 
     def _predict(self, job_id: str) -> None:
         job = self.database.get_batch_prediction_job(job_id)
@@ -375,6 +493,10 @@ class BatchPredictionRunner:
                 error_text=error_text,
                 log_path=str(log_path),
             )
+        except _BatchLeaseLostError:
+            # Lease was revoked before spawning; let the new lease holder
+            # own recovery rather than overwriting DB state from a stale thread.
+            return
         except Exception as exc:
             failure = str(exc)
             current = self.database.get_batch_prediction_job(job_id) or {}
@@ -413,6 +535,8 @@ class BatchPredictionRunner:
             )
 
     def _publish(self, job_id: str) -> None:
+        if not bool(getattr(self.settings, "autotriage_push_enabled", False)):
+            return
         job = self.database.get_batch_prediction_job(job_id)
         if job is None:
             return
@@ -481,6 +605,8 @@ class BatchPredictionRunner:
                 else str(result.get("error") or "AutoTriage 推送未完整完成。"),
                 log_path=str(log_path),
             )
+        except _BatchLeaseLostError:
+            return
         except Exception as exc:
             current = self.database.get_batch_prediction_job(job_id) or {}
             batch_id = str(current.get("autotriage_batch_id") or batch_id)
@@ -561,8 +687,14 @@ class BatchPredictionRunner:
                 [model_api_key, f"apikey:{model_api_key}", model_chat_url]
             )
         with self._lock:
+            expected_epoch = getattr(self._thread_local, "lease_epoch", None)
             if self._shutting_down:
                 raise RuntimeError("服务正在停止，未启动 Batch worker。")
+            if self._lease_gated and (
+                not self._lease_held
+                or (expected_epoch is not None and self._lease_epoch != expected_epoch)
+            ):
+                raise _BatchLeaseLostError("Batch worker 已失去租约，未启动子进程。")
             process = subprocess.Popen(
                 ["bash", str(script)],
                 stdin=subprocess.PIPE,

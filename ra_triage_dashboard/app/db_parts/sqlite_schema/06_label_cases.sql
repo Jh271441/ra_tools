@@ -28,6 +28,8 @@
                         CHECK(revision_kind IN ('submission', 'adjudication', 'legacy')),
                     supersedes_id INTEGER REFERENCES label_revisions(id),
                     source_annotation_id INTEGER UNIQUE,
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_label_revisions_case_author
@@ -81,6 +83,8 @@
                     created_by TEXT NOT NULL DEFAULT '',
                     created_by_source TEXT NOT NULL DEFAULT 'legacy',
                     created_by_verified INTEGER NOT NULL DEFAULT 0,
+                    idempotency_key TEXT NOT NULL DEFAULT '',
+                    idempotency_fingerprint TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     UNIQUE(id, baseline_scope, issue_id)
                 );

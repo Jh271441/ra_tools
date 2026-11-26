@@ -19,7 +19,7 @@ from ...runtime import database
 import json
 from ...runtime import settings, review_notification_dispatcher
 from ...support.label_mentions import prepare_label_mentions
-from .common import _labeling_actor, _labeling_payload, _public_label_revision, _require_active_labeling_issue, _require_labeling_writer
+from .common import _labeling_actor, _labeling_payload, _optional_idempotency_key, _public_label_revision, _require_active_labeling_issue, _require_labeling_writer
 
 from fastapi import Depends
 from ...core.deps import get_container
@@ -40,6 +40,7 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _labeling_actor, request
     )
+    idempotency_key = _optional_idempotency_key(request, body)
     payload = _labeling_payload(body)
     recipients = await prepare_label_mentions(database, settings, payload["rationale"], actor, actor_verified)
     raw_previous = body.get("expected_previous_revision_id")
@@ -61,6 +62,7 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
             source_run_id="",
             expected_previous_revision_id=expected_previous,
             expected_allocation_revision=body.get("expected_allocation_revision"),
+            idempotency_key=idempotency_key,
             **payload,
         )
     except LabelAnnotationConflictError as exc:
@@ -69,7 +71,8 @@ async def create_label_revision(issue_id: str, request: Request) -> dict[str, An
         raise _detail(403, str(exc))
     except ValueError as exc:
         raise _detail(400, str(exc))
-    if revision.get("notification", {}).get("status") == "queued":
+    replayed = bool(revision.pop("_idempotency_replayed", False))
+    if not replayed and revision.get("notification", {}).get("status") == "queued":
         review_notification_dispatcher.wake()
     return {
         "revision": _public_label_revision(revision),
@@ -93,6 +96,7 @@ async def create_label_revision_with_attachments(
     actor, actor_source, actor_verified = await asyncio.to_thread(
         _labeling_actor, request
     )
+    idempotency_key = _optional_idempotency_key(request, body)
     normalized = _labeling_payload(body)
     raw_previous = body.get("expected_previous_revision_id")
     try:
@@ -118,6 +122,7 @@ async def create_label_revision_with_attachments(
             expected_previous_revision_id=expected_previous,
             expected_allocation_revision=body.get("expected_allocation_revision"),
             attachments=records,
+            idempotency_key=idempotency_key,
             **normalized,
         )
     except LabelAnnotationConflictError as exc:
@@ -134,7 +139,11 @@ async def create_label_revision_with_attachments(
         if isinstance(exc, ValueError):
             raise _detail(400, str(exc))
         raise
-    if revision.get("notification", {}).get("status") == "queued":
+    replayed = bool(revision.pop("_idempotency_replayed", False))
+    if replayed:
+        for path in paths:
+            await asyncio.to_thread(path.unlink, missing_ok=True)
+    elif revision.get("notification", {}).get("status") == "queued":
         review_notification_dispatcher.wake()
     return {
         "revision": _public_label_revision(revision),

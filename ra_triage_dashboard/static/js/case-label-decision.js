@@ -86,8 +86,15 @@ function renderCaseLabelDecisionDialog() {
       if (caseLabelDecisionUi.saving || editor !== caseLabelDecisionUi.editor || !isPageContextCurrent(editor.pageContext)
           || selectedBaselineQueryValue() !== editor.baselines || (editor.actor && editor.actor !== state.session?.username)) return;
       editor.data = structuredClone(c.caseData);
-      $("#caseDecisionConfirmExclusion").checked = false;
-      rememberCaseLabelDecisionDraft(); dialog.close();
+      editor.sourceConflict = null;
+      editor.excludedConfirmed = false;
+      const confirmBox = $("#caseDecisionConfirmExclusion");
+      if (confirmBox) confirmBox.checked = false;
+      rememberCaseLabelDecisionDraft({ forceNewIdempotencyKey: true });
+      if (typeof refreshCaseLabelingDraftBanner === "function") {
+        refreshCaseLabelingDraftBanner(editor.data, { decision: editor });
+      }
+      dialog.close();
     });
     dialog.querySelector(".dialog-actions").appendChild(button);
   }
@@ -142,33 +149,92 @@ function startCaseDecisionEditor(data, revisionId = null) {
   const adopted = revisionId == null ? null : caseDecisionRevisions(data).find(r => r.id === revisionId);
   if (revisionId != null && !adopted) return;
   const key = caseDecisionDraftKey(data), saved = caseLabelDecisionUi.drafts.get(key);
+  const storedDraft = !saved && typeof readCaseLabelDraft === "function"
+    ? readCaseLabelDraft(data.issue_id, "", "decision")
+    : null;
   const reuse = saved && saved.adoptedId === revisionId;
-  const source = reuse ? saved.source : adopted || {expected_output:"",tags:[],rationale:"",is_excluded:false};
+  const reuseStored = !reuse && storedDraft && storedDraft.adopted_revision_id === revisionId;
+  const source = reuse
+    ? saved.source
+    : reuseStored
+      ? {
+          expected_output: storedDraft.expected_output,
+          tags: storedDraft.tags,
+          evidence_gaps: storedDraft.evidence_gaps,
+          rationale: storedDraft.rationale,
+          is_excluded: storedDraft.is_excluded,
+        }
+      : adopted || {expected_output:"",tags:[],rationale:"",is_excluded:false};
   const reviewHost = state.activePage === "review" ? mountReviewDecisionEditor(data) : null;
   const node = $("#caseLabelingForm"), ordinary = {node,images:state.caseLabeling.pendingImages,dirty:state.caseLabeling.dirty,focus:document.activeElement?.id};
   closeAllReviewDropdowns();
   node?.remove();
+  const storedSourceCheck = reuseStored && typeof caseLabelDecisionSourceChanged === "function"
+    ? caseLabelDecisionSourceChanged(storedDraft, data)
+    : { changed: false };
+  const storedMissingAttachments = reuseStored && typeof caseLabelMissingAttachments === "function"
+    ? caseLabelMissingAttachments(storedDraft.pending_attachments || [], [])
+    : [];
+  const sourceConflict = storedSourceCheck.changed
+    ? { ...storedSourceCheck, acknowledged: false }
+    : (reuse && saved.sourceConflict ? structuredClone(saved.sourceConflict) : null);
   const c = {key,data:structuredClone(reuse ? saved.data : data),adoptedId:revisionId,adopted,source,ordinary,reviewHost,
-    images:reuse ? saved.images : [],retained:reuse ? saved.retained : (adopted?.attachments || []).map(a=>a.id),
-    rationale:reuse ? saved.rationale : "",confirmed:false,excludedConfirmed:reuse ? saved.excludedConfirmed : false,
+    images:reuse ? saved.images : [],retained:reuse ? saved.retained : reuseStored ? storedDraft.retained_attachment_ids : (adopted?.attachments || []).map(a=>a.id),
+    rationale:reuse ? saved.rationale : reuseStored ? storedDraft.decision_rationale : "",confirmed:false,
+    excludedConfirmed: sourceConflict && !sourceConflict.acknowledged
+      ? false
+      : (reuse ? saved.excludedConfirmed : reuseStored ? storedDraft.excluded_confirmed : false),
+    sourceConflict,
+    missingAttachments: reuse ? (saved.missingAttachments || []) : storedMissingAttachments,
+    restoredFromStorage: Boolean(reuseStored),
     pageContext:capturePageContext(),baselines:selectedBaselineQueryValue(),actor:state.session?.username || "",error:""};
   caseLabelDecisionUi.editor = c; state.caseLabeling.pendingImages = c.images; state.caseLabeling.dirty = true;
   $("#caseLabelDecisionDialog")?.close(); renderCaseLabelingEditor(data,{decision:c});
   $("#caseDecisionMode")?.focus();
 }
-function rememberCaseLabelDecisionDraft() {
+function rememberCaseLabelDecisionDraft({ forceNewIdempotencyKey = false } = {}) {
   const c = caseLabelDecisionUi.editor;
   if (!c || !$("#caseLabelingForm")) return;
   c.source = caseLabelingFormPayload(); c.rationale = $("#caseDecisionReviewRationale")?.value || "";
   c.excludedConfirmed = Boolean($("#caseDecisionConfirmExclusion")?.checked);
   c.images = state.caseLabeling.pendingImages;
   caseLabelDecisionUi.drafts.set(c.key,{source:c.source,rationale:c.rationale,images:c.images,retained:c.retained,
-    adoptedId:c.adoptedId,excludedConfirmed:c.excludedConfirmed,data:c.data});
+    adoptedId:c.adoptedId,excludedConfirmed:c.excludedConfirmed,data:c.data,
+    sourceConflict:c.sourceConflict,missingAttachments:c.missingAttachments});
+  if (typeof writeCaseLabelDraft === "function") {
+    const unresolvedConflict = Boolean(c.sourceConflict && !c.sourceConflict.acknowledged);
+    const currentPending = typeof normalizeCaseLabelPendingAttachments === "function"
+      ? normalizeCaseLabelPendingAttachments(c.images)
+      : [];
+    const missing = Array.isArray(c.missingAttachments) ? c.missingAttachments : [];
+    const pendingAttachments = missing.length ? [...currentPending, ...missing] : currentPending;
+    writeCaseLabelDraft(c.data.issue_id, "", "decision", {
+      ...c.source,
+      decision_rationale: c.rationale,
+      excluded_confirmed: unresolvedConflict ? false : c.excludedConfirmed,
+      adopted_revision_id: c.adoptedId,
+      retained_attachment_ids: c.retained,
+      pending_attachments: pendingAttachments,
+    }, {
+      expectedPreviousId: unresolvedConflict
+        ? c.sourceConflict.expectedPreviousId
+        : (c.data.label_state?.decision?.id || null),
+      expectedSourceFingerprint: unresolvedConflict
+        ? c.sourceConflict.expectedSourceFingerprint
+        : (c.data.label_state?.source_fingerprint || ""),
+      pendingAttachments,
+      forceNewIdempotencyKey,
+    });
+  }
 }
 function exitCaseDecisionEditor({discard = false} = {}) {
   const c = caseLabelDecisionUi.editor;
   if (!c || caseLabelDecisionUi.saving) return;
-  if (discard) { c.images.forEach(i=>releasePreviewUrlLater(i.previewUrl)); caseLabelDecisionUi.drafts.delete(c.key); }
+  if (discard) {
+    c.images.forEach(i=>releasePreviewUrlLater(i.previewUrl));
+    caseLabelDecisionUi.drafts.delete(c.key);
+    if (typeof clearCaseLabelDraft === "function") clearCaseLabelDraft(c.data.issue_id, "", "decision");
+  }
   else rememberCaseLabelDecisionDraft();
   caseLabelDecisionUi.editor = null;
   state.caseLabeling.pendingImages = c.ordinary.images; state.caseLabeling.dirty = c.ordinary.dirty;
@@ -241,6 +307,8 @@ function refreshCaseLabelDecisionLanguage() {
     rememberCaseLabelDecisionDraft();renderCaseLabelingEditor(c.data,{decision:c});
     if(focus)document.getElementById(focus)?.focus({preventScroll:true});
     if(selection)document.getElementById(focus)?.setSelectionRange(...selection);
+  }else if(data && state.caseLabeling.draftNotice && typeof refreshCaseLabelingDraftBanner === "function"){
+    refreshCaseLabelingDraftBanner(data, { decision: null });
   }
 }
 async function refreshUnifiedCaseDecisionSources() {
@@ -287,6 +355,14 @@ async function adjudicateIssueLabel(event) {
   rememberCaseLabelDecisionDraft();
   const p=caseLabelingFormPayload(), error=$("#caseDecisionEditorError");
   error.textContent="";
+  if(c.sourceConflict && !c.sourceConflict.acknowledged){
+    error.textContent=uiText("来源标注或历史裁决已变化，请先点击“对照最新来源”确认后再提交。","Source labels or prior decision changed. Review the latest sources before submitting.");
+    return;
+  }
+  if(Array.isArray(c.missingAttachments) && c.missingAttachments.length){
+    error.textContent=uiText("上次裁决草稿包含未补齐的待上传截图，请重新选择截图或点击“不含原截图继续”后再提交。","Previous decision draft had pending screenshots. Re-attach them or choose 'Continue without screenshots' before submitting.");
+    return;
+  }
   if(!p.expected_output || caseLabelingOutputValidation().conflict){error.textContent=uiText("请补齐分类并解决标签冲突。","Complete the classification and resolve conflicting tags.");return;}
   if(!c.excludedConfirmed){c.confirmationInvalid=true;updateCaseDecisionConfirmation();$("#caseDecisionConfirmExclusion")?.focus();return;}
   if(c.images.length+c.retained.length>4){error.textContent=uiText("裁决截图最多 4 张。","Maximum 4 decision images.");return;}
@@ -301,10 +377,29 @@ async function adjudicateIssueLabel(event) {
       ? await reviewSaveNavigationContext(c.data.issue_id) : null;
     if (navigationContext && !reviewSaveNavigationIsCurrent(navigationContext)) return;
     if (navigationContext) navigationContext.savedKind = "decision";
-    let body=JSON.stringify(payload),suffix="",headers={};
-    if(c.images.length){body=new FormData();body.append("payload",JSON.stringify(payload));c.images.forEach(i=>body.append("attachments",i.file,i.file.name));suffix="-with-attachments";headers={"X-RA-Triage-Request":"labeling-v1"};}
+    const pendingAttachments = typeof normalizeCaseLabelPendingAttachments === "function"
+      ? normalizeCaseLabelPendingAttachments(c.images)
+      : [];
+    const persistedDraft = typeof writeCaseLabelDraft === "function"
+      ? writeCaseLabelDraft(c.data.issue_id, "", "decision", {
+          ...p,
+          decision_rationale: c.rationale,
+          excluded_confirmed: c.excludedConfirmed,
+          adopted_revision_id: c.adoptedId,
+          retained_attachment_ids: c.retained,
+          pending_attachments: pendingAttachments,
+        }, {
+          expectedPreviousId: c.data.label_state?.decision?.id || null,
+          expectedSourceFingerprint: c.data.label_state?.source_fingerprint || "",
+          pendingAttachments,
+        })
+      : null;
+    const idemKey = persistedDraft?.idempotency_key || "";
+    let body=JSON.stringify(payload),suffix="",headers=idemKey ? {"Idempotency-Key":idemKey} : {};
+    if(c.images.length){body=new FormData();body.append("payload",JSON.stringify(payload));c.images.forEach(i=>body.append("attachments",i.file,i.file.name));suffix="-with-attachments";headers={"X-RA-Triage-Request":"labeling-v1",...(idemKey ? {"Idempotency-Key":idemKey} : {})};}
     const saved=await api(`/api/labeling/issues/${encodeURIComponent(c.data.issue_id)}/decisions${suffix}`,{method:"POST",body,headers});
     committed=true;acknowledgeLocalChange(saved);caseLabelDecisionUi.drafts.delete(c.key);
+    if (typeof clearCaseLabelDraft === "function") clearCaseLabelDraft(c.data.issue_id, "", "decision");
     caseLabelDecisionUi.saving=false;
     if(caseLabelDecisionUi.editor===c)exitCaseDecisionEditor({discard:true});
     showToast(uiText("完整裁决已保存。","Complete decision saved."));
