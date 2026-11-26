@@ -75,6 +75,20 @@ class TextPipelineTest(unittest.TestCase):
         self.assertEqual(stale['runtime']['status'], 'stale')
         self.assertNotEqual(stale['stages']['text-export']['state'], 'running')
 
+    def test_large_queue_only_reads_requested_captures(self):
+        path = self.queue('review')
+        with sqlite3.connect(path) as db:
+            db.executemany("INSERT INTO work VALUES(?,?,?,?,?)", (
+                (str(i), '{}', 'pending', 'x' * 512, 0) for i in range(25000)))
+        result = TextPipeline(self.root, {}, now=1000, cohorts=[self.targets]).project(
+            self.targets, self.counts('pending', 0))
+        self.assertEqual(result['durable_queue'], 'ready')
+        self.assertEqual(result['stages']['text-export']['blocked'], 1)
+        with sqlite3.connect(path) as db:
+            db.execute("UPDATE work SET detail_json=? WHERE capture_key=?", ('[]', identity(self.member)))
+        self.assertEqual(TextPipeline(self.root, {}).project(
+            self.targets, self.counts('pending', 0))['durable_queue'], 'unavailable')
+
     def test_wrong_trip_anchor_or_version_cannot_color_another_cohort(self):
         self.queue('orion_running')
         self.runtime()

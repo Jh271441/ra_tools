@@ -50,41 +50,63 @@ def _source_finished(saved):
     return saved[0] == "failed" and evidence.get("terminal_source_error") is True
 
 
+def _read_queue(path, cohorts):
+    """Look up the union of requested captures in one consistent read transaction."""
+    try:
+        path.resolve().relative_to(path.parent.parent.resolve())
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 2 * 1024**3:
+            return None
+        keys = set()
+        for targets in cohorts:
+            for iid, target in targets.items():
+                anchor = target.get("capture_timestamp_ms") or target.get("ra_start_timestamp")
+                try:
+                    keys.add(identity(dict(issue_id=iid, trip_id=target.get("trip_id"), anchor_ms=anchor)))
+                except ValueError:
+                    continue
+        queue = {}
+        keys = sorted(keys)
+        with closing(sqlite3.connect(path.absolute().as_uri() + "?mode=ro", uri=True, timeout=.1)) as db:
+            db.execute("PRAGMA query_only=ON")
+            db.execute("BEGIN")
+            for start in range(0, max(1, len(keys)), 256):
+                batch = keys[start:start + 256]
+                placeholders = ",".join("?" for _ in batch) or "NULL"
+                deadline = time.monotonic() + .25
+                db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+                rows = db.execute(
+                    "SELECT capture_key, substr(member_json,1,65537), state, "
+                    "substr(detail_json,1,65537), updated_at FROM work "
+                    f"WHERE capture_key IN ({placeholders})", batch)
+                for key, raw, state, detail_raw, updated in rows:
+                    if len(raw) > 65536 or len(detail_raw) > 65536 or state not in QUEUE_STATES or not _number(updated):
+                        raise ValueError("invalid_text_queue_row")
+                    member, detail = json.loads(raw), json.loads(detail_raw)
+                    if not isinstance(member, dict) or key != identity(member) or not isinstance(detail, dict):
+                        raise ValueError("invalid_text_queue_identity")
+                    queue[(member["issue_id"], member["trip_id"], member["anchor_ms"])] = dict(
+                        member={"version": member.get("version")}, state=state, updated_at=updated,
+                        detail={"stage": detail.get("stage"), "operator_recovery": detail.get("operator_recovery")})
+        return queue
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
+        return None
+
+
 class TextPipeline:
-    def __init__(self, data_dir, saved, *, now=None):
+    def __init__(self, data_dir, saved, *, now=None, cohorts=None):
         self.now = time.time() if now is None else now
         self.saved = saved
         self.queue = None
+        self.queue_path = None
+        self.preloaded = cohorts is not None
         self.runtime = None
         if data_dir is None:
             return
         root = Path(data_dir).resolve()
         directory = Path(data_dir) / "planning_constraints"
-        try:
-            path = directory / "text-queue.sqlite3"
-            path.resolve().relative_to(root)
-            if path.is_symlink() or not path.is_file() or path.stat().st_size > 2 * 1024**3:
-                raise ValueError("invalid_text_queue")
-            with closing(sqlite3.connect(path.absolute().as_uri() + "?mode=ro", uri=True, timeout=.1)) as db:
-                db.execute("PRAGMA query_only=ON")
-                deadline = time.monotonic() + .25
-                db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
-                rows = db.execute("SELECT capture_key,substr(member_json,1,65537),state,"
-                                  "substr(detail_json,1,65537),updated_at FROM work LIMIT 20001")
-                queue, total_bytes = {}, 0
-                for index, (key, raw, state, detail_raw, updated) in enumerate(rows):
-                    total_bytes += len(raw.encode()) + len(detail_raw.encode())
-                    if index >= MAX_ROWS or total_bytes > 8 * 1024**2:
-                        raise ValueError("oversized_text_queue")
-                    if len(raw) > 65536 or len(detail_raw) > 65536 or state not in QUEUE_STATES or not _number(updated):
-                        raise ValueError("invalid_text_queue_row")
-                    member, detail = json.loads(raw), json.loads(detail_raw)
-                    if key != identity(member) or not isinstance(detail, dict):
-                        raise ValueError("invalid_text_queue_identity")
-                    queue[_key(member)] = dict(member=member, state=state, detail=detail, updated_at=updated)
-            self.queue = queue
-        except (OSError, ValueError, TypeError, KeyError, AttributeError, sqlite3.Error):
-            pass
+        self.queue_path = directory / "text-queue.sqlite3"
+        if cohorts is not None:
+            self.queue = _read_queue(self.queue_path, cohorts)
         try:
             path = directory / "orion-runtime.json"
             path.resolve().relative_to(root)
@@ -114,6 +136,7 @@ class TextPipeline:
     def project(self, targets, counts):
         if counts.get("status") != "ready":
             return dict(status="unavailable", stages={}, runtime=dict(status="unavailable"))
+        queue = self.queue if self.preloaded or self.queue_path is None else _read_queue(self.queue_path, (targets,))
         registered, finished, exporting, validating, publishing = set(), set(), set(), set(), set()
         recovery, recovered, recovering, blocked, source_done = set(), set(), set(), set(), set()
         native = dict(running=0, queued=0, awaiting_result=0, unknown=0)
@@ -130,7 +153,7 @@ class TextPipeline:
                     finished.add(key)
                     if saved[0] in {"partial_source", "failed"}:
                         source_done.add(key)
-            row = (self.queue or {}).get(key)
+            row = (queue or {}).get(key)
             if row and not _matches_version(row["member"], target):
                 row = None
             if row:
@@ -197,7 +220,7 @@ class TextPipeline:
         stages["text-input"]["completion_basis"] = "durable_registration_or_saved_capture"
         stages["text-recover"]["completion_basis"] = "explicit_recovery_and_saved_capture"
         return dict(status="ready", observed_at=self.now, stages=stages,
-                    durable_queue="ready" if self.queue is not None else "unavailable", updated_at=latest,
+                    durable_queue="ready" if queue is not None else "unavailable", updated_at=latest,
                     resume="reconcile_saved_work", blocks_media=False,
                     quality=dict(collected=counts["collected"], partial_source=counts["partial_source"],
                                  failed=counts["failed"], with_frames=counts["with_frames"]),

@@ -292,7 +292,7 @@ def cohort_counts_many(data_dir, cohorts, *, include_pipeline=False):
     if not active:
         if include_pipeline:
             from .cron_planning_text import TextPipeline
-            pipeline = TextPipeline(data_dir, {})
+            pipeline = TextPipeline(data_dir, {}, cohorts=cohorts.values())
             for key, targets in cohorts.items():
                 results[key]["pipeline"] = pipeline.project(targets, results[key])
         return results
@@ -320,7 +320,7 @@ def cohort_counts_many(data_dir, cohorts, *, include_pipeline=False):
             results[key] = {"selected": len(targets), "status": "unavailable"}
     if include_pipeline:
         from .cron_planning_text import TextPipeline
-        pipeline = TextPipeline(data_dir, by_identity)
+        pipeline = TextPipeline(data_dir, by_identity, cohorts=cohorts.values())
         for key, targets in cohorts.items():
             results[key]["pipeline"] = pipeline.project(targets, results[key])
     return results
