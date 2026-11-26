@@ -241,6 +241,13 @@ describe("VersionMetricsPage component", () => {
     expect(screen.getByText("未知")).toBeInTheDocument();
     expect(screen.getByText("132/153")).toBeInTheDocument();
 
+    // f2457b85 parity: confidence threshold picker lives on the trend chart header and exposes 0.70
+    const chartThreshold = container.querySelector(".vm-chart-threshold #vmThreshold");
+    expect(chartThreshold).not.toBeNull();
+    fireEvent.click(chartThreshold!);
+    expect(screen.getByRole("option", { name: "0.70" })).toBeInTheDocument();
+    fireEvent.click(chartThreshold!);
+
     // Toggling both default schemes off writes schemes=none without refetching
     const callCountBefore = fetchMock.mock.calls.length;
     fireEvent.click(container.querySelector('[data-vm-scheme="chain"]')!);
@@ -261,10 +268,11 @@ describe("VersionMetricsPage component", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    renderMetrics({ lang: "en", canWrite: false });
+    const { container } = renderMetrics({ lang: "en", canWrite: false });
     await waitFor(() => {
       expect(screen.getByText("132/153")).toBeInTheDocument();
     });
+    expect(container.querySelector(".vm-chart-threshold #vmThreshold")).not.toBeNull();
 
     expect(screen.getByRole("button", { name: "Update metrics" })).toBeDisabled();
 

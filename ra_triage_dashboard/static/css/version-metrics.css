@@ -10,7 +10,7 @@ body[data-active-page="version-metrics"] .top-actions {margin-left:auto}
 .vm-scope {grid-column:1/-1;grid-row:1;margin:0 0 16px}
 .vm-scope>summary {display:inline-flex;width:fit-content;max-width:calc(100% - 140px);min-width:0;cursor:pointer;list-style:none}
 .vm-scope>summary::-webkit-details-marker {display:none}
-.vm-scope-filters {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0 10px}
+.vm-scope-filters {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:14px 0 10px}
 .vm-scope-filters>label {display:flex;flex-direction:column;gap:6px;min-width:0;font-size:12px;color:var(--muted)}
 .vm-scope-note {font-size:12px;color:var(--muted);margin:8px 0 0;line-height:1.6}
 .vm-scope[open] {padding-bottom:14px;border-bottom:1px solid var(--line-soft)}
@@ -26,7 +26,8 @@ body[data-active-page="version-metrics"] .top-actions {margin-left:auto}
 .vm-chart-meta {display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-left:auto;flex:0 1 auto;max-width:100%;color:var(--muted);font-size:11px}
 #vmDataFreshness {overflow-wrap:anywhere}
 .vm-info-button {width:30px;min-height:30px;padding:3px;font-size:15px}
-#vmThresholdNote {font-variant-numeric:tabular-nums;white-space:nowrap}
+.vm-chart-threshold {display:flex;align-items:center;gap:6px;max-width:100%;font-variant-numeric:tabular-nums}
+.vm-chart-threshold .ui-select {width:5.5rem;max-width:100%}
 .vm-job-status {display:block;margin-bottom:10px;font-size:12px;color:var(--muted)}
 .vm-job-status[hidden] {display:none}
 .vm-swatch {display:inline-block;flex:0 0 16px;width:16px;height:2px;background:var(--vm-color);vertical-align:middle}

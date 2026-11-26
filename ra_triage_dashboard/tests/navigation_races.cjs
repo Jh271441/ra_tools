@@ -272,7 +272,7 @@ async function bootstrapRunDependenciesMatchTheVisiblePage() {
     'intent-summary': 'loadIntentSummary',
   };
   const dependent = {review: 'loadCases', analysis: 'loadReviewReasonAnalysis',
-    comparison: 'loadRunComparison', 'run-collections': 'loadRunCollectionsWorkbench'};
+    comparison: 'loadRunComparison'};
   for (const [page, loader] of Object.entries({...independent, ...dependent})) {
     const f = bootstrapFixture(page), runs = defer();
     let reads = 0, overviewReads = 0, completed = false;

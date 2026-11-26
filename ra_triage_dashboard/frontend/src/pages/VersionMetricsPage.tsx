@@ -40,7 +40,7 @@ export type VmReferenceKey = (typeof VM_REFERENCES)[number];
 export const VM_EXCLUSIONS = ["all", "exclude"] as const;
 export type VmExclusionKey = (typeof VM_EXCLUSIONS)[number];
 
-export const VM_THRESHOLDS = [0.9, 0.85, 0.8, 0.76, 0.75, 0.65] as const;
+export const VM_THRESHOLDS = [0.9, 0.85, 0.8, 0.76, 0.75, 0.7, 0.65] as const;
 
 export const VM_REPORT_IDS: Record<string, string> = {
   "20261009": "2210331546058",
@@ -1015,18 +1015,6 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
                   onChange={(val) => updateRoute({ exclusion: val as VmExclusionKey })}
                 />
               </div>
-              <div className="vm-field">
-                <label htmlFor="vmThreshold">
-                  {bilingual(lang, "模拟 conf 阈值", "Simulation conf threshold")}
-                </label>
-                <UiSelect
-                  id="vmThreshold"
-                  value={routeState.threshold.toFixed(2)}
-                  options={thresholdOptions}
-                  ariaLabel={bilingual(lang, "模拟 conf 阈值", "Simulation conf threshold")}
-                  onChange={(val) => updateRoute({ threshold: Number(val) })}
-                />
-              </div>
             </div>
             <button
               id="vmReset"
@@ -1135,16 +1123,18 @@ export const VersionMetricsPage: React.FC<VersionMetricsPageProps> = ({
             <span id="vmDataFreshness" title={freshness.title}>
               {freshness.label}
             </span>
-            <span
-              id="vmThresholdNote"
-              title={bilingual(
-                lang,
-                "仅人工模拟方案使用的低置信阈值",
-                "Low-confidence threshold used by simulated review schemes",
-              )}
-            >
-              {`conf < ${routeState.threshold.toFixed(2)}`}
-            </span>
+            <div className="vm-chart-threshold">
+              <label htmlFor="vmThreshold">
+                {bilingual(lang, "人工模拟 conf <", "Simulated review conf <")}
+              </label>
+              <UiSelect
+                id="vmThreshold"
+                value={routeState.threshold.toFixed(2)}
+                options={thresholdOptions}
+                ariaLabel={bilingual(lang, "人工模拟 conf 阈值", "Simulated review conf threshold")}
+                onChange={(val) => updateRoute({ threshold: Number(val) })}
+              />
+            </div>
             <span className="model-review-run-help ui-info" data-ui-info="">
               <button
                 id="vmInfoButton"

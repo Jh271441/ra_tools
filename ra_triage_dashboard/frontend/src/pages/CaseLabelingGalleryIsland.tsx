@@ -213,6 +213,25 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   const [checkingTaskScope, setCheckingTaskScope] = useState(false);
   const prevBaselinesKeyRef = useRef<string>(selectedBaselines.join(","));
   const wasActiveRef = useRef<boolean>(false);
+  const activeRef = useRef<boolean>(active);
+  activeRef.current = active;
+  const taskCheckAbortRef = useRef<AbortController | null>(null);
+  const taskCheckSeqRef = useRef<number>(0);
+
+  // Cancel any pending task-scope recount when leaving the gallery or unmounting
+  useEffect(() => {
+    if (!active) {
+      taskCheckSeqRef.current += 1;
+      taskCheckAbortRef.current?.abort();
+      taskCheckAbortRef.current = null;
+      setCheckingTaskScope(false);
+    }
+    return () => {
+      taskCheckSeqRef.current += 1;
+      taskCheckAbortRef.current?.abort();
+      taskCheckAbortRef.current = null;
+    };
+  }, [active]);
 
   const baselinesQuery = useMemo(
     () => (selectedBaselines.length ? selectedBaselines.join(",") : "0508"),
@@ -749,6 +768,10 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         page: "1",
         page_size: "1",
       });
+      taskCheckAbortRef.current?.abort();
+      const controller = new AbortController();
+      taskCheckAbortRef.current = controller;
+      const seq = ++taskCheckSeqRef.current;
       setCheckingTaskScope(true);
       try {
         if (searchChanged) {
@@ -757,7 +780,17 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         }
         const fresh = await apiRequest<LabelingCasesResponse>(
           `/api/labeling/cases?${countParams.toString()}`,
+          { signal: controller.signal },
         );
+        const activeLegacyPage = (win.state as { activePage?: string } | undefined)?.activePage;
+        if (
+          !activeRef.current ||
+          taskCheckSeqRef.current !== seq ||
+          controller.signal.aborted ||
+          (activeLegacyPage && activeLegacyPage !== "labeling")
+        ) {
+          return;
+        }
         const freshTotal = Number(fresh.total || 0);
         if (!freshTotal) {
           showToast(
@@ -775,6 +808,14 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         });
         win.showPage?.("labeling-new-task", { historyMode: "push" });
       } catch (err) {
+        if (
+          !activeRef.current ||
+          taskCheckSeqRef.current !== seq ||
+          controller.signal.aborted ||
+          (err instanceof DOMException && err.name === "AbortError")
+        ) {
+          return;
+        }
         showToast(
           err instanceof Error
             ? err.message
@@ -782,7 +823,12 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
           true,
         );
       } finally {
-        setCheckingTaskScope(false);
+        if (taskCheckAbortRef.current === controller) {
+          taskCheckAbortRef.current = null;
+        }
+        if (activeRef.current && taskCheckSeqRef.current === seq) {
+          setCheckingTaskScope(false);
+        }
       }
       return;
     }

@@ -660,9 +660,9 @@ function parsePageRoute() {
   const uxAlias = legacyModelReviewCampaign
     ? "review"
     : pathname === "/run-collections"
-    ? "run-collections"
+    ? "comparison"
     : pathname === "/multi-run-evaluation"
-      ? "run-collections"
+      ? "comparison"
       : pathname === "/labeling-experiments"
         ? "labeling-new-task"
         : pathname === "/labeling-summary"
@@ -1409,7 +1409,7 @@ function showPage(
   } = {}
 ) {
   if(page==="daily-review"){window.location.replace(withBase("/daily-review")+window.location.search);return;}
-  const target = PAGE_ROUTES[page] ? page : "review";
+  const target = page === "run-collections" ? "comparison" : PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
   const trailHistoryReactOwned = typeof window !== "undefined" && Boolean(window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-history") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-history"));
   if (!trailHistoryReactOwned) {

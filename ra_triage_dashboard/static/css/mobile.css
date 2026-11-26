@@ -1255,7 +1255,7 @@
   .vm-report-link {min-height:44px;}
   .vm-threshold-panel>summary {min-height:44px;line-height:1.6;}
   .vm-threshold-controls .ui-select-trigger {min-height:44px;}
-  .vm-toolbar .ui-select-trigger,.vm-toolbar .multi-filter-trigger,.vm-scope-filters .ui-select-trigger {min-height:44px;}
+  .vm-toolbar .ui-select-trigger,.vm-toolbar .multi-filter-trigger,.vm-scope-filters .ui-select-trigger,.vm-chart-threshold .ui-select-trigger {min-height:44px;}
 }
 
 /* Match the OS preference, including label and backdrop transitions. */

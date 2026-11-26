@@ -156,22 +156,37 @@ class FrontendRunsContractTest(unittest.TestCase):
         self.assertIn('overflow-wrap:anywhere; word-break:break-word;', STYLES_CSS)
 
     def test_run_collection_dedicated_route_and_read_only_contract(self) -> None:
+        import asyncio
+        from ra_triage_dashboard.app.routers import core as core_router
+        from ra_triage_dashboard.app.routers import run_collections as run_collections_router
+
         self.assertNotIn('id="runCollectionsNavButton"', INDEX_HTML)
-        self.assertIn('id="runCollectionsPage"', INDEX_HTML)
-        self.assertIn('path: "/multi-run-evaluation"', APP_JS)
+        self.assertNotIn('id="runCollectionsPage"', INDEX_HTML)
+        self.assertNotIn('id="runCollectionsWorkbench"', INDEX_HTML)
+        self.assertNotIn('"run-collections"', INDEX_HTML)
         self.assertIn('pathname === "/run-collections"', APP_JS)
-        self.assertIn('? "run-collections"', APP_JS)
-        self.assertIn("ensureRunCollectionsDedicatedPage", APP_JS)
         self.assertNotIn('id="runCollectionPairwiseDetails"', INDEX_HTML)
-        self.assertIn("applyRunCollectionReadOnlyGating", APP_JS)
-        self.assertIn("state.session?.is_admin && state.session?.verified", APP_JS)
-        self.assertIn('id="runCollectionReadonlyNote"', INDEX_HTML)
+
+        redirect = asyncio.run(core_router.legacy_run_collections())
+        self.assertEqual(redirect.status_code, 307)
+        self.assertEqual(redirect.headers.get("location"), "run-comparison")
+
+        core_paths = {
+            getattr(route, "path", None): getattr(route, "endpoint", None)
+            for route in core_router.router.routes
+        }
+        self.assertIs(core_paths.get("/run-collections"), core_router.legacy_run_collections)
+        self.assertIs(core_paths.get("/multi-run-evaluation"), core_router.legacy_run_collections)
+        self.assertIs(core_paths.get("/run-comparison"), core_router.run_comparison_page)
+
+        api_paths = {getattr(route, "path", None) for route in run_collections_router.router.routes}
+        self.assertIn("/api/run-collections", api_paths)
+        self.assertIn("/api/run-evaluations", api_paths)
 
     def test_run_collection_evaluation_contract_exposes_shared_label_and_provenance(self) -> None:
         self.assertIn("Shared label state", RUN_COLLECTION_JS)
         self.assertIn("scope_snapshots", RUN_COLLECTION_JS)
         self.assertIn("reference_ids", RUN_COLLECTION_JS)
-        self.assertIn('id="runCollectionLabelReferenceSet"', INDEX_HTML)
         self.assertIn("supported_coverage", RUN_COLLECTION_JS)
         self.assertIn("pairwise_union_denominator", RUN_COLLECTION_JS)
         self.assertIn("reference-set:", APP_PY_RUN_COLLECTIONS_DB)

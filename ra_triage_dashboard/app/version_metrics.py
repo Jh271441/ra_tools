@@ -14,7 +14,7 @@ FIELDS = {"te": "ra_review_result_new", "rd": "ra_rd_review_result",
 HUMAN_PRIORITY = ("arbitrated", "te_prime", "te", "rd")
 REFERENCE_MODES = ("release", *FIELDS)
 SCHEMES = ("model", "chain", "model_human_sim", "chain_human_sim", "chain_post_human_sim")
-THRESHOLDS = (.90, .85, .80, .76, .75, .65)
+THRESHOLDS = (.90, .85, .80, .76, .75, .70, .65)
 POLICY = "version-probability-sample-v1"
 
 

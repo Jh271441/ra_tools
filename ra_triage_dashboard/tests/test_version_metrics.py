@@ -97,6 +97,18 @@ class VersionMetricsTests(unittest.TestCase):
         self.assertEqual(result["metrics"]["model"]["total"], 3)
         self.assertEqual(result["coverage"]["te"]["filled"], 5)
 
+    def test_conf_070_only_routes_model_confidences_strictly_below_threshold(self):
+        snapshot = fixture()
+        snapshot["rows"][0]["confidence"] = .70
+        snapshot["rows"][1]["confidence"] = .69
+        at_070 = evaluate(snapshot, threshold=.70)
+        at_075 = evaluate(snapshot, threshold=.75)
+        self.assertEqual(at_070["metrics"]["chain_human_sim"]["human_count"], 1)
+        self.assertEqual(at_075["metrics"]["chain_human_sim"]["human_count"], 2)
+        self.assertEqual(at_070["metrics"]["chain"], at_075["metrics"]["chain"])
+        sweep = next(row for row in at_070["thresholds"] if row["threshold"] == .70)
+        self.assertEqual(sweep["accuracy"], at_070["metrics"]["chain_human_sim"]["accuracy"])
+
     def test_threshold_workload_uses_published_population_not_sample(self):
         result = evaluate(fixture())
         first = result["thresholds"][0]

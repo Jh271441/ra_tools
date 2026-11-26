@@ -1,4 +1,5 @@
 /* One cross-version chart, shared Manual controls, immutable metric receipts. */
+const VM_THRESHOLDS=[.90,.85,.80,.76,.75,.70,.65];
 const VM_DEFAULT_SCHEMES=['chain','chain_post_human_sim'];
 const versionMetrics={active:false,bound:false,seq:0,controller:null,timer:null,observer:null,data:null,catalog:[],loading:false,error:'',families:'',reference:'release',exclusion:'all',threshold:.9,metric:'accuracy',schemes:[...VM_DEFAULT_SCHEMES],thresholdFamily:'',thresholdExpanded:false};
 const VM_SCHEMES=['model','chain','model_human_sim','chain_human_sim','chain_post_human_sim'];
@@ -12,7 +13,7 @@ function versionMetricRouteOptions(options={}){const p=stripBasePath(location.pa
 function vmReadRoute(){
   const s=versionMetrics,p=new URLSearchParams(location.search);s.families=p.get('families')||'';
   s.metric=['accuracy','macro_f1','recall_correct','recall_false','recall_no_assist','human_share'].includes(p.get('metric'))?p.get('metric'):'accuracy';s.reference=['release','te','rd','te_prime','arbitrated'].includes(p.get('reference'))?p.get('reference'):'release';s.exclusion=p.get('exclusion')==='exclude'?'exclude':'all';
-  const threshold=Number(p.get('threshold')||.9);s.threshold=[.9,.85,.8,.76,.75,.65].includes(threshold)?threshold:.9;
+  const threshold=Number(p.get('threshold')||.9);s.threshold=VM_THRESHOLDS.includes(threshold)?threshold:.9;
   s.schemes=p.has('schemes')?VM_SCHEMES.filter(k=>p.get('schemes').split(',').includes(k)):p.get('expanded')==='1'?[...VM_SCHEMES]:[...VM_DEFAULT_SCHEMES];
   s.thresholdFamily=p.get('threshold_family')||'';s.thresholdExpanded=p.get('threshold_open')==='1';
 }
@@ -100,7 +101,7 @@ function vmChart(){
 function vmHideTooltip(){const tip=$('#vmTooltip');if(tip)tip.hidden=true;$('#vmChart')?.querySelectorAll('.is-active').forEach(el=>el.classList.remove('is-active'));}
 function vmShowTooltip(family,event,anchor){
   const s=versionMetrics,row=s.data?.items.find(r=>r.family===family),tip=$('#vmTooltip');if(!row||!tip)return;
-  tip.innerHTML=`<strong>release-${escapeHtml(family)}</strong>`+(row.status==='ready'?s.schemes.map(key=>{const m=row.metrics?.[key];if(!m)return '';const label=vmClass(s.metric),c=label?m.per_class.find(v=>v.label===label):null;const counts=c?`${c.tp}/${c.support}`:s.metric==='human_share'?`${m.human_count}/${m.total}`:s.metric==='accuracy'?`${m.correct}/${m.total}`:`n=${m.total}`;return `<span style="color:${VM_COLORS[key]}"><i class="vm-swatch" style="--vm-color:${VM_COLORS[key]}" aria-hidden="true"></i>${escapeHtml(vmScheme(key))}<b>${vmPct(vmValue(row,key))}</b><small>${counts}</small></span>`;}).join('')+`<small>${uiText('快照有效／抽样','Snapshot valid / sample')} ${row.valid_total}/${row.sample_total} · ${vmTime(row.observed_at)} CST</small>`:`<span>${uiText('暂无有效快照','No valid snapshot')}</span>`);
+  tip.innerHTML=`<strong>release-${escapeHtml(family)} · ${escapeHtml(vmThresholdText())}</strong>`+(row.status==='ready'?s.schemes.map(key=>{const m=row.metrics?.[key];if(!m)return '';const label=vmClass(s.metric),c=label?m.per_class.find(v=>v.label===label):null;const counts=c?`${c.tp}/${c.support}`:s.metric==='human_share'?`${m.human_count}/${m.total}`:s.metric==='accuracy'?`${m.correct}/${m.total}`:`n=${m.total}`;return `<span style="color:${VM_COLORS[key]}"><i class="vm-swatch" style="--vm-color:${VM_COLORS[key]}" aria-hidden="true"></i>${escapeHtml(vmScheme(key))}<b>${vmPct(vmValue(row,key))}</b><small>${counts}</small></span>`;}).join('')+`<small>${uiText('快照有效／抽样','Snapshot valid / sample')} ${row.valid_total}/${row.sample_total} · ${vmTime(row.observed_at)} CST</small>`:`<span>${uiText('暂无有效快照','No valid snapshot')}</span>`);
   if(row.status==='ready'){
     tip.insertAdjacentHTML('beforeend',`<small>GT · ${escapeHtml(vmReferenceCounts(row))}</small>`);
     if(row.last_checked_at)tip.insertAdjacentHTML('beforeend',`<small>${uiText('自动核对','Auto-checked')} · ${vmTime(row.last_checked_at)} CST</small>`);
@@ -121,8 +122,8 @@ function renderVersionMetrics(){
   vmMulti($('#vmVersionPicker'),s.catalog.map(d=>({value:d.family,label:d.family.slice(4)})),s.families==='all'?[]:s.families?s.families.split(',').filter(Boolean):s.data?.selected||[],values=>vmChange({families:values.length?values.join(','):'all'}));
   vmSelect('vmMetric',['accuracy','macro_f1','recall_correct','recall_false','recall_no_assist','human_share'].map(k=>[k,vmMetric(k)]),s.metric);
   vmSelect('vmReference',[['release',vmReferenceLabel('release')],['te',uiText('TE 原始标注','Original TE')],['rd',uiText('RD 标注','RD labels')],['te_prime',uiText('TE′ 人工标注','Manual TE′')],['arbitrated',uiText('裁决结果','Adjudication')]],s.reference);
-  vmSelect('vmExclusion',[['all',uiText('全部三分类有效','All valid samples')],['exclude',uiText('剔除人工排除项','Remove manual exclusions')]],s.exclusion);vmSelect('vmThreshold',[.9,.85,.8,.76,.75,.65].map(t=>[t.toFixed(2),t.toFixed(2)]),s.threshold.toFixed(2));
-  $('#vmThresholdNote').textContent=vmThresholdText();$('#vmThresholdNote').title=uiText('仅人工模拟方案使用的低置信阈值','Low-confidence threshold used by simulated review schemes');$('#vmError').hidden=!s.error;$('#vmErrorText').textContent=!s.error?'':s.error==='refresh_not_started'?uiText('更新未启动，请稍后重试。','Refresh did not start. Retry later.'):uiText('指标读取失败，请重试。','Metrics could not be loaded. Please retry.');
+  vmSelect('vmExclusion',[['all',uiText('全部三分类有效','All valid samples')],['exclude',uiText('剔除人工排除项','Remove manual exclusions')]],s.exclusion);vmSelect('vmThreshold',VM_THRESHOLDS.map(t=>[t.toFixed(2),t.toFixed(2)]),s.threshold.toFixed(2));
+  $('#vmError').hidden=!s.error;$('#vmErrorText').textContent=!s.error?'':s.error==='refresh_not_started'?uiText('更新未启动，请稍后重试。','Refresh did not start. Retry later.'):uiText('指标读取失败，请重试。','Metrics could not be loaded. Please retry.');
   const job=s.data?.refresh,updating=job?.status==='running';$('#vmRefresh').disabled=s.loading||!s.data?.selected?.length||!hasDashboardWriteRole()||updating;$('#vmRefresh').title=hasDashboardWriteRole()?uiText('只读更新数据并保留历史快照','Read sources and retain snapshot history'):uiText('更新指标需要writer或管理员权限','Writer or admin access is required to refresh');
   $('#vmStatus').textContent=updating?uiText(`正在更新 ${job.completed}/${job.total} 个版本`,`Updating ${job.completed}/${job.total} versions`):['failed','interrupted'].includes(job?.status)?uiText('更新未完成，保留上次快照','Refresh incomplete; previous snapshots retained'):s.loading?uiText('读取中…','Loading…'):'';$('#vmStatus').hidden=!$('#vmStatus').textContent;
   vmRenderLegend();vmRenderReports();vmChart();enhanceDashboardSelects(root);
