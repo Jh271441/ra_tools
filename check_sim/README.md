@@ -21,7 +21,8 @@ check_sim/
 │   ├── read_forcing_trajectory.py
 │   ├── bag_bev_visualizer.py
 │   └── planning_stub.proto
-├── offline/                  # 离线原生回放与三例 smoke 验收（见 offline/README.md）
+├── offline/                  # 早期 3 例离线原生状态回放实验（见 offline/README.md）
+├── onboard_npz/              # 免仿真全量路测 NPZ 原生 .ifxmodel 推理、10Hz 状态机复刻与数易对账（见 onboard_npz/README.md）
 └── analysis/                 # TensorDict、ONNX 和 01-07 分析
     ├── 01_check_nearby_frames.py
     ├── ...
@@ -153,5 +154,6 @@ Protobuf Python 绑定按优先级自动探测：
   --topic /planning/assist_request /planning/stuck_detection_recall_signal
 ```
 
-- 离线原生回放（NPZ / state / 逐周期输入）的阶段验收和运行包见 [`offline/README.md`](offline/README.md)。
-- 旧版按 trip + 时间段在 `cloud_server` 下载路测 bag 的兼容脚本保留在 `repro/legacy/download_road_bag_cloud.py`（正式链路优先使用 `repro/scenario_repro.py`）。
+- **免仿真全量模型替换评测与历史版本数易对账（优先推荐）**：使用 [`onboard_npz/README.md`](onboard_npz/README.md)（`python3 -m check_sim.onboard_npz`），直接从轻量 5-Topic 实车 Bag 流式导出增强型 `.npz`（即下即删零 `.bag` 残留），在 `cloud_server` 上链接 `/opt/voy-sdk/lib/libifx.so` 运行 10Hz 全规则状态机回放（单版本 `~1,600–2,000` 场景 24 核仅需约 `100s`）。
+- 早期 3 例离线原生回放实验（`rules_disabled` smoke 验收）见 [`offline/README.md`](offline/README.md)。
+- 旧版按 trip + 时间段在 `cloud_server` 下载路测 bag 的兼容脚本保留在 `repro/legacy/download_road_bag_cloud.py`（正式单案仿真复现统一使用 `repro/scenario_repro.py`）。
