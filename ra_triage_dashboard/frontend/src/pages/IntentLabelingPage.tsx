@@ -285,6 +285,14 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
     message: string;
     remoteChanged: boolean;
     storagePersisted?: boolean;
+    draftToken?: string;
+    idempotencyKey?: string;
+    signature?: string;
+  } | null>(null);
+  const activeDraftMetaRef = useRef<{
+    draftToken?: string;
+    idempotencyKey?: string;
+    signature?: string;
   } | null>(null);
   const serverLabelsRef = useRef<{
     revision_id: number | null;
@@ -442,7 +450,7 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
   // Sync pending intent edits to browser localStorage so reload/502/503 never loses work.
   useEffect(() => {
     if (!dirtyRef.current || !activeDatasetId || !caseData?.case_id) return;
-    writeIntentDraft({
+    const written = writeIntentDraft({
       datasetId: activeDatasetId,
       caseId: caseData.case_id,
       author: username || "",
@@ -453,6 +461,23 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         ? draftBaseRevisionRef.current
         : (draftBaseRevisionRef.current ?? revisionId),
     });
+    if (written) {
+      const nextMeta = {
+        draftToken: written.draft_token,
+        idempotencyKey: written.idempotency_key,
+        signature: written.signature,
+      };
+      activeDraftMetaRef.current = nextMeta;
+      setDraftNotice((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...nextMeta,
+              storagePersisted: written.persisted !== false,
+            }
+          : prev,
+      );
+    }
   }, [aggregate, overrides, activeDatasetId, caseData?.case_id, revisionId, username]);
 
   // Flush auto-save
@@ -500,6 +525,9 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
       const submittedDraftToken = persistedDraft?.draft_token || "";
       const submittedSignature = persistedDraft?.signature || "";
       const storagePersisted = persistedDraft?.persisted !== false;
+      activeDraftMetaRef.current = persistedDraft
+        ? { draftToken: submittedDraftToken, idempotencyKey: idemKey, signature: submittedSignature }
+        : null;
       dirtyRef.current = false;
       let saveFailed = false;
       setTopbarSaveState(bilingual(lang, "正在保存…", "Saving…"), "saving");
@@ -626,6 +654,9 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
             message,
             remoteChanged: isConflict,
             storagePersisted,
+            draftToken: submittedDraftToken,
+            idempotencyKey: idemKey,
+            signature: submittedSignature,
           });
           setTopbarSaveState(
             isConflict
@@ -784,7 +815,11 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         const serverSig = intentDraftSignature(serverRouting, serverLaneChange, nextOv);
         const shouldRestoreDraft = Boolean(savedDraft && savedDraft.signature !== serverSig);
         if (savedDraft && !shouldRestoreDraft) {
-          clearIntentDraft(resolvedDs, resolvedCaseId, stateRef.current.username || "");
+          clearIntentDraftIfMatch(resolvedDs, resolvedCaseId, stateRef.current.username || "", {
+            draftToken: savedDraft.draft_token,
+            idempotencyKey: savedDraft.idempotency_key,
+            signature: savedDraft.signature,
+          });
         }
 
         setActiveDatasetId(resolvedDs);
@@ -797,6 +832,11 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
           const remoteChanged = savedDraft.expected_revision_id !== serverRevId;
           draftBaseRevisionRef.current = savedDraft.expected_revision_id;
           conflictBlockedRef.current = remoteChanged;
+          activeDraftMetaRef.current = {
+            draftToken: savedDraft.draft_token,
+            idempotencyKey: savedDraft.idempotency_key,
+            signature: savedDraft.signature,
+          };
           setAggregate({
             routing: savedDraft.routing_default || "",
             laneChange: savedDraft.lane_change_default || "",
@@ -810,6 +850,10 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
           setDraftNotice({
             kind: "restored",
             remoteChanged,
+            storagePersisted: savedDraft.persisted !== false,
+            draftToken: savedDraft.draft_token,
+            idempotencyKey: savedDraft.idempotency_key,
+            signature: savedDraft.signature,
             message: remoteChanged
               ? bilingual(
                   lang,
@@ -825,6 +869,7 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
         } else {
           draftBaseRevisionRef.current = serverRevId;
           conflictBlockedRef.current = false;
+          activeDraftMetaRef.current = null;
           setAggregate({
             routing: serverRouting,
             laneChange: serverLaneChange,
@@ -1815,10 +1860,15 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
                 const dsId = activeDatasetId;
                 const cId = caseData?.case_id || "";
                 const actor = username || "";
+                const discardEditVersion = editVersionRef.current;
+                const expectedDraft = {
+                  draftToken: draftNotice.draftToken || activeDraftMetaRef.current?.draftToken,
+                  idempotencyKey: draftNotice.idempotencyKey || activeDraftMetaRef.current?.idempotencyKey,
+                  signature: draftNotice.signature ?? activeDraftMetaRef.current?.signature,
+                };
                 if (draftNotice.remoteChanged && dsId && cId) {
                   // Fetch the latest server revision FIRST before replacing UI
-                  // and clearing the local draft so 409 conflicts never fall
-                  // back to stale pre-conflict values.
+                  // and clearing only the exact draft token displayed by this banner.
                   setDiscardingDraft(true);
                   try {
                     const detailParams = new URLSearchParams();
@@ -1831,7 +1881,11 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
                       )}${detailParams.toString() ? `?${detailParams.toString()}` : ""}`,
                       { cache: "no-store" },
                     );
-                    if (stateRef.current.activeDatasetId !== dsId || stateRef.current.caseData?.case_id !== cId) {
+                    if (
+                      stateRef.current.activeDatasetId !== dsId ||
+                      stateRef.current.caseData?.case_id !== cId ||
+                      (stateRef.current.username || "") !== actor
+                    ) {
                       return;
                     }
                     fresh.ordinal = caseData?.ordinal;
@@ -1851,13 +1905,19 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
                       lane_change_default: freshLaneChange,
                       overrides: freshOv,
                     };
-                    clearIntentDraft(dsId, cId, actor);
+                    setCaseData(fresh);
+                    setRevisionId(freshRevId);
+                    // If the user kept editing in THIS tab while GET was in flight,
+                    // preserve their new edits and newer local draft instead of overwriting.
+                    if (editVersionRef.current !== discardEditVersion) {
+                      return;
+                    }
+                    clearIntentDraftIfMatch(dsId, cId, actor, expectedDraft);
+                    activeDraftMetaRef.current = null;
                     conflictBlockedRef.current = false;
                     draftBaseRevisionRef.current = freshRevId;
-                    setCaseData(fresh);
                     setAggregate({ routing: freshRouting, laneChange: freshLaneChange });
                     setOverrides(freshOv);
-                    setRevisionId(freshRevId);
                     dirtyRef.current = false;
                     setDraftNotice(null);
                     setTopbarSaveState(
@@ -1881,8 +1941,9 @@ export const IntentLabelingPage: React.FC<IntentLabelingPageProps> = ({
                   return;
                 }
                 if (dsId && cId) {
-                  clearIntentDraft(dsId, cId, actor);
+                  clearIntentDraftIfMatch(dsId, cId, actor, expectedDraft);
                 }
+                activeDraftMetaRef.current = null;
                 const server = serverLabelsRef.current;
                 conflictBlockedRef.current = false;
                 draftBaseRevisionRef.current = server?.revision_id ?? null;

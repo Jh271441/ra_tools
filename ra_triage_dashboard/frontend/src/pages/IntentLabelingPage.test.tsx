@@ -760,4 +760,262 @@ describe("IntentLabelingPage", () => {
     expect(afterSave?.routing_default).toBe("right_turn");
     expect(afterSave?.draft_token).toBe(tabB?.draft_token);
   });
+
+  it("discarding a 409 draft preserves a newer Tab B draft written while reload GET is in flight", async () => {
+    let caseGetCount = 0;
+    let resolveDiscardGet!: (res: Response) => void;
+    let discardGetStarted = false;
+    const updatedServerCase = {
+      ...CASE_PAYLOAD,
+      labels: {
+        revision_id: 11,
+        routing_default: "right_turn",
+        lane_change_default: "no_lane_change",
+        overrides: [],
+      },
+    };
+
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = String(init?.method || "GET").toUpperCase();
+      if (method === "PUT" && url.includes("/labels")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "远端版本已更新" }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-datasets/0206-1335-v1/cases/")) {
+        caseGetCount += 1;
+        if (caseGetCount === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify(CASE_PAYLOAD), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        discardGetStarted = true;
+        return new Promise<Response>((resolve) => {
+          resolveDiscardGet = resolve;
+        });
+      }
+      if (url.includes("/api/intent-datasets")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(DATASETS_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-assignees")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(ASSIGNEES_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-cases")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(QUEUE_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    renderWithQuery(
+      <IntentLabelingPage
+        active
+        lang="zh"
+        username="jasperchen"
+        isAdmin={false}
+        canAnnotateIntent
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("cn28896325")).toBeInTheDocument();
+    });
+
+    // Tab A edits to 左转 -> auto-save hits 409.
+    const leftTurnBtn = Array.from(
+      document.getElementById("intentAggregateRouting")!.querySelectorAll("button"),
+    ).find((b) => b.textContent?.includes("左转"))!;
+    fireEvent.click(leftTurnBtn);
+
+    await waitFor(
+      () => {
+        expect(document.getElementById("intentDraftDiscardButton")).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
+
+    // Tab A clicks Discard -> reload GET starts and pauses.
+    fireEvent.click(document.getElementById("intentDraftDiscardButton")!);
+    await waitFor(() => {
+      expect(discardGetStarted).toBe(true);
+    });
+
+    // While GET is in flight, Tab B writes a newer draft (u_turn) for the same user & case.
+    const tabB = writeIntentDraft({
+      datasetId: "0206-1335-v1",
+      caseId: "cn28896325_0",
+      author: "jasperchen",
+      routingDefault: "u_turn",
+      laneChangeDefault: "lane_change",
+      overrides: {},
+      expectedRevisionId: 11,
+    });
+    expect(tabB?.draft_token).toBeTruthy();
+
+    // Now Tab A's discard GET resolves.
+    resolveDiscardGet(
+      new Response(JSON.stringify(updatedServerCase), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(document.getElementById("intentDraftRecoveryBanner")).not.toBeInTheDocument();
+    });
+    // Tab B's persisted draft MUST survive for reload recovery!
+    const survivor = readIntentDraft("0206-1335-v1", "cn28896325_0", "jasperchen");
+    expect(survivor?.routing_default).toBe("u_turn");
+    expect(survivor?.draft_token).toBe(tabB?.draft_token);
+  });
+
+  it("editing in the same tab while discard reload GET is in flight preserves the newer form input", async () => {
+    let caseGetCount = 0;
+    let resolveDiscardGet!: (res: Response) => void;
+    let discardGetStarted = false;
+    const updatedServerCase = {
+      ...CASE_PAYLOAD,
+      labels: {
+        revision_id: 11,
+        routing_default: "right_turn",
+        lane_change_default: "no_lane_change",
+        overrides: [],
+      },
+    };
+
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = String(init?.method || "GET").toUpperCase();
+      if (method === "PUT" && url.includes("/labels")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "远端版本已更新" }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-datasets/0206-1335-v1/cases/")) {
+        caseGetCount += 1;
+        if (caseGetCount === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify(CASE_PAYLOAD), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
+          );
+        }
+        discardGetStarted = true;
+        return new Promise<Response>((resolve) => {
+          resolveDiscardGet = resolve;
+        });
+      }
+      if (url.includes("/api/intent-datasets")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(DATASETS_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-assignees")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(ASSIGNEES_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (url.includes("/api/intent-cases")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(QUEUE_PAYLOAD), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+
+    renderWithQuery(
+      <IntentLabelingPage
+        active
+        lang="zh"
+        username="jasperchen"
+        isAdmin={false}
+        canAnnotateIntent
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("cn28896325")).toBeInTheDocument();
+    });
+
+    const getRoutingBtn = (label: string) =>
+      Array.from(document.getElementById("intentAggregateRouting")!.querySelectorAll("button")).find(
+        (b) => b.textContent?.includes(label),
+      )!;
+
+    fireEvent.click(getRoutingBtn("左转"));
+    await waitFor(
+      () => {
+        expect(document.getElementById("intentDraftDiscardButton")).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
+
+    // Click Discard -> GET starts and pauses.
+    fireEvent.click(document.getElementById("intentDraftDiscardButton")!);
+    await waitFor(() => {
+      expect(discardGetStarted).toBe(true);
+    });
+
+    // While GET is in flight, User A keeps editing in THIS tab (clicks 掉头).
+    fireEvent.click(getRoutingBtn("掉头"));
+    expect(getRoutingBtn("掉头")).toHaveAttribute("aria-pressed", "true");
+
+    // Now the stale discard GET resolves with server's right_turn.
+    resolveDiscardGet(
+      new Response(JSON.stringify(updatedServerCase), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(document.getElementById("intentDraftDiscardButton")).not.toBeDisabled();
+    });
+    // User A's live edit (掉头) must NOT be overwritten by right_turn, and draft stays intact!
+    expect(getRoutingBtn("掉头")).toHaveAttribute("aria-pressed", "true");
+    expect(getRoutingBtn("右转")).toHaveAttribute("aria-pressed", "false");
+    expect(readIntentDraft("0206-1335-v1", "cn28896325_0", "jasperchen")?.routing_default).toBe("u_turn");
+  });
 });

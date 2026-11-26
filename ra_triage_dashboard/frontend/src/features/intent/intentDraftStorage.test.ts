@@ -176,4 +176,123 @@ describe("intentDraftStorage", () => {
     ).toBe(true);
     expect(readIntentDraft("ds-1", "cn_quota", "alice")).toBeNull();
   });
+
+  it("prioritizes newer in-memory draft over stale disk draft when quota fills, preserves key on retries, writes when quota recovers, and respects Tab B", () => {
+    // 1) Old draft persists to localStorage successfully.
+    const oldDraft = writeIntentDraft({
+      datasetId: "ds-1",
+      caseId: "cn_quota_nonempty",
+      author: "alice",
+      routingDefault: "straight",
+      laneChangeDefault: "no_lane_change",
+      overrides: {},
+      expectedRevisionId: 10,
+    });
+    expect(oldDraft?.persisted).toBe(true);
+
+    // 2) Storage fills up; writing new draft fails -> stays in memory with persisted=false.
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    });
+    const newAttempt1 = writeIntentDraft({
+      datasetId: "ds-1",
+      caseId: "cn_quota_nonempty",
+      author: "alice",
+      routingDefault: "left_turn",
+      laneChangeDefault: "lane_change",
+      overrides: {},
+      expectedRevisionId: 10,
+    });
+    expect(newAttempt1?.persisted).toBe(false);
+    expect(newAttempt1?.idempotency_key).not.toBe(oldDraft?.idempotency_key);
+
+    // Reading back must return the newer in-memory draft, NOT stale disk `oldDraft`!
+    const readWhileFull = readIntentDraft("ds-1", "cn_quota_nonempty", "alice");
+    expect(readWhileFull?.routing_default).toBe("left_turn");
+    expect(readWhileFull?.persisted).toBe(false);
+    expect(readWhileFull?.idempotency_key).toBe(newAttempt1?.idempotency_key);
+
+    // Retrying twice with identical content while quota is still full reuses the exact same key!
+    const retry1 = writeIntentDraft({
+      datasetId: "ds-1",
+      caseId: "cn_quota_nonempty",
+      author: "alice",
+      routingDefault: "left_turn",
+      laneChangeDefault: "lane_change",
+      overrides: {},
+      expectedRevisionId: 10,
+    });
+    const retry2 = writeIntentDraft({
+      datasetId: "ds-1",
+      caseId: "cn_quota_nonempty",
+      author: "alice",
+      routingDefault: "left_turn",
+      laneChangeDefault: "lane_change",
+      overrides: {},
+      expectedRevisionId: 10,
+    });
+    expect(retry1?.persisted).toBe(false);
+    expect(retry2?.persisted).toBe(false);
+    expect(retry1?.idempotency_key).toBe(newAttempt1?.idempotency_key);
+    expect(retry2?.idempotency_key).toBe(newAttempt1?.idempotency_key);
+
+    // 3) Once quota recovers, writing `new` persists to localStorage with the SAME idempotency_key.
+    setItemSpy.mockRestore();
+    const recovered = writeIntentDraft({
+      datasetId: "ds-1",
+      caseId: "cn_quota_nonempty",
+      author: "alice",
+      routingDefault: "left_turn",
+      laneChangeDefault: "lane_change",
+      overrides: {},
+      expectedRevisionId: 10,
+    });
+    expect(recovered?.persisted).toBe(true);
+    expect(recovered?.idempotency_key).toBe(newAttempt1?.idempotency_key);
+    const fromDisk = readIntentDraft("ds-1", "cn_quota_nonempty", "alice");
+    expect(fromDisk?.persisted).toBe(true);
+    expect(fromDisk?.routing_default).toBe("left_turn");
+
+    // 4) Cross-tab protection: Tab A fails quota write over `recovered`, then Tab B
+    // succeeds writing a newer version directly to localStorage -> Tab B must win & survive Tab A clear.
+    const spy2 = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("QuotaExceededError", "QuotaExceededError");
+    });
+    const tabAFailed = writeIntentDraft({
+      datasetId: "ds-1",
+      caseId: "cn_quota_nonempty",
+      author: "alice",
+      routingDefault: "u_turn",
+      laneChangeDefault: "no_lane_change",
+      overrides: {},
+      expectedRevisionId: 10,
+    });
+    expect(tabAFailed?.persisted).toBe(false);
+    spy2.mockRestore();
+
+    // Simulate Tab B writing directly to shared localStorage (fresh draft_token).
+    const key = window.localStorage.key(0)!;
+    const tabBPayload = {
+      ...recovered!,
+      routing_default: "right_turn",
+      draft_token: "draft-from-tab-b",
+      idempotency_key: "intent-from-tab-b",
+      signature: intentDraftSignature("right_turn", "lane_change", {}),
+      saved_at: Date.now() + 1000,
+      persisted: true,
+    };
+    window.localStorage.setItem(key, JSON.stringify(tabBPayload));
+
+    const readAfterTabB = readIntentDraft("ds-1", "cn_quota_nonempty", "alice");
+    expect(readAfterTabB?.routing_default).toBe("right_turn");
+    expect(readAfterTabB?.draft_token).toBe("draft-from-tab-b");
+    expect(
+      clearIntentDraftIfMatch("ds-1", "cn_quota_nonempty", "alice", {
+        draftToken: tabAFailed!.draft_token,
+        idempotencyKey: tabAFailed!.idempotency_key,
+        signature: tabAFailed!.signature,
+      }),
+    ).toBe(false);
+    expect(readIntentDraft("ds-1", "cn_quota_nonempty", "alice")?.draft_token).toBe("draft-from-tab-b");
+  });
 });

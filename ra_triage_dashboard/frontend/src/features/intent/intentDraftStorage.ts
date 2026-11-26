@@ -24,7 +24,31 @@ export interface IntentLabelDraft {
 export const INTENT_DRAFT_STORAGE_PREFIX = "ra-triage-intent-draft:v1:";
 export const INTENT_DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const INTENT_DRAFT_MAX_ENTRIES = 60;
-const memoryIntentDrafts = new Map<string, IntentLabelDraft>();
+
+interface MemoryIntentDraftEntry {
+  draft: IntentLabelDraft;
+  supersededStorageToken: string | null;
+  supersededStorageKey: string | null;
+  supersededStorageSavedAt: number | null;
+}
+
+const memoryIntentDrafts = new Map<string, MemoryIntentDraftEntry>();
+
+function intentStorageMatchesSuperseded(
+  fromStorage: IntentLabelDraft,
+  entry: MemoryIntentDraftEntry,
+): boolean {
+  if (entry.supersededStorageToken) {
+    return fromStorage.draft_token === entry.supersededStorageToken;
+  }
+  if (entry.supersededStorageKey) {
+    return (
+      fromStorage.idempotency_key === entry.supersededStorageKey &&
+      fromStorage.saved_at === entry.supersededStorageSavedAt
+    );
+  }
+  return false;
+}
 
 export function createIntentIdempotencyKey(): string {
   try {
@@ -179,19 +203,23 @@ export function readIntentDraft(
   const key = intentDraftKey(datasetId, caseId, author);
   if (!key) return null;
   const storage = getStorage();
-  if (storage) {
-    const fromStorage = readStoredIntentDraftFromStorage(storage, key, datasetId, caseId, author, nowMs);
-    if (fromStorage) return fromStorage;
+  const fromStorage = storage
+    ? readStoredIntentDraftFromStorage(storage, key, datasetId, caseId, author, nowMs)
+    : null;
+  let memEntry = memoryIntentDrafts.get(key) || null;
+  if (memEntry && nowMs - memEntry.draft.saved_at > INTENT_DRAFT_MAX_AGE_MS) {
+    memoryIntentDrafts.delete(key);
+    memEntry = null;
   }
-  const fromMemory = memoryIntentDrafts.get(key);
-  if (fromMemory) {
-    if (nowMs - fromMemory.saved_at > INTENT_DRAFT_MAX_AGE_MS) {
-      memoryIntentDrafts.delete(key);
-      return null;
+  if (memEntry && memEntry.draft.persisted === false) {
+    if (!fromStorage || intentStorageMatchesSuperseded(fromStorage, memEntry)) {
+      return { ...memEntry.draft };
     }
-    return { ...fromMemory };
+    // Another tab successfully wrote a newer version to localStorage; respect it.
+    memoryIntentDrafts.delete(key);
+    return fromStorage;
   }
-  return null;
+  return fromStorage;
 }
 
 function pruneOldIntentDrafts(storage: Storage, keepKey: string, nowMs: number): void {
@@ -265,6 +293,9 @@ export function writeIntentDraft(
   };
 
   const storage = getStorage();
+  const diskBefore = storage
+    ? readStoredIntentDraftFromStorage(storage, key, params.datasetId, params.caseId, params.author, nowMs)
+    : null;
   let persisted = false;
   if (storage) {
     const serialized = JSON.stringify({ ...draft, persisted: true });
@@ -283,7 +314,16 @@ export function writeIntentDraft(
     }
   }
   draft.persisted = persisted;
-  memoryIntentDrafts.set(key, { ...draft });
+  if (persisted) {
+    memoryIntentDrafts.delete(key);
+  } else {
+    memoryIntentDrafts.set(key, {
+      draft: { ...draft },
+      supersededStorageToken: diskBefore?.draft_token ?? null,
+      supersededStorageKey: diskBefore?.idempotency_key ?? null,
+      supersededStorageSavedAt: diskBefore?.saved_at ?? null,
+    });
+  }
   return draft;
 }
 
@@ -313,25 +353,31 @@ export function clearIntentDraftIfMatch(
   const key = intentDraftKey(datasetId, caseId, author);
   if (!key) return false;
   const storage = getStorage();
+  const fromStorage = storage
+    ? readStoredIntentDraftFromStorage(storage, key, datasetId, caseId, author, Date.now())
+    : null;
+  const hadStorageEntry = Boolean(fromStorage);
+  const memEntry = memoryIntentDrafts.get(key) || null;
+  const memMatches = Boolean(memEntry && intentDraftMatchesExpected(memEntry.draft, expected));
+  const storageMatches = Boolean(fromStorage && intentDraftMatchesExpected(fromStorage, expected));
+  const storageIsObsoletePredecessor = Boolean(
+    memMatches &&
+      memEntry &&
+      memEntry.draft.persisted === false &&
+      fromStorage &&
+      intentStorageMatchesSuperseded(fromStorage, memEntry),
+  );
   let clearedStorage = false;
-  let hadStorageEntry = false;
-  if (storage) {
-    const fromStorage = readStoredIntentDraftFromStorage(storage, key, datasetId, caseId, author, Date.now());
-    if (fromStorage) {
-      hadStorageEntry = true;
-      if (intentDraftMatchesExpected(fromStorage, expected)) {
-        try {
-          storage.removeItem(key);
-          clearedStorage = true;
-        } catch {
-          /* ignore */
-        }
-      }
+  if (storage && (storageMatches || storageIsObsoletePredecessor)) {
+    try {
+      storage.removeItem(key);
+      clearedStorage = true;
+    } catch {
+      /* ignore */
     }
   }
-  const mem = memoryIntentDrafts.get(key) || null;
   let clearedMemory = false;
-  if (mem && intentDraftMatchesExpected(mem, expected)) {
+  if (memMatches) {
     memoryIntentDrafts.delete(key);
     clearedMemory = true;
   }

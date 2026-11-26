@@ -1471,25 +1471,44 @@ def promote_bluegreen_release(
     old_slot_stop_attempted = False
     initial_maint_mode = normalize_maintenance_mode(read_nginx_maintenance_writes(STATE))
     current_maint_mode = initial_maint_mode
+    maint_drained_level = 0
     batch_freeze_needed = False
 
     def apply_maint_mode(desired_mode, *, allow_loosen=False, drain_previous=False):
-        nonlocal current_maint_mode
+        nonlocal current_maint_mode, maint_drained_level
         target_mode = normalize_maintenance_mode(desired_mode)
-        if not allow_loosen and MAINTENANCE_MODE_LEVEL[target_mode] <= MAINTENANCE_MODE_LEVEL[current_maint_mode]:
-            return False
-        if allow_loosen:
+        if not allow_loosen:
+            effective_mode = (
+                target_mode
+                if MAINTENANCE_MODE_LEVEL[target_mode] > MAINTENANCE_MODE_LEVEL[current_maint_mode]
+                else current_maint_mode
+            )
+        else:
             # Never loosen below the operator's pre-deploy maintenance level.
-            if MAINTENANCE_MODE_LEVEL[target_mode] < MAINTENANCE_MODE_LEVEL[initial_maint_mode]:
-                target_mode = initial_maint_mode
-        if target_mode == current_maint_mode:
+            effective_mode = (
+                target_mode
+                if MAINTENANCE_MODE_LEVEL[target_mode] >= MAINTENANCE_MODE_LEVEL[initial_maint_mode]
+                else initial_maint_mode
+            )
+        # If maintenance was already configured before promote (e.g. a previous
+        # manual toggle exited before workers drained), reload once keeping the
+        # active mode so pre-reload workers establish a verified drain boundary.
+        needs_drain_barrier = (
+            drain_previous
+            and not allow_loosen
+            and MAINTENANCE_MODE_LEVEL[effective_mode] > maint_drained_level
+        )
+        if effective_mode == current_maint_mode and not needs_drain_barrier:
             return False
         pre_workers = nginx_worker_pids(STATE) if drain_previous else None
-        arg = True if target_mode == "all" else target_mode
+        arg = True if effective_mode == "all" else effective_mode
         set_nginx_maintenance_writes(STATE, arg)
-        current_maint_mode = target_mode
+        current_maint_mode = effective_mode
         if drain_previous:
             wait_nginx_workers_drained(pre_workers)
+            maint_drained_level = max(maint_drained_level, MAINTENANCE_MODE_LEVEL[effective_mode])
+        elif MAINTENANCE_MODE_LEVEL[effective_mode] < maint_drained_level:
+            maint_drained_level = MAINTENANCE_MODE_LEVEL[effective_mode]
         return True
 
     def mark_old_slot_stopping():
@@ -1677,11 +1696,77 @@ def bootstrap_nginx():
         record_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         blue_pid = None
         legacy_stop_attempted = False
+        allow_legacy_rollback_restart = False
         legacy_stopped = False
 
         def mark_legacy_stopping():
-            nonlocal legacy_stop_attempted
+            nonlocal legacy_stop_attempted, allow_legacy_rollback_restart
             legacy_stop_attempted = True
+            allow_legacy_rollback_restart = True
+
+        def audit_fence_loss_and_gate_rollback(reason, fence_err=None):
+            nonlocal allow_legacy_rollback_restart, legacy_stopped
+            # Immediately forbid automatic legacy restart BEFORE any audit query,
+            # logging, or receipt write that might raise.
+            allow_legacy_rollback_restart = False
+            if legacy_stop_attempted and not legacy_stopped:
+                wait_production_stopped(legacy_pid, session=SESSION)
+                legacy_stopped = True
+            try:
+                post_stop_batch = read_running_batch_jobs(env, app_dir=live_cwd)
+            except Exception as audit_err:
+                print(
+                    f"Bootstrap fence-loss DB audit failed ({type(audit_err).__name__}: {audit_err}); "
+                    f"refusing automatic legacy restart. Inspect {record_dir}",
+                    file=sys.stderr,
+                )
+                try:
+                    save(
+                        record_dir / "bootstrap_failure.json",
+                        {
+                            "status": "failed",
+                            "reason": reason,
+                            "error": str(fence_err or ""),
+                            "audit_error": f"{type(audit_err).__name__}: {audit_err}",
+                            "post_stop_running_batch": None,
+                            "recovery_action": "hold_for_manual_inspection",
+                        },
+                    )
+                except Exception as receipt_err:
+                    print(
+                        f"Bootstrap fence-loss receipt write failed ({type(receipt_err).__name__}: {receipt_err}); "
+                        f"refusing automatic legacy restart. Inspect {record_dir}",
+                        file=sys.stderr,
+                    )
+                raise
+            can_rollback = bool(legacy_stop_attempted and legacy_stopped and post_stop_batch == 0)
+            audit = {
+                "status": "failed",
+                "reason": reason,
+                "error": str(fence_err or ""),
+                "post_stop_running_batch": post_stop_batch,
+                "recovery_action": "rollback_legacy" if can_rollback else "hold_for_manual_inspection",
+            }
+            try:
+                save(record_dir / "bootstrap_failure.json", audit)
+            except Exception as receipt_err:
+                print(
+                    f"Bootstrap fence-loss receipt write failed ({type(receipt_err).__name__}: {receipt_err}); "
+                    f"refusing automatic legacy restart. Inspect {record_dir}",
+                    file=sys.stderr,
+                )
+                raise
+            if can_rollback:
+                # Only after legacy exited, DB audit returned 0, and the receipt
+                # is durably written on disk may outer rollback restart legacy.
+                allow_legacy_rollback_restart = True
+                return
+            if post_stop_batch > 0:
+                raise FenceLostError(
+                    f"Legacy Batch write fence was lost during shutdown and {post_stop_batch} "
+                    f"Batch job(s) are queued/running; refusing automatic bootstrap/restart. "
+                    f"Inspect {record_dir / 'bootstrap_failure.json'}"
+                ) from fence_err
 
         try:
             blue_env = rebase_env(env, REPO, live_cwd.parent) if live_cwd != REPO / "ra_triage_dashboard" else dict(env)
@@ -1742,42 +1827,18 @@ def bootstrap_nginx():
                                 "Legacy Batch write fence exited before legacy process finished draining"
                             )
                 except FenceLostError as fence_err:
+                    allow_legacy_rollback_restart = False
                     fence_lost_during_stop = True
-                    post_stop_batch = read_running_batch_jobs(env, app_dir=live_cwd)
-                    audit = {
-                        "status": "failed",
-                        "reason": "legacy_batch_write_fence_lost",
-                        "error": str(fence_err),
-                        "post_stop_running_batch": post_stop_batch,
-                        "recovery_action": (
-                            "rollback_legacy" if post_stop_batch == 0 else "hold_for_manual_inspection"
-                        ),
-                    }
-                    save(record_dir / "bootstrap_failure.json", audit)
-                    if post_stop_batch > 0:
-                        legacy_stop_attempted = False
-                        raise FenceLostError(
-                            f"Legacy Batch write fence was lost during shutdown and {post_stop_batch} "
-                            f"Batch job(s) are queued/running; refusing automatic bootstrap/restart. "
-                            f"Inspect {record_dir / 'bootstrap_failure.json'}"
-                        ) from fence_err
+                    if legacy_stop_attempted:
+                        audit_fence_loss_and_gate_rollback("legacy_batch_write_fence_lost", fence_err)
                     raise
-                except BaseException:
-                    if fence_lost_during_stop and legacy_stopped:
-                        post_stop_batch = read_running_batch_jobs(env, app_dir=live_cwd)
-                        save(
-                            record_dir / "bootstrap_failure.json",
-                            {
-                                "status": "failed",
-                                "reason": "legacy_batch_write_fence_lost_after_stop_error",
-                                "post_stop_running_batch": post_stop_batch,
-                                "recovery_action": (
-                                    "rollback_legacy" if post_stop_batch == 0 else "hold_for_manual_inspection"
-                                ),
-                            },
-                        )
-                        if post_stop_batch > 0:
-                            legacy_stop_attempted = False
+                except BaseException as exc:
+                    if fence_lost_during_stop:
+                        allow_legacy_rollback_restart = False
+                        if legacy_stop_attempted:
+                            audit_fence_loss_and_gate_rollback(
+                                "legacy_batch_write_fence_lost_after_stop_error", exc
+                            )
                     raise
                 start_production(
                     record_dir,
@@ -1811,7 +1872,7 @@ def bootstrap_nginx():
             print(json.dumps({"status": "bootstrapped", **slot_state}))
             return slot_state
         except BaseException:
-            if legacy_stop_attempted:
+            if allow_legacy_rollback_restart:
                 try:
                     stop_nginx(STATE)
                     if blue_pid is not None:
@@ -1839,7 +1900,10 @@ def toggle_maintenance_writes(mode):
         require(active is not None, "Maintenance write guard requires Nginx blue-green mode")
         require(nginx_master_pid(STATE) is not None, "Blue-green Nginx frontend is not running")
         enabled = mode == "on"
+        pre_workers = nginx_worker_pids(STATE) if enabled else None
         set_nginx_maintenance_writes(STATE, enabled)
+        if enabled:
+            wait_nginx_workers_drained(pre_workers)
         print(json.dumps({"status": "ok", "maintenance_writes": enabled, "slot": active["slot"], "port": active["port"]}))
 
 

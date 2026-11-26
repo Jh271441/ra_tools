@@ -686,6 +686,7 @@ COMMIT;
         old_supports_deferred=True,
         running_batch_jobs=0,
         initial_maintenance_writes=False,
+        fail_migration_apply=False,
         out_meta=None,
     ):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
@@ -755,7 +756,12 @@ COMMIT;
             stack.enter_context(patch.object(d.socket, "socket"))
             if schema_migration:
                 stack.enter_context(patch.object(d, "migration_changes", return_value=["ra_triage_dashboard/migrations/postgres/038_intent.sql"]))
-                stack.enter_context(patch.object(d, "apply_additive_migrations", return_value=("/backup.dump", 65)))
+                def fake_apply_migrations(*args, **kwargs):
+                    events.append(("apply_additive_migrations",))
+                    if fail_migration_apply:
+                        raise d.DeployError("migration failed")
+                    return ("/backup.dump", 65)
+                stack.enter_context(patch.object(d, "apply_additive_migrations", side_effect=fake_apply_migrations))
             elif already_applied_migration:
                 stack.enter_context(patch.object(
                     d,
@@ -996,6 +1002,8 @@ COMMIT;
         fence_drops_early=False,
         fence_lost_mid_drain=False,
         post_stop_running_batch=0,
+        fail_audit_query=False,
+        fail_receipt_save=False,
         out_meta=None,
     ):
         with tempfile.TemporaryDirectory() as temp, ExitStack() as stack:
@@ -1023,9 +1031,17 @@ COMMIT;
             stack.enter_context(patch.object(d, "supports_deferred_batch_recovery", return_value=supports_deferred))
             events = []
             def fake_audit_batch(check_env, *, app_dir=None):
-                events.append(("audit_running_batch", post_stop_running_batch))
+                events.append(("audit_running_batch", "error" if fail_audit_query else post_stop_running_batch))
+                if fail_audit_query:
+                    raise RuntimeError("pg audit query failed")
                 return post_stop_running_batch
             stack.enter_context(patch.object(d, "read_running_batch_jobs", side_effect=fake_audit_batch))
+            orig_save = d.save
+            def maybe_fail_save(path, payload):
+                if fail_receipt_save and Path(path).name == "bootstrap_failure.json":
+                    raise OSError("disk full writing bootstrap_failure.json")
+                return orig_save(path, payload)
+            stack.enter_context(patch.object(d, "save", side_effect=maybe_fail_save))
             @contextmanager
             def fake_fence(fence_env, *, app_dir=None, timeout=60):
                 events.append(("fence_enter", running_batch_jobs))
@@ -1069,12 +1085,16 @@ COMMIT;
                 fail_legacy_stop
                 or (not (supports_deferred and legacy_lease_gating) and (running_batch_jobs > 0 or fence_drops_early or fence_lost_mid_drain))
             )
-            if should_fail:
-                with self.assertRaises(d.DeployError):
+            import io
+            stderr_buf = io.StringIO()
+            with patch.object(d.sys, "stderr", stderr_buf):
+                if should_fail:
+                    with self.assertRaises((d.DeployError, RuntimeError, OSError)):
+                        d.bootstrap_nginx()
+                else:
                     d.bootstrap_nginx()
-            else:
-                d.bootstrap_nginx()
             if out_meta is not None:
+                out_meta["stderr"] = stderr_buf.getvalue()
                 out_meta["active_slot_exists"] = (state / "active_slot.json").exists()
                 failure_files = list(state.rglob("bootstrap_failure.json"))
                 out_meta["failure_receipt"] = json.loads(failure_files[0].read_text()) if failure_files else None
@@ -1259,6 +1279,127 @@ COMMIT;
         self.assertIn(("maintenance_writes", "batch"), events_batch)
         self.assertNotIn(("maintenance_writes", False), events_batch)
         self.assertEqual(meta_batch["final_maint_mode"], "batch")
+
+    def test_bootstrap_nginx_fence_lost_forbids_restart_on_audit_or_receipt_error_and_recovers_only_on_verified_zero(self):
+        # 1) Audit query raises error -> NEVER starts blue OR bootstrap-rollback.
+        meta_audit_err = {}
+        events_audit_err, _ = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+            fence_lost_mid_drain=True,
+            fail_audit_query=True,
+            out_meta=meta_audit_err,
+        )
+        self.assertFalse(meta_audit_err["active_slot_exists"])
+        self.assertFalse(any(e[0] == "start" for e in events_audit_err))
+
+        # 2) Audit returns 1 running/queued job -> NEVER starts blue OR bootstrap-rollback.
+        meta_one = {}
+        events_one, _ = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+            fence_lost_mid_drain=True,
+            post_stop_running_batch=1,
+            out_meta=meta_one,
+        )
+        self.assertFalse(meta_one["active_slot_exists"])
+        self.assertFalse(any(e[0] == "start" for e in events_one))
+
+        # 3) Audit returns 0, but writing bootstrap_failure.json fails ->
+        # NEVER starts blue OR bootstrap-rollback, AND stderr explains why.
+        meta_save_err = {}
+        events_save_err, _ = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+            fence_lost_mid_drain=True,
+            post_stop_running_batch=0,
+            fail_receipt_save=True,
+            out_meta=meta_save_err,
+        )
+        self.assertFalse(meta_save_err["active_slot_exists"])
+        self.assertIsNone(meta_save_err["failure_receipt"])
+        self.assertFalse(any(e[0] == "start" for e in events_save_err))
+        self.assertIn("disk full", meta_save_err["stderr"])
+
+        # 4) Audit returns 0 AND bootstrap_failure.json persists -> recovers legacy cleanly.
+        meta_zero = {}
+        events_zero, old_sha = self._simulate_bootstrap_nginx(
+            supports_deferred=False,
+            running_batch_jobs=0,
+            fence_lost_mid_drain=True,
+            post_stop_running_batch=0,
+            out_meta=meta_zero,
+        )
+        self.assertFalse(meta_zero["active_slot_exists"])
+        self.assertEqual(meta_zero["failure_receipt"]["recovery_action"], "rollback_legacy")
+        self.assertIn(("start", d.SESSION, None, "bootstrap-rollback"), events_zero)
+        self.assertIn(("smoke", 8785, old_sha), events_zero)
+
+    def test_toggle_maintenance_writes_on_drains_pre_reload_workers_under_lock(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = Path(temp)
+            d.ensure_nginx_layout(state, 18791)
+            d.save(state / "active_slot.json", {
+                "slot": "blue",
+                "port": 18791,
+                "session": "ra_triage_dashboard_blue",
+            })
+            events = []
+            worker_gen = [501]
+            def fake_workers(st=None):
+                events.append(("snapshot_workers", list(worker_gen)))
+                return list(worker_gen)
+            def fake_set(st, enabled, **kw):
+                events.append(("set_maint", enabled))
+                worker_gen[0] += 1
+            def fake_drain(pids, **kw):
+                self.assertTrue(set(pids).isdisjoint(worker_gen))
+                events.append(("drain_workers", list(pids)))
+            with patch.object(d, "STATE", state), patch.object(
+                d, "nginx_master_pid", return_value=999
+            ), patch.object(
+                d, "nginx_worker_pids", side_effect=fake_workers
+            ), patch.object(
+                d, "set_nginx_maintenance_writes", side_effect=fake_set
+            ), patch.object(
+                d, "wait_nginx_workers_drained", side_effect=fake_drain
+            ):
+                d.toggle_maintenance_writes("on")
+            self.assertEqual(
+                events,
+                [
+                    ("snapshot_workers", [501]),
+                    ("set_maint", True),
+                    ("drain_workers", [501]),
+                ],
+            )
+
+    def test_bluegreen_promote_with_preexisting_manual_maintenance_drains_inflight_old_worker_before_checks(self):
+        # Even when maintenance_writes="all" is already enabled on disk (e.g. an
+        # earlier manual --maintenance-writes on exited before draining), promote
+        # must preserve "all", reload once to establish a drain boundary, and wait
+        # for pre-reload workers (carrying an in-flight slow request) BEFORE
+        # running schema migration or checking running Batch jobs.
+        meta = {}
+        events, record, _, _ = self.simulate_bluegreen_release(
+            schema_migration=True,
+            old_supports_deferred=False,
+            running_batch_jobs=0,
+            initial_maintenance_writes=True,
+            out_meta=meta,
+        )
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(meta["final_maint_mode"], "all")
+        self.assertNotIn(("maintenance_writes", "batch"), events)
+        self.assertNotIn(("maintenance_writes", False), events)
+        order = [
+            events.index(("snapshot_nginx_workers",)),
+            events.index(("maintenance_writes", True)),
+            events.index(("drain_nginx_workers", [777])),
+            events.index(("apply_additive_migrations",)),
+            events.index(("check_running_batch", 0)),
+        ]
+        self.assertEqual(order, sorted(order))
 
     def test_supports_deferred_batch_recovery_requires_graceful_drain_support(self):
         self.assertTrue(d.supports_deferred_batch_recovery(Path(__file__).parents[1]))

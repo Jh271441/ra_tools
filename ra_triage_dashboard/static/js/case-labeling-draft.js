@@ -221,23 +221,41 @@ function readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode
   }
 }
 
+function caseLabelStorageMatchesSuperseded(fromStorage, entry) {
+  if (!fromStorage || !entry) return false;
+  if (entry.supersededStorageToken) {
+    return fromStorage.draft_token === entry.supersededStorageToken;
+  }
+  if (entry.supersededStorageKey) {
+    return (
+      fromStorage.idempotency_key === entry.supersededStorageKey &&
+      fromStorage.saved_at === entry.supersededStorageSavedAt
+    );
+  }
+  return false;
+}
+
 function readCaseLabelDraft(issueId, taskId = "", mode = "submission", author = "", nowMs = Date.now()) {
   const key = caseLabelDraftStorageKey(issueId, taskId, mode, author);
   if (!key) return null;
   const storage = caseLabelDraftStorage();
-  if (storage) {
-    const fromStorage = readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode, author, nowMs);
-    if (fromStorage) return fromStorage;
+  const fromStorage = storage
+    ? readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode, author, nowMs)
+    : null;
+  let memEntry = caseLabelMemoryDrafts.get(key) || null;
+  if (memEntry && nowMs - memEntry.draft.saved_at > CASE_LABEL_DRAFT_MAX_AGE_MS) {
+    caseLabelMemoryDrafts.delete(key);
+    memEntry = null;
   }
-  const fromMemory = caseLabelMemoryDrafts.get(key);
-  if (fromMemory) {
-    if (nowMs - fromMemory.saved_at > CASE_LABEL_DRAFT_MAX_AGE_MS) {
-      caseLabelMemoryDrafts.delete(key);
-      return null;
+  if (memEntry && memEntry.draft.persisted === false) {
+    if (!fromStorage || caseLabelStorageMatchesSuperseded(fromStorage, memEntry)) {
+      return { ...memEntry.draft };
     }
-    return { ...fromMemory };
+    // Another tab successfully wrote a newer draft to localStorage; respect it.
+    caseLabelMemoryDrafts.delete(key);
+    return fromStorage;
   }
-  return null;
+  return fromStorage;
 }
 
 function writeCaseLabelDraft(issueId, taskId = "", mode = "submission", fields = {}, options = {}) {
@@ -281,6 +299,9 @@ function writeCaseLabelDraft(issueId, taskId = "", mode = "submission", fields =
     saved_at: nowMs,
   };
   const storage = caseLabelDraftStorage();
+  const diskBefore = storage
+    ? readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, kind, author, nowMs)
+    : null;
   let persisted = false;
   if (storage) {
     const serialized = JSON.stringify({ ...draft, persisted: true });
@@ -299,7 +320,16 @@ function writeCaseLabelDraft(issueId, taskId = "", mode = "submission", fields =
     }
   }
   draft.persisted = persisted;
-  caseLabelMemoryDrafts.set(key, { ...draft });
+  if (persisted) {
+    caseLabelMemoryDrafts.delete(key);
+  } else {
+    caseLabelMemoryDrafts.set(key, {
+      draft: { ...draft },
+      supersededStorageToken: diskBefore?.draft_token ?? null,
+      supersededStorageKey: diskBefore?.idempotency_key ?? null,
+      supersededStorageSavedAt: diskBefore?.saved_at ?? null,
+    });
+  }
   return draft;
 }
 
@@ -321,25 +351,31 @@ function clearCaseLabelDraftIfMatch(issueId, taskId = "", mode = "submission", e
   const key = caseLabelDraftStorageKey(issueId, taskId, mode, author);
   if (!key) return false;
   const storage = caseLabelDraftStorage();
+  const fromStorage = storage
+    ? readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode, author, Date.now())
+    : null;
+  const hadStorageEntry = Boolean(fromStorage);
+  const memEntry = caseLabelMemoryDrafts.get(key) || null;
+  const memMatches = Boolean(memEntry && caseLabelDraftMatchesExpected(memEntry.draft, expected));
+  const storageMatches = Boolean(fromStorage && caseLabelDraftMatchesExpected(fromStorage, expected));
+  const storageIsObsoletePredecessor = Boolean(
+    memMatches &&
+      memEntry &&
+      memEntry.draft.persisted === false &&
+      fromStorage &&
+      caseLabelStorageMatchesSuperseded(fromStorage, memEntry)
+  );
   let clearedStorage = false;
-  let hadStorageEntry = false;
-  if (storage) {
-    const fromStorage = readStoredCaseLabelDraftFromStorage(storage, key, issueId, taskId, mode, author, Date.now());
-    if (fromStorage) {
-      hadStorageEntry = true;
-      if (caseLabelDraftMatchesExpected(fromStorage, expected)) {
-        try {
-          storage.removeItem(key);
-          clearedStorage = true;
-        } catch {
-          /* ignore */
-        }
-      }
+  if (storage && (storageMatches || storageIsObsoletePredecessor)) {
+    try {
+      storage.removeItem(key);
+      clearedStorage = true;
+    } catch {
+      /* ignore */
     }
   }
-  const mem = caseLabelMemoryDrafts.get(key) || null;
   let clearedMemory = false;
-  if (mem && caseLabelDraftMatchesExpected(mem, expected)) {
+  if (memMatches) {
     caseLabelMemoryDrafts.delete(key);
     clearedMemory = true;
   }

@@ -1014,6 +1014,32 @@ function currentLabelingRevision(caseData) {
   ) || null;
 }
 
+function caseLabelingRevisionContextKey(caseData = state.caseLabeling.caseData, taskId = null, author = "") {
+  const issueId = String(caseData?.issue_id || "").trim();
+  if (!issueId) return "";
+  const resolvedTaskId = String(taskId ?? caseLabelingSubmissionTaskId(caseData) ?? "").trim();
+  const actor = String(author || state.session?.username || "").trim().toLowerCase() || "anonymous";
+  return `${issueId}\u0000${resolvedTaskId}\u0000${actor}`;
+}
+
+function caseLabelingExpectedPreviousRevisionId(caseData = state.caseLabeling.caseData, taskId = null) {
+  const key = caseLabelingRevisionContextKey(caseData, taskId);
+  const baselines = state.caseLabeling.revisionBaselines;
+  if (key && baselines instanceof Map && baselines.has(key)) {
+    return baselines.get(key);
+  }
+  return currentLabelingRevision(caseData)?.id ?? null;
+}
+
+function setCaseLabelingRevisionBaseline(caseData, taskId, revisionId, author = "") {
+  const key = caseLabelingRevisionContextKey(caseData, taskId, author);
+  if (!key) return;
+  if (!(state.caseLabeling.revisionBaselines instanceof Map)) {
+    state.caseLabeling.revisionBaselines = new Map();
+  }
+  state.caseLabeling.revisionBaselines.set(key, revisionId ?? null);
+}
+
 function caseLabelingHistoryAnnotations(caseData) {
   const gtLabel = String(caseData?.gt_label || "");
   return (caseData?.label_cases || [])
@@ -1363,8 +1389,8 @@ function bindCaseLabelingDraftBanner(caseData, { decision = null } = {}) {
 
 function persistCurrentCaseLabelingDraft(caseData, { decision = null, forceNewIdempotencyKey = false } = {}) {
   if (!caseData || decision || typeof writeCaseLabelDraft !== "function") return null;
-  const revision = currentLabelingRevision(caseData);
   const fields = caseLabelingFormPayload();
+  const expectedPrevId = caseLabelingExpectedPreviousRevisionId(caseData, fields.task_id);
   const currentPending = typeof normalizeCaseLabelPendingAttachments === "function"
     ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
     : [];
@@ -1380,7 +1406,7 @@ function persistCurrentCaseLabelingDraft(caseData, { decision = null, forceNewId
     "submission",
     { ...fields, pending_attachments: pendingAttachments },
     {
-      expectedPreviousId: revision?.id || null,
+      expectedPreviousId: expectedPrevId,
       pendingAttachments,
       forceNewIdempotencyKey,
     }
@@ -1589,6 +1615,11 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   if (seq !== state.caseLabeling.detailSeq || !isPageContextCurrent(pageContext)) return;
   state.caseLabeling.issueId = normalized;
   state.caseLabeling.caseData = caseData;
+  setCaseLabelingRevisionBaseline(
+    caseData,
+    caseLabelingSubmissionTaskId(caseData),
+    currentLabelingRevision(caseData)?.id ?? null
+  );
   state.caseLabeling.dirty = false;
   state.caseLabeling.missingDraftAttachments = [];
   clearPendingCaseLabelingImages();
@@ -1635,6 +1666,7 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
   pauseBevVideoPlayers($("#caseLabelingMedia"));
   state.caseLabeling.issueId = "";
   state.caseLabeling.caseData = null;
+  state.caseLabeling.revisionBaselines?.clear?.();
   state.caseLabeling.dirty = false;
   state.caseLabeling.missingDraftAttachments = [];
   clearPendingCaseLabelingImages();
@@ -1862,10 +1894,14 @@ async function saveCaseLabelingRevision(event) {
     );
     return;
   }
-  const revision = currentLabelingRevision(caseData);
+  const submittedForm = caseLabelingFormPayload();
+  const submittedIssueId = caseData.issue_id;
+  const submittedTaskId = submittedForm.task_id;
+  const submittedAuthor = String(state.session?.username || "").trim().toLowerCase() || "anonymous";
+  const expectedPreviousId = caseLabelingExpectedPreviousRevisionId(caseData, submittedTaskId);
   const payload = {
-    ...caseLabelingFormPayload(),
-    expected_previous_revision_id: revision?.id || null,
+    ...submittedForm,
+    expected_previous_revision_id: expectedPreviousId,
     expected_allocation_revision: caseData.allocation_revision ?? null,
   };
   const files = state.caseLabeling.pendingImages.map((item) => item.file);
@@ -1879,12 +1915,12 @@ async function saveCaseLabelingRevision(event) {
   const button = event.submitter || event.currentTarget.querySelector('[type="submit"]');
   const savedDraft = typeof writeCaseLabelDraft === "function"
     ? writeCaseLabelDraft(
-        caseData.issue_id,
-        payload.task_id,
+        submittedIssueId,
+        submittedTaskId,
         "submission",
         { ...payload, pending_attachments: pendingAttachments },
         {
-          expectedPreviousId: revision?.id || null,
+          expectedPreviousId,
           pendingAttachments,
         }
       )
@@ -1900,7 +1936,7 @@ async function saveCaseLabelingRevision(event) {
       const form = new FormData();
       form.append("payload", JSON.stringify(payload));
       files.forEach((file) => form.append("attachments", file, file.name));
-      result = await api(`/api/labeling/cases/${encodeURIComponent(caseData.issue_id)}/revisions-with-attachments`, {
+      result = await api(`/api/labeling/cases/${encodeURIComponent(submittedIssueId)}/revisions-with-attachments`, {
         method: "POST",
         body: form,
         headers: {
@@ -1909,7 +1945,7 @@ async function saveCaseLabelingRevision(event) {
         },
       });
     } else {
-      result = await api(`/api/labeling/cases/${encodeURIComponent(caseData.issue_id)}/revisions`, {
+      result = await api(`/api/labeling/cases/${encodeURIComponent(submittedIssueId)}/revisions`, {
         method: "POST",
         body: JSON.stringify(payload),
         headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
@@ -1917,17 +1953,31 @@ async function saveCaseLabelingRevision(event) {
     }
     acknowledgeLocalChange(result);
     if (typeof clearCaseLabelDraftIfMatch === "function") {
-      clearCaseLabelDraftIfMatch(caseData.issue_id, payload.task_id, "submission", {
+      clearCaseLabelDraftIfMatch(submittedIssueId, submittedTaskId, "submission", {
         draftToken: submittedDraftToken,
         idempotencyKey,
         signature: submittedSignature,
       });
     } else if (typeof clearCaseLabelDraft === "function") {
-      clearCaseLabelDraft(caseData.issue_id, payload.task_id, "submission");
+      clearCaseLabelDraft(submittedIssueId, submittedTaskId, "submission");
     }
-    const stillOnSameIssue = state.caseLabeling.caseData?.issue_id === caseData.issue_id && !caseLabelDecisionUi?.editor;
+    const currentActor = String(state.session?.username || "").trim().toLowerCase() || "anonymous";
+    const stillOnSameContext =
+      state.caseLabeling.caseData?.issue_id === submittedIssueId
+      && caseLabelingSubmissionTaskId(state.caseLabeling.caseData) === submittedTaskId
+      && currentActor === submittedAuthor
+      && !caseLabelDecisionUi?.editor;
+    const nextBaseRevId = result?.revision?.id ?? expectedPreviousId ?? null;
+    if (stillOnSameContext) {
+      setCaseLabelingRevisionBaseline(
+        state.caseLabeling.caseData,
+        submittedTaskId,
+        nextBaseRevId,
+        submittedAuthor
+      );
+    }
     let sameTabEditedDuringSave = false;
-    if (stillOnSameIssue && $("#caseLabelingForm") && typeof caseLabelDraftSignature === "function") {
+    if (stillOnSameContext && $("#caseLabelingForm") && typeof caseLabelDraftSignature === "function") {
       const livePayload = caseLabelingFormPayload();
       const livePending = typeof normalizeCaseLabelPendingAttachments === "function"
         ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
@@ -1945,10 +1995,9 @@ async function saveCaseLabelingRevision(event) {
       const livePending = typeof normalizeCaseLabelPendingAttachments === "function"
         ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
         : [];
-      const nextBaseRevId = result?.revision?.id || revision?.id || null;
       if (typeof writeCaseLabelDraft === "function") {
         writeCaseLabelDraft(
-          caseData.issue_id,
+          submittedIssueId,
           livePayload.task_id,
           "submission",
           { ...livePayload, pending_attachments: livePending },
@@ -1963,16 +2012,21 @@ async function saveCaseLabelingRevision(event) {
         )
       );
       await loadCaseLabelingCases({ page: state.caseLabeling.page });
-    } else {
+    } else if (stillOnSameContext) {
       state.caseLabeling.missingDraftAttachments = [];
       state.caseLabeling.draftNotice = null;
       state.caseLabeling.dirty = false;
       clearPendingCaseLabelingImages();
       showToast(uiText("标注已保存。", "Label saved."));
       await Promise.all([
-        selectCaseLabelingIssue(caseData.issue_id, { updateRoute: false }),
+        selectCaseLabelingIssue(submittedIssueId, { updateRoute: false }),
         loadCaseLabelingCases({ page: state.caseLabeling.page }),
       ]);
+    } else {
+      // User already navigated away to another Issue/context; refresh list only
+      // so this late response never mutates the newly opened Issue's form or baseline.
+      showToast(uiText("标注已保存。", "Label saved."));
+      await loadCaseLabelingCases({ page: state.caseLabeling.page });
     }
   } catch (error) {
     state.caseLabeling.dirty = true;

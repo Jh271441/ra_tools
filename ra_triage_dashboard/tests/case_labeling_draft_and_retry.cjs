@@ -444,6 +444,257 @@ async function run() {
     localStorage.setItem = origSetItem;
   }
 
+  // 7. Quota-full fallback with NON-EMPTY storage (P2-4):
+  // old persisted on disk -> new fails quota -> read returns new -> retries reuse key ->
+  // quota recovers -> new persists with same key -> Tab B newer write wins & survives Tab A clear.
+  const oldPersisted = context.writeCaseLabelDraft(
+    "cn302",
+    "task-1",
+    "submission",
+    { expected_output: "误触发", tags: ["old"], evidence_gaps: [], rationale: "旧磁盘稿", is_excluded: false },
+    { expectedPreviousId: 10 },
+  );
+  assert.equal(oldPersisted.persisted, true);
+  localStorage.setItem = () => {
+    const err = new Error("QuotaExceededError");
+    err.name = "QuotaExceededError";
+    throw err;
+  };
+  let newMem1;
+  try {
+    newMem1 = context.writeCaseLabelDraft(
+      "cn302",
+      "task-1",
+      "submission",
+      { expected_output: "正确触发", tags: ["new"], evidence_gaps: [], rationale: "新内存稿", is_excluded: false },
+      { expectedPreviousId: 10 },
+    );
+    assert.equal(newMem1.persisted, false);
+    assert.notEqual(newMem1.idempotency_key, oldPersisted.idempotency_key);
+    const readFull = context.readCaseLabelDraft("cn302", "task-1", "submission");
+    assert.equal(readFull.rationale, "新内存稿");
+    assert.equal(readFull.persisted, false);
+    assert.equal(readFull.idempotency_key, newMem1.idempotency_key);
+
+    const retryFull1 = context.writeCaseLabelDraft(
+      "cn302",
+      "task-1",
+      "submission",
+      { expected_output: "正确触发", tags: ["new"], evidence_gaps: [], rationale: "新内存稿", is_excluded: false },
+      { expectedPreviousId: 10 },
+    );
+    const retryFull2 = context.writeCaseLabelDraft(
+      "cn302",
+      "task-1",
+      "submission",
+      { expected_output: "正确触发", tags: ["new"], evidence_gaps: [], rationale: "新内存稿", is_excluded: false },
+      { expectedPreviousId: 10 },
+    );
+    assert.equal(retryFull1.persisted, false);
+    assert.equal(retryFull2.persisted, false);
+    assert.equal(retryFull1.idempotency_key, newMem1.idempotency_key);
+    assert.equal(retryFull2.idempotency_key, newMem1.idempotency_key);
+  } finally {
+    localStorage.setItem = origSetItem;
+  }
+  // Storage recovers -> `new` persists with the same idempotency_key.
+  const recoveredClassic = context.writeCaseLabelDraft(
+    "cn302",
+    "task-1",
+    "submission",
+    { expected_output: "正确触发", tags: ["new"], evidence_gaps: [], rationale: "新内存稿", is_excluded: false },
+    { expectedPreviousId: 10 },
+  );
+  assert.equal(recoveredClassic.persisted, true);
+  assert.equal(recoveredClassic.idempotency_key, newMem1.idempotency_key);
+  assert.equal(context.readCaseLabelDraft("cn302", "task-1", "submission").rationale, "新内存稿");
+
+  // Tab A fails quota write over recoveredClassic, then Tab B writes directly to localStorage.
+  localStorage.setItem = () => {
+    const err = new Error("QuotaExceededError");
+    err.name = "QuotaExceededError";
+    throw err;
+  };
+  let tabAClassicFail;
+  try {
+    tabAClassicFail = context.writeCaseLabelDraft(
+      "cn302",
+      "task-1",
+      "submission",
+      { expected_output: "无需协助", tags: ["a"], evidence_gaps: [], rationale: "TabA内存", is_excluded: false },
+      { expectedPreviousId: 10 },
+    );
+    assert.equal(tabAClassicFail.persisted, false);
+  } finally {
+    localStorage.setItem = origSetItem;
+  }
+  const cKey = context.caseLabelDraftStorageKey("cn302", "task-1", "submission");
+  localStorage.setItem(
+    cKey,
+    JSON.stringify({
+      ...recoveredClassic,
+      rationale: "TabB落盘新稿",
+      draft_token: "draft-classic-tab-b",
+      idempotency_key: "case-label-tab-b",
+      signature: context.caseLabelDraftSignature(
+        { expected_output: "正确触发", tags: ["new"], evidence_gaps: [], rationale: "TabB落盘新稿", is_excluded: false },
+        "submission",
+      ),
+      saved_at: Date.now() + 1000,
+      persisted: true,
+    }),
+  );
+  assert.equal(context.readCaseLabelDraft("cn302", "task-1", "submission").rationale, "TabB落盘新稿");
+  assert.equal(
+    context.clearCaseLabelDraftIfMatch("cn302", "task-1", "submission", {
+      draftToken: tabAClassicFail.draft_token,
+      idempotencyKey: tabAClassicFail.idempotency_key,
+      signature: tabAClassicFail.signature,
+    }),
+    false,
+  );
+  assert.equal(context.readCaseLabelDraft("cn302", "task-1", "submission").draft_token, "draft-classic-tab-b");
+
+  // 8. Classic continuous save revision baseline (P2-5):
+  // Real saveCaseLabelingRevision() starts at rev 10 -> user edits in-flight ->
+  // req 1 returns rev 11 -> req 2 must send expected_previous_revision_id=11 (not 10!),
+  // genuine 3rd-party conflict still 409s, and late response after Issue switch never alters new Issue baseline.
+  const saveStorage = createStorage();
+  const saveRequests = [];
+  const deferredResponses = [];
+  const formState = {
+    expected_output: "误触发",
+    rationale: "第一版依据",
+    excluded: false,
+  };
+  const submitBtn = { disabled: false };
+  const fakeFormEl = {
+    querySelector: (sel) => (sel === '[type="submit"]' ? submitBtn : null),
+  };
+  const saveCtx = {
+    ...context,
+    window: { ...context.window, localStorage: saveStorage },
+    state: {
+      session: { username: "Alice", read_only: false },
+      uiLang: "zh",
+      activePage: "labeling",
+      caseLabeling: {
+        issueId: "cn400",
+        taskId: "task-1",
+        page: 1,
+        dirty: true,
+        draftNotice: null,
+        missingDraftAttachments: [],
+        pendingImages: [],
+        caseData: {
+          issue_id: "cn400",
+          current_user_is_task_member: true,
+          allocation_revision: 1,
+          label_cases: [
+            {
+              task_id: "task-1",
+              source_run_id: "",
+              resolution: { heads: [{ id: 10, author: "alice" }] },
+            },
+          ],
+        },
+      },
+    },
+    caseLabelDecisionUi: { editor: null, saving: false, drafts: new Map() },
+    $: (sel) => {
+      if (sel === "#caseLabelingForm") return fakeFormEl;
+      if (sel === "#caseLabelingExpectedOutput") return { value: formState.expected_output };
+      if (sel === "#caseLabelingRationale") return { value: formState.rationale };
+      if (sel === "#caseLabelingExcluded") return { checked: formState.excluded };
+      if (sel === "#caseLabelingEditor") return { querySelectorAll: () => [] };
+      return null;
+    },
+    inferExpectedOutputFromSelectedTags: () => ({ value: "", conflict: false }),
+    acknowledgeLocalChange: () => {},
+    showToast: () => {},
+    releasePreviewUrlLater: () => {},
+    api: (url, opts) => {
+      const body = JSON.parse(opts.body);
+      saveRequests.push({ url, body, headers: opts.headers });
+      return new Promise((resolve, reject) => {
+        deferredResponses.push({ resolve, reject });
+      });
+    },
+  };
+  vm.createContext(saveCtx);
+  vm.runInContext(draftSrc, saveCtx);
+  vm.runInContext(caseLabelingSrc, saveCtx);
+  saveCtx.loadCaseLabelingCases = async () => {};
+  saveCtx.selectCaseLabelingIssue = async () => {};
+
+  const submitEvent = { preventDefault() {}, submitter: submitBtn, currentTarget: fakeFormEl };
+  // Request 1 starts from rev 10
+  const req1Promise = saveCtx.saveCaseLabelingRevision(submitEvent);
+  assert.equal(saveRequests.length, 1);
+  assert.equal(saveRequests[0].body.expected_previous_revision_id, 10);
+  assert.equal(saveRequests[0].body.rationale, "第一版依据");
+
+  // User continues editing in-flight!
+  formState.rationale = "续编第二版依据";
+  saveCtx.persistCurrentCaseLabelingDraft(saveCtx.state.caseLabeling.caseData);
+
+  // Request 1 succeeds returning rev 11.
+  deferredResponses[0].resolve({ revision: { id: 11 }, change_revision: 2 });
+  await req1Promise;
+
+  // Continued input triggers draft persistence -> must keep baseline 11 (not regress to 10!).
+  saveCtx.persistCurrentCaseLabelingDraft(saveCtx.state.caseLabeling.caseData);
+  assert.equal(saveCtx.readCaseLabelDraft("cn400", "task-1", "submission").expected_previous_id, 11);
+
+  // Request 2 submits directly on the same page -> must send expected_previous_revision_id=11!
+  const req2Promise = saveCtx.saveCaseLabelingRevision(submitEvent);
+  assert.equal(saveRequests.length, 2);
+  assert.deepEqual(
+    saveRequests.map((r) => r.body.expected_previous_revision_id),
+    [10, 11],
+  );
+  assert.equal(saveRequests[1].body.rationale, "续编第二版依据");
+
+  // Real 3rd-party conflict (server is at 12 while req2 sent 11) still returns 409 and shows conflict notice!
+  const conflictErr = new Error("远端标注已更新");
+  conflictErr.status = 409;
+  deferredResponses[1].reject(conflictErr);
+  await req2Promise;
+  assert.equal(saveCtx.state.caseLabeling.draftNotice?.remoteChanged, true);
+
+  // Late response after switching to a DIFFERENT Issue (cn500, rev 30) must NOT corrupt cn500's baseline!
+  const req3Promise = saveCtx.saveCaseLabelingRevision(submitEvent);
+  assert.equal(saveRequests.length, 3);
+  // User switches to cn500 (rev 30) before req3 resolves.
+  saveCtx.state.caseLabeling.issueId = "cn500";
+  saveCtx.state.caseLabeling.caseData = {
+    issue_id: "cn500",
+    current_user_is_task_member: true,
+    allocation_revision: 1,
+    label_cases: [
+      {
+        task_id: "task-1",
+        source_run_id: "",
+        resolution: { heads: [{ id: 30, author: "alice" }] },
+      },
+    ],
+  };
+  formState.rationale = "cn500 新内容";
+  // Old cn400 req3 returns late with rev 12.
+  let switchedBack = false;
+  saveCtx.selectCaseLabelingIssue = async (iid) => {
+    if (iid === "cn400") switchedBack = true;
+  };
+  deferredResponses[2].resolve({ revision: { id: 12 }, change_revision: 3 });
+  await req3Promise;
+  assert.equal(switchedBack, false);
+  // Submitting cn500 must still carry cn500's own baseline 30 (NOT cn400's 12!).
+  const req4Promise = saveCtx.saveCaseLabelingRevision(submitEvent);
+  assert.equal(saveRequests.length, 4);
+  assert.equal(saveRequests[3].body.expected_previous_revision_id, 30);
+  deferredResponses[3].resolve({ revision: { id: 31 }, change_revision: 4 });
+  await req4Promise;
+
   console.log("case_labeling_draft_and_retry.cjs: PASS");
 }
 
