@@ -79,7 +79,8 @@ def grouped_assignment_progress(groups, members, submitted, total_count):
     if not active_slots:
         return None
     assigned = Counter(owner for _, owner in active_slots)
-    completed = Counter(owner for issue_id, owner in active_slots if (issue_id, owner) in submitted)
+    submitted_slots = set(submitted)
+    completed = Counter(owner for issue_id, owner in active_slots if (issue_id, owner) in submitted_slots)
     normalized = []
     for member in members:
         owner = member["username"]
@@ -96,8 +97,26 @@ def grouped_assignment_progress(groups, members, submitted, total_count):
             "completion_ratio": round(active_completed / active_count, 4) if active_count else 0.0,
         })
     assigned_count = total_count if len(groups) == 1 else len(active_slots)
-    carried = max(0, total_count - len(active_slots)) if len(groups) == 1 else 0
+    carried = 0
+    if len(groups) == 1:
+        bound_issues = {issue_id for issue_id, _ in active_slots}
+        carried = len({issue_id for issue_id, _ in submitted_slots} - bound_issues)
     return normalized, assigned_count, min(assigned_count, sum(completed.values()) + carried)
+
+
+def unassigned_campaign_issues(conn, campaign_ids: Sequence[str]):
+    if not campaign_ids:
+        return []
+    marks = ",".join("?" for _ in campaign_ids)
+    return conn.execute(f"""
+        SELECT m.campaign_id, m.issue_id
+        FROM campaign_issue_members m
+        WHERE m.campaign_id IN ({marks}) AND NOT EXISTS (
+            SELECT 1 FROM review_work_assignments a
+            WHERE a.split_id=m.campaign_id AND a.issue_id=m.issue_id
+        )
+        ORDER BY m.issue_id
+    """, tuple(campaign_ids)).fetchall()
 
 
 def pending_assignment_issue_ids(conn, campaign_ids: Sequence[str]) -> dict[str, list[str]]:
@@ -114,6 +133,8 @@ def pending_assignment_issue_ids(conn, campaign_ids: Sequence[str]) -> dict[str,
     """, tuple(campaign_ids)).fetchall()
     for row in rows:
         pending[row["split_id"]].append(row["issue_id"])
+    for row in unassigned_campaign_issues(conn, campaign_ids):
+        pending[row["campaign_id"]].append(row["issue_id"])
     return pending
 
 
@@ -144,8 +165,9 @@ def combined_task_progress_ids(database, task_id, progress, assignees=()):
             "WHERE split.id=?" + owner_where + " GROUP BY assignment.issue_id",
             args,
         ).fetchall()
+        unassigned = unassigned_campaign_issues(conn, [task_id]) if not owners and "pending" in progress else ()
     return {row["issue_id"] for row in rows
-            if ("completed" if row["submitted"] else "pending") in progress}
+            if ("completed" if row["submitted"] else "pending") in progress} | {row["issue_id"] for row in unassigned}
 
 
 def legacy_batch_source(batch: Mapping[str, Any], sources: Mapping[str, Mapping[str, Any]]) -> Mapping[str, Any]:

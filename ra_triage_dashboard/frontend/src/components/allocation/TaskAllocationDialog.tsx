@@ -527,6 +527,9 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
       : "";
   const caseCount = Number(config?.member_count || 0);
   const pendingCount = Math.max(0, (config?.total_slots || 0) - (config?.completed_slots || 0));
+  const uncoveredCount = config?.groups?.length === 1 && config.group_coverage?.active_slots != null
+    ? Math.max(0, caseCount - config.group_coverage.active_slots)
+    : 0;
   const canTakeOver = config?.editable && config.purpose === "model_review" && !config.role_required;
   const crossCoverage = (coverage: { cross_cases: number; case_count: number }) => {
     const percent = coverage.case_count ? coverage.cross_cases / coverage.case_count : 0;
@@ -853,16 +856,24 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                         )}
                       </p>
                     )}
-                    <p className="dialog-copy">
-                      {pendingCount
-                        ? bilingual(lang,
-                            `待办 ${numFmt.format(pendingCount)} 份 · 可转派 ${numFmt.format(config.movable_slots || 0)} 份 · 受保护 ${numFmt.format(config.saved_pending_slots || 0)} 份`,
-                            `${numFmt.format(pendingCount)} pending · ${numFmt.format(config.movable_slots || 0)} transferable · ${numFmt.format(config.saved_pending_slots || 0)} protected`)
-                        : bilingual(lang, "已全部完成", "All assignments completed")}
-                    </p>
+                    {uncoveredCount > 0 && (
+                      <p className="dialog-copy">
+                        {bilingual(lang, `未覆盖 ${numFmt.format(uncoveredCount)} 个 Case`,
+                          `${numFmt.format(uncoveredCount)} unassigned ${uncoveredCount === 1 ? "case" : "cases"}`)}
+                      </p>
+                    )}
+                    {(pendingCount > 0 || !uncoveredCount) && (
+                      <p className="dialog-copy">
+                        {pendingCount
+                          ? bilingual(lang,
+                              `待办 ${numFmt.format(pendingCount)} 份 · 可转派 ${numFmt.format(config.movable_slots || 0)} 份 · 受保护 ${numFmt.format(config.saved_pending_slots || 0)} 份`,
+                              `${numFmt.format(pendingCount)} pending · ${numFmt.format(config.movable_slots || 0)} transferable · ${numFmt.format(config.saved_pending_slots || 0)} protected`)
+                          : bilingual(lang, "已全部完成", "All assignments completed")}
+                      </p>
+                    )}
                   </div>
                   <div className="review-assignment-batch-actions">
-                    {task?.workflow_mode === "model_review_and_case_label" && pendingCount > 0 && (
+                    {task?.workflow_mode === "model_review_and_case_label" && (pendingCount > 0 || uncoveredCount > 0) && (
                       <a className="button button-quiet" href={pendingReviewHref(task)} onClick={handleClose}>
                         {bilingual(lang, "查看全部剩余 Issue", "View all pending cases")}
                       </a>

@@ -577,22 +577,15 @@ class DatabaseCasesMixin(DatabaseWorkSplitsMixin):
             where.append(f"({' OR '.join(assignee_clauses)})")
         normalized_work_split_id = str(work_split_id or "").strip()
         if normalized_work_split_id:
-            if model_run_id:
-                where.append(
-                    "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
-                    "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
-                    "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
-                    "AND COALESCE(NULLIF(ws_split.evaluation_run_id, ''), ws_split.model_run_id, '') = ?)"
-                )
-                params.extend((normalized_work_split_id, model_run_id))
-            else:
-                where.append(
-                    "EXISTS (SELECT 1 FROM review_work_assignments wa_split "
-                    "JOIN issue_work_splits ws_split ON ws_split.id = wa_split.split_id "
-                    "WHERE wa_split.issue_id = i.issue_id AND ws_split.id = ? "
-                    "AND COALESCE(NULLIF(ws_split.evaluation_run_id, ''), ws_split.model_run_id, '') = '')"
-                )
-                params.append(normalized_work_split_id)
+            where.append(
+                "EXISTS (SELECT 1 FROM issue_work_splits ws_split WHERE ws_split.id = ? "
+                "AND COALESCE(NULLIF(ws_split.evaluation_run_id, ''), ws_split.model_run_id, '') = ? "
+                "AND (EXISTS (SELECT 1 FROM review_work_assignments wa_split "
+                "WHERE wa_split.split_id = ws_split.id AND wa_split.issue_id = i.issue_id) "
+                "OR EXISTS (SELECT 1 FROM campaign_issue_members m_split "
+                "WHERE m_split.campaign_id = ws_split.id AND m_split.issue_id = i.issue_id)))"
+            )
+            params.extend((normalized_work_split_id, model_run_id or ""))
         if comparison_statuses and set(comparison_statuses) != {
             "match",
             "mismatch",

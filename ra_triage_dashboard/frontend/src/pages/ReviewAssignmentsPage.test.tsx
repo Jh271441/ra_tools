@@ -3,6 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReviewAssignmentsPage } from "./ReviewAssignmentsPage";
+import { currentAllocationGroups } from "../components/allocation/allocationMath";
 
 vi.mock("../api/client", () => ({
   apiRequest: vi.fn(),
@@ -33,6 +34,25 @@ describe("ReviewAssignmentsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.history.replaceState({}, "", "/manual-s6/review-assignments");
+  });
+
+  it("keeps a single group's full allocation target when a Case is unassigned", () => {
+    const [group] = currentAllocationGroups({
+      campaign_id: "task",
+      editable: true,
+      expected_revision: 2,
+      groups: [{
+        group_id: "group-1", coverage_percent: 100, coverage_strategy: "overlap",
+        members: [{ name: "alice", review_percent: 100 }],
+      }],
+      group_coverage: {
+        case_count: 10,
+        active_slots: 9,
+        groups: [{ group_id: "group-1", members: [{ name: "alice", total: 9, completed: 9 }] }],
+        combinations: [{ owners: ["alice"], count: 9 }],
+      },
+    }, "remaining");
+    expect(group.coverage_percent).toBe(100);
   });
 
   it("renders KPI metrics, version & manual batches with conflict badge, and zero native selects", async () => {

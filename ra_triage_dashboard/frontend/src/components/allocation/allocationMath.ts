@@ -357,7 +357,8 @@ export function splitGroupShares(total: number, weights: number[]): number[] {
 
 export function currentAllocationGroups(config: AllocationConfig, basis: "total" | "remaining"): AllocationGroup[] {
   const projection = config.group_coverage;
-  return (config.groups || []).map((group) => {
+  const groups = config.groups || [];
+  return groups.map((group) => {
     const actual = projection?.groups.find((item) => item.group_id === group.group_id);
     const totals = new Map(actual?.members.map((member) => [member.name, member]));
     const assigned = group.members.map((member) => totals.get(member.name)?.total || 0);
@@ -368,7 +369,9 @@ export function currentAllocationGroups(config: AllocationConfig, basis: "total"
     return {
       group_id: group.group_id,
       coverage_strategy: group.coverage_strategy === "fill" ? "fill" : "overlap",
-      coverage_percent: coveragePercentFromCount(projection?.case_count || 0, covered) ?? group.coverage_percent ?? 100,
+      coverage_percent: groups.length === 1
+        ? 100
+        : coveragePercentFromCount(projection?.case_count || 0, covered) ?? group.coverage_percent ?? 100,
       members: group.members.map((member, i) => ({
         name: member.name,
         review_percent: actualShares?.[i] ?? member.review_percent ?? 0,

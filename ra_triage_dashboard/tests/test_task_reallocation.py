@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from ra_triage_dashboard.app.db import Database
+from ra_triage_dashboard.app.db_parts.assignment_rules import combined_task_progress_ids
 from ra_triage_dashboard.app.db_parts.campaigns import CampaignConflictError
 from ra_triage_dashboard.app.db_parts.shared import AnnotationConflictError, LabelAnnotationConflictError
 from ra_triage_dashboard.app.task_reallocation import bounded_shares, reallocate_slots
@@ -62,6 +63,33 @@ def save_label(db, cid, iid, author="alice", output="误触发"):
     return db.create_label_revision(issue_id=iid, task_id=cid, expected_output=output,
         author=author, author_source="test", author_verified=True, tags=[], evidence_gaps=[],
         rationale="Saved evidence", is_excluded=False)
+
+
+def test_single_group_preserves_unassigned_case_in_task_scope(fixture):
+    db = fixture.db
+    cid, ids = make_task(fixture, count=8, completed=2, purpose="model_review")
+    with db.connect() as conn:
+        _, split, filters, _ = db._task_allocation(conn, cid)
+        unassigned = ids[2]
+        conn.execute("DELETE FROM review_work_assignments WHERE split_id=? AND issue_id=?", (cid, unassigned))
+        conn.execute(
+            "UPDATE campaign_issue_members SET required_submitter_count=0, reviewers_per_issue=0 "
+            "WHERE campaign_id=? AND issue_id=?", (cid, unassigned),
+        )
+        filters["task_allocation"] = dict(groups=[dict(
+            group_id="group-1", coverage_percent=100, coverage_strategy="overlap",
+            assignments={ids[0]: "alice"}, members=[dict(name="alice", review_percent=100)],
+        )])
+        conn.execute("UPDATE issue_work_splits SET filter_json=? WHERE id=?", (json.dumps(filters), cid))
+
+    item = db.list_review_work_splits(split_id=cid)[0]
+    assert item["assignment_count"] == 8
+    assert item["completed_count"] == 2
+    assert unassigned in combined_task_progress_ids(db, cid, {"pending"})
+    assert unassigned not in combined_task_progress_ids(db, cid, {"pending"}, assignees=["bob"])
+    result = db.list_cases(baseline_scope="scope", model_run_id=split["model_run_id"],
+                           work_split_id=cid, issue_ids=[unassigned])
+    assert [row["issue_id"] for row in result["items"]] == [unassigned]
 
 
 @pytest.mark.parametrize("purpose", ["labeling", "model_review"])
