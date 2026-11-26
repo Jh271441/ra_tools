@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
 import {
   bilingual,
@@ -193,6 +193,7 @@ interface LegacyWindowBridge {
   mediaFrameOffsetMs?: (frame: CaseMediaFrame) => number;
   safeSameOriginAssetUrl?: (url?: string) => string;
   __RA_COMPARISON_BRIDGE__?: {
+    getPageForMedia: () => ComparisonPayload | null;
     openCaseDialog: (issueId: string, preserveTab?: boolean) => void;
     isCaseDialogOpen: () => boolean;
     stepPageForMedia: (nextPage: number) => Promise<ComparisonCaseItem[]>;
@@ -201,6 +202,44 @@ interface LegacyWindowBridge {
 
 function getLegacyWindow(): LegacyWindowBridge {
   return window as unknown as LegacyWindowBridge;
+}
+
+function comparisonPageQuery(route: ComparisonRouteState, baselines: string, page = route.page) {
+  const inputFilter = JSON.stringify(route.inputFilter);
+  return queryOptions({
+    queryKey: [
+      "model-run-comparison",
+      baselines,
+      route.baselineRunId,
+      route.candidateRunId,
+      route.transition,
+      route.gtLabel,
+      route.baselineLabel,
+      route.candidateLabel,
+      route.labelChange,
+      inputFilter,
+      route.search,
+      page,
+      route.pageSize,
+    ],
+    queryFn: ({ signal }) => {
+      const params = new URLSearchParams({
+        baseline_run_id: route.baselineRunId,
+        candidate_run_id: route.candidateRunId,
+        transition: route.transition,
+        gt_label: route.gtLabel,
+        baseline_label: route.baselineLabel,
+        candidate_label: route.candidateLabel,
+        label_change: route.labelChange,
+        input_filter: inputFilter,
+        q: route.search,
+        page: String(page),
+        page_size: String(route.pageSize),
+      });
+      if (baselines) params.set("baselines", baselines);
+      return apiRequest<ComparisonPayload>(`/api/model-run-comparison?${params.toString()}`, { signal });
+    },
+  });
 }
 
 function defaultInputFilter(): ComparisonInputFilter {
@@ -507,6 +546,7 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
   lang,
   selectedBaselines,
 }) => {
+  const queryClient = useQueryClient();
   const baselinesParam = selectedBaselines.join(",");
   const [route, setRoute] = useState<ComparisonRouteState>(() => parseComparisonRouteFromLocation());
   const [searchDraft, setSearchDraft] = useState<string>(route.search);
@@ -647,41 +687,8 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
     new Set(selectedRunIds).size === selectedRunIds.length &&
     (modelRuns.length === 0 || selectedRuns.length === selectedRunIds.length);
 
-  const comparisonQuery = useQuery<ComparisonPayload>({
-    queryKey: [
-      "model-run-comparison",
-      baselinesParam,
-      route.baselineRunId,
-      route.candidateRunId,
-      route.transition,
-      route.gtLabel,
-      route.baselineLabel,
-      route.candidateLabel,
-      route.labelChange,
-      JSON.stringify(route.inputFilter),
-      route.search,
-      route.page,
-      route.pageSize,
-    ],
-    queryFn: ({ signal }) => {
-      const params = new URLSearchParams({
-        baseline_run_id: route.baselineRunId,
-        candidate_run_id: route.candidateRunId,
-        transition: route.transition,
-        gt_label: route.gtLabel,
-        baseline_label: route.baselineLabel,
-        candidate_label: route.candidateLabel,
-        label_change: route.labelChange,
-        input_filter: JSON.stringify(route.inputFilter),
-        q: route.search,
-        page: String(route.page),
-        page_size: String(route.pageSize),
-      });
-      if (baselinesParam) params.set("baselines", baselinesParam);
-      return apiRequest<ComparisonPayload>(`/api/model-run-comparison?${params.toString()}`, {
-        signal,
-      });
-    },
+  const comparisonQuery = useQuery({
+    ...comparisonPageQuery(route, baselinesParam),
     enabled: active && selectionValid,
     placeholderData: (prev) => prev,
   });
@@ -690,7 +697,7 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
   const hasPayload = Boolean(payload?.summary);
   const single = payload?.view_mode === "single";
 
-  // Mirror state.runComparison for classic media lightbox & RunCollectionsPage save-pairwise
+  // Preserve the classic route projection for Run Collections.
   useEffect(() => {
     const win = getLegacyWindow();
     if (!win.state) return;
@@ -840,23 +847,8 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
         );
         return;
       }
-      // Fetch next page directly so we can immediately select first/last item
-      const params = new URLSearchParams({
-        baseline_run_id: route.baselineRunId,
-        candidate_run_id: route.candidateRunId,
-        transition: route.transition,
-        gt_label: route.gtLabel,
-        baseline_label: route.baselineLabel,
-        candidate_label: route.candidateLabel,
-        label_change: route.labelChange,
-        input_filter: JSON.stringify(route.inputFilter),
-        q: route.search,
-        page: String(nextPage),
-        page_size: String(route.pageSize),
-      });
-      if (baselinesParam) params.set("baselines", baselinesParam);
-      const nextPayload = await apiRequest<ComparisonPayload>(
-        `/api/model-run-comparison?${params.toString()}`,
+      const nextPayload = await queryClient.fetchQuery(
+        comparisonPageQuery(route, baselinesParam, nextPage),
       );
       const nextItems = nextPayload.items || [];
       const targetItem = delta > 0 ? nextItems[0] : nextItems[nextItems.length - 1];
@@ -869,37 +861,26 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
         setDialogIssueId(String(targetItem.issue_id));
       }
     },
-    [dialogIssueId, payload, lang, route, baselinesParam, syncUrl],
+    [dialogIssueId, payload, lang, route, baselinesParam, queryClient, syncUrl],
   );
 
   // Register bridge for classic #mediaDialog ↑/↓ stepping
   useEffect(() => {
+    if (!active) return;
     const win = getLegacyWindow();
+    let mediaPage = comparisonQuery.isPlaceholderData ? null : payload;
     win.__RA_COMPARISON_BRIDGE__ = {
+      getPageForMedia: () => mediaPage,
       openCaseDialog: (issueId: string, preserveTab = false) => {
         if (!preserveTab) setDialogTab("output");
         setDialogIssueId(String(issueId));
       },
       isCaseDialogOpen: () => Boolean(dialogIssueId),
       stepPageForMedia: async (nextPage: number) => {
-        const params = new URLSearchParams({
-          baseline_run_id: route.baselineRunId,
-          candidate_run_id: route.candidateRunId,
-          transition: route.transition,
-          gt_label: route.gtLabel,
-          baseline_label: route.baselineLabel,
-          candidate_label: route.candidateLabel,
-          label_change: route.labelChange,
-          input_filter: JSON.stringify(route.inputFilter),
-          q: route.search,
-          page: String(nextPage),
-          page_size: String(route.pageSize),
-        });
-        if (baselinesParam) params.set("baselines", baselinesParam);
-        const nextPayload = await apiRequest<ComparisonPayload>(
-          `/api/model-run-comparison?${params.toString()}`,
+        const nextPayload = await queryClient.fetchQuery(
+          comparisonPageQuery(route, baselinesParam, nextPage),
         );
-        if (win.state?.runComparison) win.state.runComparison.data = nextPayload;
+        mediaPage = nextPayload;
         setRoute((prev) => {
           const nextRoute = { ...prev, page: nextPage };
           syncUrl(nextRoute, "replace");
@@ -911,7 +892,7 @@ export const RunComparisonPage: React.FC<RunComparisonPageProps> = ({
     return () => {
       delete win.__RA_COMPARISON_BRIDGE__;
     };
-  }, [dialogIssueId, route, baselinesParam, syncUrl]);
+  }, [active, comparisonQuery.isPlaceholderData, dialogIssueId, payload, route, baselinesParam, queryClient, syncUrl]);
 
   // Keyboard ↑/↓ navigation inside Case Compare Modal (when #mediaDialog is NOT open)
   useEffect(() => {

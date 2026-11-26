@@ -45,8 +45,12 @@ async function comparisonImageMedia(issueId, kind = 'images') {
   if (comparisonMediaCache.size > 30) comparisonMediaCache.delete(comparisonMediaCache.keys().next().value);
   return data;
 }
+function comparisonMediaPage() {
+  const bridge = typeof window === "undefined" ? null : window.__RA_COMPARISON_BRIDGE__;
+  return bridge?.getPageForMedia ? bridge.getPageForMedia() : state.runComparison?.data;
+}
 function comparisonMediaExtraInputs(issueId) {
-  return (state.runComparison?.data?.items || []).find(
+  return (comparisonMediaPage()?.items || []).find(
     (item) => String(item.issue_id) === String(issueId)
   )?.extra_inputs || null;
 }
@@ -654,7 +658,7 @@ async function navigateComparisonMediaCase(delta) {
     showToast('请在 Run 对比中打开媒体后使用 ↑ / ↓ 切 Case。'); return;
   }
   if (comparisonMediaNavigating) return;
-  const payload = state.runComparison.data;
+  const payload = comparisonMediaPage();
   const index = (payload?.items || []).findIndex(item => item.issue_id === state.media.snapshot.issueId);
   if (index < 0) return;
   comparisonMediaNavigating = true;

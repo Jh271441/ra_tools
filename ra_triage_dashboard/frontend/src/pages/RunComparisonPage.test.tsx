@@ -1,6 +1,6 @@
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunComparisonPage } from "./RunComparisonPage";
 
@@ -209,6 +209,49 @@ describe("RunComparisonPage", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     window.history.replaceState({}, "", "/");
+  });
+
+  it("serves current page rows to the media dialog without a legacy state global", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = new URL(String(input), window.location.origin);
+      if (url.pathname.endsWith("/api/model-runs")) {
+        return Response.json({ items: MOCK_RUNS });
+      }
+      if (url.pathname.endsWith("/api/model-run-comparison")) {
+        const page = Number(url.searchParams.get("page"));
+        return Response.json(makeComparisonPayload({
+          page,
+          page_count: 2,
+          total: 3,
+          ...(page === 2 ? { items: [{ issue_id: "cn-case-3" }] } : {}),
+        }));
+      }
+      return Response.json({});
+    });
+    const getBridge = () => (window as unknown as {
+      __RA_COMPARISON_BRIDGE__?: {
+        getPageForMedia: () => { page: number; items: { issue_id: string }[] } | null;
+        stepPageForMedia: (page: number) => Promise<{ issue_id: string }[]>;
+      };
+    }).__RA_COMPARISON_BRIDGE__;
+
+    renderWithClient(<RunComparisonPage active lang="zh" selectedBaselines={["version-20261106"]} />);
+    expect(await screen.findByText("cn-case-2")).toBeInTheDocument();
+    expect(getBridge()?.getPageForMedia()?.items.map((item) => item.issue_id))
+      .toEqual(["cn-case-1", "cn-case-2"]);
+
+    await act(async () => {
+      expect(await getBridge()?.stepPageForMedia(2)).toEqual([{ issue_id: "cn-case-3" }]);
+    });
+    expect(await screen.findByText("cn-case-3")).toBeInTheDocument();
+    expect(getBridge()?.getPageForMedia()?.page).toBe(2);
+    expect(new URLSearchParams(window.location.search).get("page")).toBe("2");
+    expect(fetchSpy.mock.calls.some(([input]) => {
+      const url = new URL(String(input), window.location.origin);
+      return url.pathname.endsWith("/api/model-run-comparison")
+        && url.searchParams.get("page") === "2"
+        && url.searchParams.get("baselines") === "version-20261106";
+    })).toBe(true);
   });
 
   it("renders pairwise KPIs, matrices, case rows with 0 native selects, and supports transition, extra-input, and swap filters", async () => {

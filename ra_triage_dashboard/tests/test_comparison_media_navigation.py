@@ -17,9 +17,12 @@ const state = {
 const $ = () => ({open: false});
 const opened = [], notices = [], classicLoads = [], bridgeLoads = [], dialogChanges = [];
 const pages = {1: ['a', 'b'], 2: ['c']};
+let reactPage;
 function loadComparisonPage(page) {
-  const items = pages[page].map(issue_id => ({issue_id}));
-  state.runComparison = {page, data: {page, page_count: 2, items}};
+  const items = pages[page].map(issue_id => ({issue_id, extra_inputs: {issue_id}}));
+  const data = {page, page_count: 2, items};
+  if (useReactBridge) reactPage = data;
+  else state.runComparison = {page, data};
   return items;
 }
 loadComparisonPage(1);
@@ -36,6 +39,7 @@ loadRunComparison = async ({historyMode}) => {
 };
 const window = useReactBridge ? {
   __RA_COMPARISON_BRIDGE__: {
+    getPageForMedia: () => reactPage,
     stepPageForMedia: async page => {
       bridgeLoads.push(page);
       return loadComparisonPage(page);
@@ -47,12 +51,13 @@ const window = useReactBridge ? {
 (async () => {
   await navigateComparisonMediaCase(1);
   await navigateComparisonMediaCase(1);
-  assert.equal(state.runComparison.page, 2);
+  assert.equal(comparisonMediaPage().page, 2);
+  assert.deepEqual(comparisonMediaExtraInputs('c'), {issue_id: 'c'});
   await navigateComparisonMediaCase(1);
   assert.equal(opened.length, 2);
   assert.equal(notices.length, 1);
   await navigateComparisonMediaCase(-1);
-  assert.equal(state.runComparison.page, 1);
+  assert.equal(comparisonMediaPage().page, 1);
   assert.deepEqual(opened, [['b', 'camera'], ['c', 'camera'], ['b', 'camera']]);
   assert.deepEqual(classicLoads, useReactBridge ? [] : [2, 1]);
   assert.deepEqual(bridgeLoads, useReactBridge ? [2, 1] : []);
