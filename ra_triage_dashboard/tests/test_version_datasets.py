@@ -69,6 +69,7 @@ class VersionDatasetsTests(unittest.TestCase):
         for iid in ("cn1", "cn2"):
             reference = self.db.get_media_issue(iid)
             self.assertTrue(reference["reference_media"])
+            self.assertEqual(reference["reference_scope"], "manual_sidecar_version_20261009")
             self.assertEqual(reference["gt_label"], "")
             self.assertNotIn("trip_id", reference)
             self.assertIsNone(self.db.get_issue(iid))
@@ -78,6 +79,11 @@ class VersionDatasetsTests(unittest.TestCase):
         self.assertEqual(self.db.version_dataset_items("release-20261009-odd2", mode="all"), before)
         self.assertEqual(self.db.version_dataset_items("release-20261009-odd2")["total"], 0)
         self.assertEqual(self.db.list_model_runs(), [])
+
+    def test_shared_reference_does_not_guess_version(self):
+        for family in ("20261009", "20261023"):
+            self.ingest([dict(self.packet("cn1", family), state="published")], family=family)
+        self.assertEqual(self.db.get_media_issue("cn1")["reference_scope"], "")
 
     def test_media_reference_keeps_existing_issue_scope_and_gt(self):
         self.ingest([dict(self.packet(), state="published")])

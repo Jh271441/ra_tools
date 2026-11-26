@@ -86,6 +86,17 @@ class PlanningTextTest(unittest.TestCase):
         self.assertIsNone(read_daily_window(self.data, 'cn1234', 351)['matched_frame'])
         self.assertIsNone(read_daily_window(self.data, 'cn1234', 0, trip_id='other'))
 
+    def test_cohort_reads_only_requested_issues_in_large_index(self):
+        self.publish()
+        with sqlite3.connect(index_path(self.data)) as db:
+            db.executemany(
+                "INSERT INTO captures SELECT ?,?,trip_id,anchor_ms,version,datasets_json,"
+                "state,owner,receipt_sha256,metadata_json,updated_at FROM captures WHERE issue_id=?",
+                ((str(i), 'cn'+str(i+10000), self.member['issue_id']) for i in range(20001)))
+        targets = {self.member['issue_id']: {'trip_id': self.member['trip_id'], 'ra_start_timestamp': ANCHOR}}
+        actual = cohort_counts(self.data, targets)
+        self.assertEqual((actual['status'], actual['with_frames']), ('ready', 1))
+
     def test_large_daily_index_keeps_bounded_reads(self):
         self.publish()
         path = index_path(self.data)

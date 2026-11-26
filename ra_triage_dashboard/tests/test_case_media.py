@@ -93,6 +93,29 @@ class DeferredCaseMediaTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(error.exception.status_code, 404)
             prepare.assert_not_called()
 
+    async def test_version_reference_video_and_bytes_use_same_indexed_layout(self):
+        from tempfile import TemporaryDirectory
+        scope = "manual_sidecar_version_20261113"
+        reference = {"issue_id": "cn123", "baseline_scope": "", "reference_scope": scope,
+                     "reference_media": True}
+        with TemporaryDirectory() as root:
+            for indexed in (False, True):
+                providers = {"": MagicMock(), scope: MagicMock()}
+                providers[scope].has_issue.return_value = indexed
+                chosen = providers[scope if indexed else ""]
+                source = Path(root) / "original.mp4"
+                source.write_bytes(b"mp4")
+                chosen.get_asset_path.return_value = source
+                chosen.get_video.return_value = {"url": "/api/assets/cn123/video"}
+                with patch.object(cases_router.database, "get_media_issue", return_value=reference), patch.object(
+                    cases_router, "media_for_issue", side_effect=lambda iid, key: providers[key]
+                ):
+                    media = await cases_router.get_case_media("cn123", "video")
+                    self.assertEqual(media["assets"]["video"]["url"], "/api/assets/cn123/video")
+                    self.assertEqual((await cases_router.get_asset("cn123", "video")).path, source)
+                chosen.get_video.assert_called_once_with("cn123")
+                chosen.get_asset_path.assert_called_once_with("cn123", "video")
+
     async def test_registry_reference_media_does_not_create_case_or_invent_planning_anchor(self):
         from fastapi import Response, HTTPException
         from ra_triage_dashboard.app import planning_constraints

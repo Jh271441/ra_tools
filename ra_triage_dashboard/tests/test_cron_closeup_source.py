@@ -53,6 +53,21 @@ class CloseupStatusTest(unittest.TestCase):
             targets['cn1']['trip_id']='wrong'
             self.assertEqual(cohort.project(targets,{'cn1'})['triple_verified'],0)
 
+    def test_verified_queue_history_does_not_hide_one_pending_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            queue = task_root(root / 'ra_auto_triage')
+            queue.mkdir(parents=True)
+            with sqlite3.connect(queue / 'queue.sqlite3') as db:
+                db.execute('CREATE TABLE jobs(issue_id TEXT PRIMARY KEY,row_json TEXT,state TEXT)')
+                db.executemany('INSERT INTO jobs VALUES(?,?,?)',
+                               (('cn'+str(i+100), '{}', 'verified') for i in range(20001)))
+                db.execute('INSERT INTO jobs VALUES(?,?,?)', ('cn1', json.dumps(dict(
+                    issue_id='cn1', trip_id='trip', capture_timestamp_ms=1000)), 'queued'))
+            counts = CloseupCohort(root/'ra_auto_triage',root/'media').project(
+                {'cn1':dict(trip_id='trip',capture_timestamp_ms=1000,scope='scope')},set())
+            self.assertEqual((counts['status'],counts['queued']),('ready',1))
+
     def test_missing_roots_remain_unknown_without_creating_queue(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

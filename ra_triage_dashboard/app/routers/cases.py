@@ -113,6 +113,18 @@ def _visible_case_annotations(
     return list(annotations), blind_active
 
 
+def _load_media_issue(issue_id: str) -> dict[str, Any] | None:
+    case = database.get_media_issue(issue_id)
+    scope = (case or {}).get("reference_scope")
+    if scope:
+        # Registry membership alone is insufficient. A version manifest must
+        # index this issue before it takes precedence over legacy reference media.
+        provider = media_for_issue(issue_id, scope)
+        if provider and provider.has_issue(issue_id):
+            return {**case, "baseline_scope": scope}
+    return case
+
+
 def _resolve_thumbnail_file(issue_id: str) -> Path | None:
     """Resolve/build a gallery JPEG entirely outside the event loop.
 
@@ -139,7 +151,7 @@ def _resolve_thumbnail_file(issue_id: str) -> Path | None:
             ):
                 return dest
 
-    case = database.get_media_issue(issue_id)
+    case = _load_media_issue(issue_id)
     if case is None:
         return None
     provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
@@ -985,7 +997,7 @@ def _resolve_camera_thumbnail(issue_id: str) -> Path | None:
     return _camera_thumbnail_cache.get_or_load(issue_id, lambda: _build_camera_thumbnail(issue_id))
 
 def _build_camera_thumbnail(issue_id: str) -> Path | None:
-    case=database.get_media_issue(issue_id)
+    case=_load_media_issue(issue_id)
     if not case:return None
     provider=media_for_issue(issue_id,str(case.get("baseline_scope") or ""))
     if provider is None:return None
@@ -1152,7 +1164,7 @@ async def get_planning_constraints(
             or (offset_ms is not None and timestamp_ms is not None)
             or (timestamp_ms is not None and not 0 < timestamp_ms <= 9007199254740991)):
         raise _detail(400, "无效的案例或时间 / Invalid issue or offset")
-    case = await asyncio.to_thread(database.get_media_issue, issue_id)
+    case = await asyncio.to_thread(_load_media_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在 / Issue not found")
     try:
@@ -1187,7 +1199,7 @@ async def get_case_media(issue_id: str, kind: str = "all") -> dict[str, Any]:
 
     if kind not in {"all", "images", "bev", "video"}:
         raise _detail(400, "不支持的媒体模式。")
-    case = await asyncio.to_thread(database.get_media_issue, issue_id)
+    case = await asyncio.to_thread(_load_media_issue, issue_id)
     if case is None:
         raise _detail(404, "Issue 不存在。")
     provider = media_for_issue(issue_id, str(case.get("baseline_scope") or ""))
@@ -1334,7 +1346,7 @@ async def get_case(
 @router.get("/api/assets/{issue_id}/{asset_id}")
 async def get_asset(issue_id: str, asset_id: str, playback: str = "", stream: str = "",
                     fingerprint: str = "") -> Response:
-    case = await asyncio.to_thread(database.get_issue, issue_id)
+    case = await asyncio.to_thread(_load_media_issue, issue_id)
     scope = str((case or {}).get("baseline_scope") or "")
     provider = media_for_issue(issue_id, scope)
     path = (

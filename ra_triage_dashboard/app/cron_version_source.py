@@ -117,24 +117,23 @@ def version_status(root, data_dir=None, *, closeup=None):
         closeup = CloseupCohort(root)
     targets_by_family = defaultdict(dict)
     with database.connect() as conn:
-        target_rows = conn.execute(
-            "SELECT d.release_family,i.issue_id,i.source_json FROM version_dataset_items i "
-            "JOIN version_datasets d ON d.id=i.dataset_id WHERE i.is_target=1 LIMIT 20001"
-        ).fetchall()
-        if len(target_rows) > 20000:
-            raise ValueError("oversized_media_cohort")
-        for row in target_rows:
-            family = str(row["release_family"])
-            if len(row["source_json"]) > 100000:
-                raise ValueError("oversized_media_identity")
-            source = json.loads(row["source_json"])
-            if not isinstance(source, dict) or not re.fullmatch(r"20\d{6}", family):
-                raise ValueError("invalid_media_identity")
-            targets_by_family[family][row["issue_id"]] = {
-                "trip_id": source.get("trip_id"),
-                "ra_start_timestamp": source.get("ra_start_timestamp"),
-                "scope": "manual_sidecar_version_" + family,
-            }
+        cursor = conn.execute(
+            "SELECT d.release_family,i.issue_id,substr(i.source_json,1,100001) AS source_json FROM version_dataset_items i "
+            "JOIN version_datasets d ON d.id=i.dataset_id WHERE i.is_target=1"
+        )
+        while target_rows := cursor.fetchmany(256):
+            for row in target_rows:
+                family = str(row["release_family"])
+                if len(row["source_json"]) > 100000:
+                    raise ValueError("oversized_media_identity")
+                source = json.loads(row["source_json"])
+                if not isinstance(source, dict) or not re.fullmatch(r"20\d{6}", family):
+                    raise ValueError("invalid_media_identity")
+                targets_by_family[family][row["issue_id"]] = {
+                    "trip_id": source.get("trip_id"),
+                    "ra_start_timestamp": source.get("ra_start_timestamp"),
+                    "scope": "manual_sidecar_version_" + family,
+                }
     targets = {iid: value for rows in targets_by_family.values() for iid, value in rows.items()}
     reused = set()
     published = set()

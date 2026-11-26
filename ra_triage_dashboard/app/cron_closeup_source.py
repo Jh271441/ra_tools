@@ -42,18 +42,23 @@ class CloseupCohort:
             with closing(sqlite3.connect(queue.as_uri() + "?mode=ro", uri=True, timeout=.1)) as db:
                 db.execute("PRAGMA query_only=ON")
                 db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
-                size = 0
-                rows = db.execute("SELECT issue_id,substr(row_json,1,32769),state FROM jobs LIMIT 20001")
-                for n, (iid, raw, state) in enumerate(rows):
-                    size += len(raw)
-                    if n >= 20000 or size > 8_000_000 or time.monotonic() > deadline:
-                        raise ValueError("oversized_closeup_queue")
+                # A verified job with no matching publication is unknown, exactly
+                # like an absent job. Keep terminal JSON out of the projection.
+                db.execute("BEGIN")
+                if db.execute("SELECT 1 FROM jobs GROUP BY issue_id HAVING count(*) > 1 LIMIT 1").fetchone():
+                    raise ValueError("duplicate_closeup_member")
+                rows = db.execute("SELECT issue_id,substr(row_json,1,32769),state FROM jobs "
+                                  "WHERE state IS NOT 'verified'")
+                for iid, raw, state in rows:
+                    if time.monotonic() > deadline:
+                        raise ValueError("closeup_queue_timeout")
                     if len(raw) > 32768:
                         raise ValueError("oversized_closeup_member")
                     row = json.loads(raw)
                     if not isinstance(row, dict) or row.get("issue_id") != iid or iid in self.jobs:
                         raise ValueError("invalid_closeup_member")
-                    self.jobs[iid] = (row, state)
+                    self.jobs[iid] = ({"trip_id": row.get("trip_id"),
+                                       "capture_timestamp_ms": row.get("capture_timestamp_ms")}, state)
             self.available = True
         except (sqlite3.Error, OSError, ValueError, TypeError):
             self.jobs = {}

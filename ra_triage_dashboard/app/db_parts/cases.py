@@ -1058,16 +1058,19 @@ class DatabaseCasesMixin(DatabaseWorkSplitsMixin):
         if issue is not None:
             return issue
         with self.connect() as conn:
-            reference = conn.execute(
-                "SELECT i.issue_id FROM version_dataset_items i "
+            families = conn.execute(
+                "SELECT DISTINCT d.release_family FROM version_dataset_items i "
                 "JOIN version_datasets d ON d.id = i.dataset_id "
-                "WHERE i.issue_id = ? AND i.state IN ('inferred', 'published') LIMIT 1",
+                "WHERE i.issue_id = ? AND i.state IN ('inferred', 'published') LIMIT 2",
                 (issue_id,),
-            ).fetchone()
-        if reference is None:
+            ).fetchall()
+        if not families:
             return None
+        # A shared member has no unambiguous version layout on this unscoped URL.
+        reference_scope = ("manual_sidecar_version_" + families[0]["release_family"]
+                           if len(families) == 1 else "")
         return {"issue_id": issue_id, "baseline_scope": "", "gt_label": "",
-                "reference_media": True}
+                "reference_media": True, "reference_scope": reference_scope}
 
     def review_clusters(
         self,

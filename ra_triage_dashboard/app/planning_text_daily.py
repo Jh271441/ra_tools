@@ -237,7 +237,17 @@ def _cohort_evidence(meta):
             and all(isinstance(e, dict) and e.get("code") == "source_message_decode_failed" for e in errors)}
 
 
-def _cohort_states(data_dir, *, include_evidence=False):
+def _selected_rows(db, table, fields, issue_ids):
+    db.execute("BEGIN")
+    for start in range(0, len(issue_ids), 128):
+        batch = issue_ids[start:start + 128]
+        marks = ",".join("?" for _ in batch)
+        deadline = time.monotonic() + .25
+        db.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+        yield from db.execute(f"SELECT {fields} FROM {table} WHERE issue_id IN ({marks})", batch)
+
+
+def _cohort_states(data_dir, issue_ids, *, include_evidence=False):
     """Read the bounded identity/status projection once for related cohorts."""
     by_identity = {}
     historical = Path(data_dir) / "planning_constraints/history.sqlite3"
@@ -252,9 +262,7 @@ def _cohort_states(data_dir, *, include_evidence=False):
                     or db.execute("PRAGMA user_version").fetchone()[0] != 1
                     or db.execute("SELECT extractor_version,source FROM configuration WHERE id=1").fetchone() != (VERSION, SOURCE)):
                 raise ValueError("invalid_planning_history")
-            rows = db.execute("SELECT issue_id,trip_id,anchor_ms,metadata_json FROM issues LIMIT 20001").fetchall()
-            if len(rows) > 20000:
-                raise ValueError("oversized_planning_cohort")
+            rows = _selected_rows(db, "issues", "issue_id,trip_id,anchor_ms,substr(metadata_json,1,65537)", issue_ids)
             for iid, trip, anchor, raw in rows:
                 if len(raw) > 65536:
                     raise ValueError("oversized_planning_metadata")
@@ -263,9 +271,7 @@ def _cohort_states(data_dir, *, include_evidence=False):
                 by_identity[(iid, trip, anchor)] = value + (_cohort_evidence(meta),) if include_evidence else value
     if index_path(data_dir).exists():
         with closing(_reader(data_dir)) as db:
-            rows = db.execute("SELECT issue_id,trip_id,anchor_ms,state,metadata_json FROM captures LIMIT 20001").fetchall()
-            if len(rows) > 20000:
-                raise ValueError("oversized_planning_cohort")
+            rows = _selected_rows(db, "captures", "issue_id,trip_id,anchor_ms,state,substr(metadata_json,1,65537)", issue_ids)
             for iid, trip, anchor, state, raw in rows:
                 if len(raw) > 65536:
                     raise ValueError("oversized_planning_metadata")
@@ -297,7 +303,8 @@ def cohort_counts_many(data_dir, cohorts, *, include_pipeline=False):
                 results[key]["pipeline"] = pipeline.project(targets, results[key])
         return results
     try:
-        by_identity = _cohort_states(data_dir, include_evidence=True) if include_pipeline else _cohort_states(data_dir)
+        issue_ids = sorted({iid for targets in active.values() for iid in targets if isinstance(iid, str)})
+        by_identity = _cohort_states(data_dir, issue_ids, include_evidence=include_pipeline)
     except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
         for key, targets in active.items():
             results[key] = {"selected": len(targets), "status": "unavailable"}

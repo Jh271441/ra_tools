@@ -251,12 +251,17 @@ class _PostgresCursor:
         keys, convert = self._row_meta()
         return _CompatRow(row, convert_keys=convert, shared_keys=keys)
 
-    def fetchall(self) -> list[_CompatRow]:
-        rows = self._cursor.fetchall()
+    def _wrap_rows(self, rows) -> list[_CompatRow]:
         if not rows:
             return []
         keys, convert = self._row_meta()
         return [_CompatRow(row, convert_keys=convert, shared_keys=keys) for row in rows]
+
+    def fetchall(self) -> list[_CompatRow]:
+        return self._wrap_rows(self._cursor.fetchall())
+
+    def fetchmany(self, size: int) -> list[_CompatRow]:
+        return self._wrap_rows(self._cursor.fetchmany(size))
 
 
 class _NoopCursor:
