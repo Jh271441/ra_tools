@@ -141,6 +141,7 @@ describe("ReviewAssignmentsPage", () => {
         return {
           campaign_id: "split-manual-1",
           name: "Manual Split A",
+          purpose: "model_review",
           editable: true,
           expected_revision: 1,
           member_count: 10,
@@ -163,6 +164,7 @@ describe("ReviewAssignmentsPage", () => {
       if (path === "/api/campaigns/split-manual-1/allocation/preview") {
         return {
           preview_token: "tok-1",
+          moved_slots: 0,
           group_coverage: {
             case_count: 10,
             active_slots: 10,
@@ -196,6 +198,12 @@ describe("ReviewAssignmentsPage", () => {
     expect(screen.getByDisplayValue("4")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "应用调整" })).toBeDisabled();
     expect(mockApi.mock.calls.some(([path]) => path.endsWith("/allocation/preview"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "将可转派待办分给我" }));
+    expect(await screen.findByText("没有可转给你的待办")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改分配" }));
+    expect(await screen.findByText("当前分配 · 0 人变动")).toBeInTheDocument();
+    expect(mockApi.mock.calls.filter(([path]) => path.endsWith("/allocation/preview"))).toHaveLength(1);
   });
 
   it("groups historical 0821 batches and opens the exact pending queue for all owners", async () => {

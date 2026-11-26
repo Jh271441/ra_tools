@@ -70,7 +70,14 @@ function buildRequestBody(draft: AllocationDraft, config: AllocationConfig, take
   };
 }
 
-export const TaskAllocationDialog: React.FC<TaskAllocationDialogProps> = ({
+export function TaskAllocationDialog(props: TaskAllocationDialogProps) {
+  const { campaignId } = props;
+  return campaignId
+    ? <TaskAllocationSession key={campaignId} {...props} campaignId={campaignId} />
+    : null;
+}
+
+const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: string }> = ({
   campaignId,
   lang,
   task,
@@ -159,24 +166,16 @@ export const TaskAllocationDialog: React.FC<TaskAllocationDialogProps> = ({
     [cancelLivePreview],
   );
 
-  // Open / close native <dialog>
   useEffect(() => {
-    const el = dialogRef.current;
-    if (!campaignId) {
-      cancelLivePreview();
-      if (el?.open && typeof el.close === "function") el.close();
-      return;
-    }
-    setRemoval("");
-    setTakeOver(false);
     setRemoveAssignee("");
-    setRemovalPreview(null);
+    const el = dialogRef.current;
     if (el && !el.open) {
       if (typeof el.showModal === "function") el.showModal();
       else el.setAttribute("open", "");
     }
     void loadAllocationConfig(campaignId);
     return () => {
+      loadSeqRef.current += 1;
       cancelLivePreview();
     };
   }, [campaignId, loadAllocationConfig, cancelLivePreview]);
@@ -491,8 +490,6 @@ export const TaskAllocationDialog: React.FC<TaskAllocationDialogProps> = ({
 
   const numFmt = useMemo(() => new Intl.NumberFormat(i18nLocaleTag(lang)), [lang]);
   const groupCompleted = useMemo(() => taskAllocationGroupCompleted(config), [config]);
-
-  if (!campaignId) return null;
 
   const isWholeRemoval = removal === "all";
   const basisOptions: UiSelectOption[] = [

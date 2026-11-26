@@ -17,6 +17,7 @@ from .assignment_rules import (
     MODEL_SUBMISSION_SQL,
     legacy_batch_source,
     assignment_snapshot_members,
+    pending_assignment_issue_ids,
 )
 from .model_reviews import MODEL_REVIEW_STATUSES, MODEL_REVIEW_PUBLIC_ID_OFFSET
 from .shared import (
@@ -193,18 +194,7 @@ class DatabaseWorkSplitsMixin:
                 row["id"] for row in split_rows if row["workflow_mode"] == "model_review_and_case_label"
                 and task_reviewable(row) and legacy_batch_source(row, sources_by_id)
             ])
-            historical_pending = defaultdict(list)
-            if historical_conflicts:
-                marks = ",".join("?" for _ in historical_conflicts)
-                pending = conn.execute(f"""
-                    SELECT DISTINCT assignment.split_id, assignment.issue_id
-                    FROM review_work_assignments assignment JOIN issue_work_splits split
-                      ON split.id=assignment.split_id
-                    WHERE split.id IN ({marks}) AND NOT ({ASSIGNMENT_SUBMITTED_SQL})
-                    ORDER BY assignment.split_id, assignment.issue_id
-                """, tuple(historical_conflicts)).fetchall()
-                for pending_row in pending:
-                    historical_pending[pending_row["split_id"]].append(pending_row["issue_id"])
+            historical_pending = pending_assignment_issue_ids(conn, list(historical_conflicts))
             split_ids = [str(row["id"]) for row in split_rows]
             placeholders = ", ".join("?" for _ in split_ids)
             scope_rows = conn.execute(

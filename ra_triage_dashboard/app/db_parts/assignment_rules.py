@@ -5,7 +5,7 @@ No caller-provided identifiers or data are interpolated here. Completion means
 an eligible current model head, or both explicit combined-workflow markers;
 it does not mean the shared label is resolved.
 """
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from .shared import _json_load
 
@@ -51,6 +51,23 @@ ASSIGNMENT_SUBMITTED_SQL = f"""
     ))
 )
 """
+
+
+def pending_assignment_issue_ids(conn, campaign_ids: Sequence[str]) -> dict[str, list[str]]:
+    pending = {campaign_id: [] for campaign_id in campaign_ids}
+    if not pending:
+        return pending
+    marks = ",".join("?" for _ in campaign_ids)
+    rows = conn.execute(f"""
+        SELECT DISTINCT assignment.split_id, assignment.issue_id
+        FROM review_work_assignments assignment
+        JOIN issue_work_splits split ON split.id=assignment.split_id
+        WHERE split.id IN ({marks}) AND NOT ({ASSIGNMENT_SUBMITTED_SQL})
+        ORDER BY assignment.split_id, assignment.issue_id
+    """, tuple(campaign_ids)).fetchall()
+    for row in rows:
+        pending[row["split_id"]].append(row["issue_id"])
+    return pending
 
 
 def combined_task_progress_ids(database, task_id, progress, assignees=()):
