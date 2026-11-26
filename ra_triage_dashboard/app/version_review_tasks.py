@@ -117,7 +117,7 @@ def _sort_items_by_recency(items):
 
 
 def merge_version_task_list(parents, items, *, version_only=False, manual_only=False):
-    """Keep version tasks strictly in version order while surfacing newer manual tasks first."""
+    """Show migrated historical joint tasks after ordinary manual and version tasks."""
     parent_ids = {item['split_id'] for item in parents}
     parent_runs = {item['model_run_id'] for item in parents}
     retained = []
@@ -137,14 +137,21 @@ def merge_version_task_list(parents, items, *, version_only=False, manual_only=F
         else:
             if (same_version and (supplemental or manual_created)) or (not same_version):
                 retained.append(item)
-    ordered_retained = _sort_items_by_recency(retained)
+    historical = []
+    ordinary = []
+    for item in retained:
+        if item.get('source_split_id') and item.get('workflow_mode') == 'model_review_and_case_label':
+            historical.append(item)
+        else:
+            ordinary.append(item)
+    ordered_retained = _sort_items_by_recency(ordinary)
     if manual_only:
-        return ordered_retained
+        return ordered_retained + historical
     ordered_parents = _sort_version_parents(parents)
     if not ordered_retained:
-        return ordered_parents
+        return ordered_parents + historical
     if not ordered_parents:
-        return ordered_retained
+        return ordered_retained + historical
     # Stable two-pointer merge: automatic version tasks strictly keep version descending
     # order, manual tasks strictly keep recency descending order, and brand-new manual
     # tasks float above older versions without ever scrambling two versions.
@@ -166,7 +173,7 @@ def merge_version_task_list(parents, items, *, version_only=False, manual_only=F
         merged.extend(ordered_parents[pi:])
     if ri < len(ordered_retained):
         merged.extend(ordered_retained[ri:])
-    return merged
+    return merged + historical
 
 
 def supplemental_task_baseline_ids(db, task_id):
