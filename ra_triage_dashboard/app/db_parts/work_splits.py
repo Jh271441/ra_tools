@@ -4,12 +4,13 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from typing import Any, Iterable, Iterator, Sequence
 
 from ..work_split import normalize_overlap_ratio
 from ..gt_observations import TRAIL_GT_RAW_VALUES
 from .task_lifecycle import task_lifecycle_where, task_reviewable
+from .labeling_shared import matches_issue_label_states
 from .assignment_rules import (
     ASSIGNMENT_SUBMITTED_SQL,
     MODEL_ASSIGNMENT_SCOPE_SQL,
@@ -36,6 +37,37 @@ from .shared import (
 
 
 class DatabaseWorkSplitsMixin:
+    def _historical_overlap_conflicts(self, conn, campaign_ids):
+        conflicts = {cid: [] for cid in campaign_ids}
+        if not campaign_ids:
+            return conflicts
+        marks = ",".join("?" for _ in campaign_ids)
+        candidates = conn.execute(f"""
+            SELECT p.campaign_id, p.issue_id, m.baseline_scope
+            FROM combined_review_progress p
+            JOIN campaign_issue_members m ON m.campaign_id=p.campaign_id AND m.issue_id=p.issue_id
+            JOIN review_work_assignments a ON a.split_id=p.campaign_id AND a.issue_id=p.issue_id
+                 AND lower(a.assignee)=lower(p.reviewer)
+            JOIN label_revisions r ON r.id=p.case_label_revision_id AND lower(r.author)=lower(p.reviewer)
+            JOIN label_cases lc ON lc.id=r.label_case_id AND lc.issue_id=p.issue_id AND lc.baseline_scope=m.baseline_scope
+            WHERE p.campaign_id IN ({marks}) AND p.model_review_submitted AND p.case_label_acknowledged
+              AND NOT EXISTS (SELECT 1 FROM label_import_suppressed_revisions s WHERE s.revision_id=r.id)
+            GROUP BY p.campaign_id, p.issue_id, m.baseline_scope
+            HAVING COUNT(DISTINCT lower(p.reviewer)) > 1 AND COUNT(DISTINCT r.expected_output) > 1
+            ORDER BY p.issue_id
+        """, campaign_ids).fetchall()
+        by_scope = defaultdict(list)
+        for case in candidates:
+            by_scope[case["baseline_scope"]].append(case)
+        for scope, cases in by_scope.items():
+            # The Review gallery includes stale decisions and honors the original label Case's adjudication.
+            states = self.project_issue_label_states(scope, sorted({r["issue_id"] for r in cases}),
+                                                     include_sources=False, connection=conn)
+            for r in cases:
+                if matches_issue_label_states(states.get(r["issue_id"], {}), ("conflict",)):
+                    conflicts[r["campaign_id"]].append(r["issue_id"])
+        return conflicts
+
     def list_work_assignees(
         self, *, issue_ids: Sequence[str] | None = None, model_run_id: str = ""
     ) -> list[dict[str, Any]]:
@@ -157,6 +189,10 @@ class DatabaseWorkSplitsMixin:
                 sorted(source_ids),
             ).fetchall() if source_ids else []
             sources_by_id = {str(source["id"]): dict(source) for source in source_rows}
+            historical_conflicts = self._historical_overlap_conflicts(conn, [
+                row["id"] for row in split_rows if row["workflow_mode"] == "model_review_and_case_label"
+                and task_reviewable(row) and legacy_batch_source(row, sources_by_id)
+            ])
             split_ids = [str(row["id"]) for row in split_rows]
             placeholders = ", ".join("?" for _ in split_ids)
             scope_rows = conn.execute(
@@ -342,6 +378,8 @@ class DatabaseWorkSplitsMixin:
                 {
                     "split_id": split_id,
                     "created_by": str(row["created_by"] or ""),
+                    **({"conflict_count": len(historical_conflicts[split_id]),
+                        "conflict_issue_ids": historical_conflicts[split_id]} if split_id in historical_conflicts else {}),
                     "created_at": str(row["created_at"] or ""),
                     "campaign_name": str(row["campaign_name"] or ""),
                     "legacy_read_only": bool(row["legacy_read_only"]),

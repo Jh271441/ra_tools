@@ -150,6 +150,25 @@ class AllocationProtectionMixin:
             raise ValueError("已有标注的任务、Run 或参考关联不明确，请先核对 / Saved evidence has ambiguous task, Run or reference links")
         adjudicated_cases = {r["issue_id"] for r in [*resolutions, *decisions]}
         frozen_cases = {r["issue_id"] for r in resolutions}
+        source_task = _json_load(split["filter_json"], {}).get("source_legacy_split_id")
+        if source_task and split["workflow_mode"] == "model_review_and_case_label":
+            # A migrated joint task still points at revisions from its original labeling task.
+            original = conn.execute("""
+                SELECT DISTINCT lc.issue_id,lc.baseline_scope FROM label_resolutions r
+                JOIN label_cases lc ON lc.id=r.label_case_id
+                JOIN campaign_issue_members m ON m.issue_id=lc.issue_id AND m.baseline_scope=lc.baseline_scope
+                WHERE m.campaign_id=? AND lc.task_id=? AND lc.source_run_id=?
+            """, (cid, source_task, run)).fetchall()
+            by_scope = defaultdict(set)
+            for r in original:
+                by_scope[r["baseline_scope"]].add(r["issue_id"])
+            for r in decisions:
+                by_scope[r["baseline_scope"]].add(r["issue_id"])
+            for scope, ids in by_scope.items():
+                states = self.project_issue_label_states(scope, sorted(ids), include_sources=False, connection=conn)
+                adjudicated_cases.difference_update(ids)
+                adjudicated_cases.update(iid for iid in ids if states.get(iid, {}).get("state") == "resolved")
+            frozen_cases.update(r["issue_id"] for r in original)
         if decisions:
             # Issue decisions can come entirely from another labeling context.
             # Keep unknown provenance and decisions using any task evidence locked.

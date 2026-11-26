@@ -73,4 +73,13 @@ assert.deepStrictEqual(Object.fromEntries(link.searchParams), {
   work_split:batch.split_id, task_view:'targets', baselines:'version-20261106',
 });
 assert.ok(!s.renderVersionAssignmentBatch({...batch,conflict_count:0}).includes('review-assignment-conflict-pill'));
+const historical = {...batch, appendable:false, split_id:'historical-task',
+  conflict_count:2, conflict_issue_ids:['cn111','cn222'], baseline_ids:['0821-odd2','0821-nonodd2']};
+const historicalBadge = s.reviewAssignmentConflictBadge(historical);
+const historicalUrl = new URL(historicalBadge.match(/href="([^"]+)"/)[1].replaceAll('&amp;','&'),s.window.location.origin);
+assert.deepStrictEqual(Object.fromEntries(historicalUrl.searchParams), {
+  run:batch.model_run_id, comparison:'all', issue_ids:'cn111,cn222', label_state:'conflict',
+  work_split:'historical-task', baselines:'0821-odd2,0821-nonodd2',
+});
+assert.ok(s.reviewAssignmentConflictBadge({...historical,conflict_count:0,conflict_issue_ids:[]}).includes('No pending conflicts'));
 console.log('Version task routing and API scope passed');
