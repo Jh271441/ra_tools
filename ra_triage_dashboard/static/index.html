@@ -57,7 +57,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-895`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-896`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -127,7 +127,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-895`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-896`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1918,6 +1918,16 @@
               <p class="vm-scope-note" id="vmChartReference"></p>
               <div class="vm-chart-scroll" id="vmChart"></div>
             </section>
+            <section class="page-card vm-report-panel" aria-labelledby="vmWorkloadTitle">
+              <header class="vm-report-heading"><h2 id="vmWorkloadTitle" data-vm-zh="低置信标注量" data-vm-en="Low-confidence review volume">低置信标注量</h2><span class="muted" id="vmWorkloadThreshold"></span></header>
+              <div class="rd-table-wrap"><table class="rd-table vm-workload-table" aria-labelledby="vmWorkloadTitle"><thead><tr>
+                <th scope="col" data-vm-zh="版本" data-vm-en="Release">版本</th>
+                <th scope="col" data-vm-zh="需标注 / 已发布" data-vm-en="For review / published">需标注 / 已发布</th>
+                <th scope="col" data-vm-zh="较 0.90 少标" data-vm-en="Fewer than at 0.90">较 0.90 少标</th>
+                <th scope="col" data-vm-zh="抽样模拟 ACC" data-vm-en="Simulated sample ACC">抽样模拟 ACC</th>
+              </tr></thead><tbody id="vmWorkloadRows"></tbody></table></div>
+              <p class="vm-threshold-note" data-vm-zh="标注量统计已发布 Issue 中模型置信度低于阈值的条数，含已标注项。减少比例以 0.90 的低置信量为分母。模拟 ACC 仅统计有效抽样，假设转人工后全部判对。" data-vm-en="Review volume counts published issues with model confidence below the threshold, including those already labeled. The reduction is relative to review volume at 0.90. Simulated ACC uses valid samples and assumes every review is correct."></p>
+            </section>
             <section class="page-card vm-report-panel">
               <header class="vm-report-heading"><h2 data-vm-zh="各版本指标" data-vm-en="Release metrics">各版本指标</h2><span id="vmTableMetric" class="muted"></span></header>
               <div class="rd-table-wrap"><table class="rd-table vm-report-table" id="vmReportTable"><thead id="vmReportHead"></thead><tbody id="vmReportRows"></tbody></table></div>
@@ -2687,7 +2697,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-895`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-896`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

@@ -50,6 +50,22 @@ vmRenderThresholdReport=()=>{};
 vmRenderReports();
 assert.equal(($('#vmReportRows').innerHTML.match(/<tr>/g)||[]).length,25);
 assert.ok(!nodes.has('#vmPageSize'));
+const workloadRow = {family:'20260102',status:'ready',thresholds:[
+  {threshold:.90,full_low:40,full_total:200,reduction:0,total:10,correct:9,accuracy:.9},
+  {threshold:.75,full_low:12,full_total:200,reduction:28,total:10,correct:8,accuracy:.8}
+]};
+versionMetrics.threshold=.75;
+vmRenderWorkload([workloadRow], '');
+const workload = $('#vmWorkloadRows').innerHTML;
+for (const text of ['12 / 200', '>28<', '70.0%', '80.00%', '8/10']) assert.ok(workload.includes(text),text);
+versionMetrics.threshold=.90;
+vmRenderWorkload([workloadRow], '');
+assert.ok($('#vmWorkloadRows').innerHTML.includes('40 / 200'));
+assert.ok($('#vmWorkloadRows').innerHTML.includes('0.0%'));
+vmRenderWorkload([{family:'20260102',status:'unavailable'}], '');
+assert.ok($('#vmWorkloadRows').innerHTML.includes('No threshold data'));
+vmRenderWorkload([], 'Loading');
+assert.ok($('#vmWorkloadRows').innerHTML.includes('Loading'));
 assert.equal(vmReferenceCounts({reference_lanes:['arbitrated','te_prime','te','rd'],reference_counts:{arbitrated:2,te_prime:3,te:4,rd:5}}),'Adjudication 2 · TE′ 3 · TE 4 · RD 5');
 const row={metrics:{model:{accuracy:132/153,correct:132,total:153,reference_total:155},chain:{accuracy:134/155,correct:134,total:155,reference_total:155}},coverage:{te:{filled:157,total:158,observed:158}}};
 assert.ok(vmScoreCell(row,'model').includes('132/153'));

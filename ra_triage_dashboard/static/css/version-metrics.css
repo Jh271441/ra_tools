@@ -71,3 +71,6 @@ body[data-active-page="version-metrics"] .top-actions {margin-left:auto}
 .vm-threshold-note {margin:12px 0 0}
 .vm-threshold-table {min-width:640px}
 .vm-threshold-table .is-selected {background:var(--accent-soft)}
+.vm-workload-table th,.vm-workload-table td {text-align:center;font-variant-numeric:tabular-nums}
+.vm-workload-table strong {display:block;font-weight:500}
+.vm-workload-table small {display:block;color:var(--muted)}

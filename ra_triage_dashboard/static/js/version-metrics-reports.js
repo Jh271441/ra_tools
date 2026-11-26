@@ -40,6 +40,27 @@ function vmCoverageCell(row,lane){
   return `<span class="vm-cell-stack" title="${escapeHtml(known)}">${vmCountRate(coverage.filled,coverage.total)}</span>`;
 }
 function vmReportEmpty(message,columns){return `<tr><td colspan="${columns}" class="vm-table-empty">${escapeHtml(message)}</td></tr>`;}
+function vmRenderWorkload(rows, empty) {
+  const threshold = versionMetrics.threshold;
+  $('#vmWorkloadThreshold').textContent = vmThresholdText();
+  const body = $('#vmWorkloadRows');
+  if (!rows.length) {
+    body.innerHTML = vmReportEmpty(empty, 4);
+    return;
+  }
+  body.innerHTML = rows.map(row => {
+    const release = `<th scope="row">${escapeHtml(row.family)}</th>`;
+    const point = row.status === 'ready' && row.thresholds?.find(t => t.threshold === threshold);
+    if (!point) {
+      return `<tr>${release}<td colspan="3" class="vm-table-empty">${uiText('暂无阈值数据','No threshold data')}</td></tr>`;
+    }
+    const baseline = point.full_low + point.reduction;
+    const reductionRate = baseline ? vmPct(point.reduction / baseline, 1) : '—';
+    return `<tr>${release}<td><strong>${point.full_low} / ${point.full_total}</strong></td>
+      <td><strong>${point.reduction}</strong><small>${reductionRate}</small></td>
+      <td><strong>${vmPct(point.accuracy)}</strong><small>${point.correct}/${point.total}</small></td></tr>`;
+  }).join('');
+}
 function vmFreshnessSummary(rows){
   const times=rows.filter(row=>row.status==='ready').map(row=>new Date(row.observed_at)).filter(date=>Number.isFinite(date.getTime())).sort((a,b)=>a-b);
   if(!times.length)return {label:uiText('Trail · 待采集','Trail · Not collected'),title:uiText('点击更新指标，读取新的 Trail 快照','Update metrics to collect a new Trail snapshot')};
@@ -60,6 +81,7 @@ function vmRenderReports(){
   $('#vmTableMetric').textContent=vmMetric(s.metric)+' · '+uiText('人工列为模拟值','Review columns are simulated');$('#vmReportTable').setAttribute('aria-label',uiText('各版本五方案指标','Five-scheme release metrics')+' · '+vmMetric(s.metric));
   $('#vmReportHead').innerHTML=`<tr><th scope="col">${uiText('版本','Release')}</th><th scope="col">${uiText('有效／抽样','Valid / sample')}</th><th scope="col">${uiText('有效 GT 来源','Valid GT sources')}</th><th scope="col">${uiText('TE 已标','TE filled')}</th><th scope="col">${uiText('RD 已标','RD filled')}</th>`+VM_SCHEMES.map(key=>`<th scope="col" title="${escapeHtml(vmScheme(key))}">${escapeHtml(vmSchemeShort(key))}</th>`).join('')+'</tr>';
   const empty=s.error?uiText('指标读取失败，请重试','Metrics unavailable. Please retry.'):s.loading?uiText('正在读取指标…','Loading metrics…'):uiText('暂无版本数据','No release data');
+  vmRenderWorkload(busy ? [] : rows, empty);
   $('#vmReportRows').innerHTML=busy||!rows.length?vmReportEmpty(empty,10):rows.map(row=>{
     const change=vmSampleChange(row);
     const date=`<th scope="row" title="${escapeHtml('release-'+row.family+' · '+vmTime(row.observed_at)+' CST')}"><strong>${vmFamilyLabel(row.family)}</strong>${vmReportLink(row.family,row.report_id)}${row.membership_changed?`<small>${uiText('版本已变化','Membership changed')}</small>`:''}</th>`;
