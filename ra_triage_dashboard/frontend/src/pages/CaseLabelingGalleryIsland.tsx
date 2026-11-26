@@ -357,6 +357,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
 
   // Debounce search input -> filters.search & sync URL ?q=
   useEffect(() => {
+    if (!active) return;
     const trimmed = searchDraft.trim();
     if (trimmed === filters.search) return;
     const timer = window.setTimeout(() => {
@@ -368,7 +369,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
       }));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [searchDraft, filters.search, updateFilters]);
+  }, [active, searchDraft, filters.search, updateFilters]);
 
   // Tasks query
   const tasksQuery = useQuery<{ items?: LabelingTaskItem[] }>({
@@ -423,6 +424,17 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         inactive: true,
       };
     }
+    if (casesQuery.isError) {
+      return {
+        items: [],
+        total: 0,
+        page: filters.page,
+        pages: 1,
+        page_size: filters.pageSize,
+        labelers: casesQuery.data?.labelers || [],
+        assignees: casesQuery.data?.assignees || [],
+      };
+    }
     return (
       casesQuery.data || {
         items: [],
@@ -432,7 +444,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         page_size: filters.pageSize,
       }
     );
-  }, [isInactiveScope, casesQuery.data, filters.page, filters.pageSize]);
+  }, [isInactiveScope, casesQuery.isError, casesQuery.data, filters.page, filters.pageSize]);
 
   // Sync bridge state so classic #caseLabelingDetail has queue, tasks, filters, and export payload
   useEffect(() => {
@@ -581,10 +593,13 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   };
 
   const handleExportIssues = async () => {
-    if (exportingIssues || isInactiveScope || !data.total) return;
+    if (exportingIssues || isInactiveScope || casesQuery.isError || !Number(data.total || 0)) return;
     setExportingIssues(true);
     try {
+      const activeSearch = searchDraft.trim();
       const exportParams = new URLSearchParams(listParams);
+      exportParams.set("q", activeSearch);
+      if (activeSearch) exportParams.set("issue_ids", "");
       exportParams.set("page", "1");
       exportParams.set("page_size", "10");
       const result = await apiRequest<LabelingCasesResponse>(
@@ -628,15 +643,18 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   };
 
   const handleExportGt = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (casesQuery.isError || isInactiveScope) return;
     const win = window as unknown as LegacyLabelingBridgeWindow;
     if (typeof win.exportLabelingGtUpdate !== "function") return;
     setExportingGt(true);
     try {
+      const activeSearch = searchDraft.trim();
+      const activeIssueIds = activeSearch ? [] : filters.issueIds;
       const payload = {
         baselines: baselinesQuery,
         task_id: filters.taskId || "",
-        q: filters.search || "",
-        issue_ids: filters.issueIds.join(","),
+        q: activeSearch,
+        issue_ids: activeIssueIds.join(","),
         target_group: filters.targetGroup || "",
         issue_tags: joinFilterList(filters.issueTags),
         status: joinFilterList(filters.status),
@@ -658,6 +676,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   };
 
   const handleSaveSnapshot = async () => {
+    if (casesQuery.isError || isInactiveScope) return;
     const win = window as unknown as LegacyLabelingBridgeWindow;
     if (typeof win.createCaseLabelingResultSnapshot !== "function") return;
     setSavingSnapshot(true);
@@ -675,11 +694,38 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
       showToast(bilingual(lang, "仅管理员可创建任务分配。", "Admin access is required."), true);
       return;
     }
-    if (!Number(data.total || 0)) {
+    if (casesQuery.isError) {
+      showToast(
+        casesQuery.error instanceof Error
+          ? casesQuery.error.message
+          : bilingual(lang, "读取 Case 列表失败，请重试。", "Failed to load Cases. Please retry."),
+        true,
+      );
+      return;
+    }
+    if (isInactiveScope || casesQuery.isLoading || !Number(data.total || 0)) {
       showToast(bilingual(lang, "当前筛选没有可分配的 Issue。", "No Issues match the current filters."), true);
       return;
     }
+    const activeSearch = searchDraft.trim();
+    const activeIssueIds = activeSearch ? [] : filters.issueIds;
     const win = window as unknown as LegacyLabelingBridgeWindow;
+    if (activeSearch !== filters.search) {
+      const nextFilters: LabelingFilterState = {
+        ...filters,
+        search: activeSearch,
+        issueIds: activeIssueIds,
+        page: 1,
+      };
+      persistRoute(nextFilters, true);
+      win.syncCaseLabelingGalleryState?.({
+        ...nextFilters,
+        tasks,
+        data,
+        labelers: data.labelers || [],
+        assignees: data.assignees || [],
+      });
+    }
     win.showPage?.("labeling-new-task", { historyMode: "push" });
   };
 
@@ -1112,10 +1158,12 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               onClick={() => {
                 const win = window as unknown as LegacyLabelingBridgeWindow;
                 const queryParams: Record<string, string> = {};
-                const activeSearch = searchDraft.trim() || filters.search;
+                const activeSearch = searchDraft.trim();
+                const activeIssueIds = activeSearch ? [] : filters.issueIds;
                 if (filters.taskId) queryParams.task = filters.taskId;
+                if (filters.targetGroup) queryParams.target_group = filters.targetGroup;
                 if (activeSearch) queryParams.q = activeSearch;
-                if (filters.issueIds.length) queryParams.issue_ids = filters.issueIds.join(",");
+                if (activeIssueIds.length) queryParams.issue_ids = activeIssueIds.join(",");
                 if (filters.issueTags.length) queryParams.issue_tags = joinFilterList(filters.issueTags);
                 if (filters.gtRelations.length) queryParams.gt_relation = joinFilterList(filters.gtRelations);
                 if (filters.status.length) queryParams.status = joinFilterList(filters.status);
@@ -1146,7 +1194,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
                 className="button button-quiet"
                 id="caseLabelingCreateLabelSnapshot"
                 type="button"
-                disabled={savingSnapshot}
+                disabled={savingSnapshot || isInactiveScope || casesQuery.isError}
                 onClick={() => void handleSaveSnapshot()}
               >
                 {bilingual(lang, "保存 Label 快照", "Save Label snapshot")}
@@ -1156,6 +1204,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               className="button button-primary"
               id="caseLabelingCreateTask"
               type="button"
+              disabled={isInactiveScope || casesQuery.isError || casesQuery.isLoading}
               onClick={handleCreateTask}
             >
               {bilingual(lang, "标注任务", "Labeling task")}

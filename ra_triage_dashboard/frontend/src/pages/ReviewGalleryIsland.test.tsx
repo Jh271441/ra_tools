@@ -243,4 +243,77 @@ describe("ReviewGalleryIsland", () => {
     expect(container.querySelector("#caseCount")?.textContent).toBe("—");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   });
+
+  it("disables allocation and clears cached count when a subsequent refresh returns HTTP 503", async () => {
+    const syncState = vi.fn();
+    (window as unknown as Record<string, unknown>).syncReviewGalleryState = syncState;
+    let failCases = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/model-runs")) {
+          return new Response(
+            JSON.stringify({
+              default_model_run_id: "run-1",
+              items: [{ id: "run-1", name: "Run 1", is_default: true, baseline_prediction_count: 10 }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.includes("/api/cases?")) {
+          if (failCases) {
+            return new Response(JSON.stringify({ detail: "刷新失败 (503)" }), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response(
+            JSON.stringify({
+              total: 5,
+              page: 1,
+              page_size: 20,
+              items: [{ issue_id: "cn38048091", gt_label: "误触发" }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ items: [], reviewers: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <ReviewGalleryIsland
+          active
+          lang="zh"
+          selectedBaselines={["0508"]}
+          isAdmin
+          canWrite
+          identityPending={false}
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("#caseCount")?.textContent).toBe("5");
+    });
+    const splitBtn = container.querySelector<HTMLButtonElement>("#splitFilteredButton");
+    expect(splitBtn).not.toBeDisabled();
+
+    failCases = true;
+    await client.invalidateQueries({ queryKey: ["review-gallery-cases"] });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+    expect(container.querySelector("#caseCount")?.textContent).toBe("—");
+    expect(splitBtn).toBeDisabled();
+    const lastSynced = syncState.mock.calls.at(-1)?.[0] as { caseTotal?: number } | undefined;
+    expect(lastSynced?.caseTotal).toBe(0);
+  });
 });

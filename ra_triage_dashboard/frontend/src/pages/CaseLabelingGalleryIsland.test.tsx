@@ -215,4 +215,135 @@ describe("CaseLabelingGalleryIsland", () => {
     expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("—");
     expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
   });
+
+  it("forwards target_group=sample and drops cleared search immediately before 250ms debounce when opening labeling summary", async () => {
+    const navigatePage = vi.fn();
+    (window as unknown as Record<string, unknown>).navigatePage = navigatePage;
+    window.history.replaceState(
+      {},
+      "",
+      "/manual-s6/case-labeling?baselines=version-20261106&target_group=sample&q=cn35635511",
+    );
+    (window as unknown as Record<string, unknown>).state = {
+      config: {
+        baselines: [{ id: "version-20261106", label: "1106 复核集", count: 465 }],
+        case_labeling: { active_baseline_ids: ["version-20261106"] },
+        review_tag_catalog: [],
+      },
+    };
+
+    const { container } = renderWithQuery(
+      <CaseLabelingGalleryIsland
+        active
+        lang="zh"
+        selectedBaselines={["version-20261106"]}
+        isAdmin
+        canWrite
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("cn37760285")).toBeInTheDocument();
+    });
+
+    // Clear search input and IMMEDIATELY click "标注汇总" before 250ms debounce fires
+    const searchInput = container.querySelector<HTMLInputElement>("#caseLabelingSearch");
+    expect(searchInput?.value).toBe("cn35635511");
+    fireEvent.change(searchInput!, { target: { value: "" } });
+
+    const summaryBtn = container.querySelector<HTMLButtonElement>("#caseLabelingCampaignsButton");
+    fireEvent.click(summaryBtn!);
+
+    expect(navigatePage).toHaveBeenCalledTimes(1);
+    const [pageArg, optsArg] = navigatePage.mock.calls[0];
+    expect(pageArg).toBe("labeling-summary");
+    expect(optsArg?.queryParams?.target_group).toBe("sample");
+    expect(optsArg?.queryParams?.baselines).toBe("version-20261106");
+    expect(optsArg?.queryParams?.q).toBeUndefined();
+  });
+
+  it("disables #caseLabelingCreateTask and clears cached total when a subsequent refresh returns HTTP 503", async () => {
+    const showPage = vi.fn();
+    const syncState = vi.fn();
+    (window as unknown as Record<string, unknown>).showPage = showPage;
+    (window as unknown as Record<string, unknown>).syncCaseLabelingGalleryState = syncState;
+
+    let failCases = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/labeling/tasks")) {
+          return new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (url.includes("/api/labeling/cases")) {
+          if (failCases) {
+            return new Response(JSON.stringify({ detail: "刷新失败 (503)" }), {
+              status: 503,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return new Response(
+            JSON.stringify({
+              total: 10,
+              page: 1,
+              pages: 1,
+              page_size: 20,
+              items: [
+                {
+                  issue_id: "cn37760285",
+                  gt_label: "误触发",
+                  expected_output: "误触发",
+                  label_state: "resolved",
+                  author: "jasperchen",
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={client}>
+        <CaseLabelingGalleryIsland
+          active
+          lang="zh"
+          selectedBaselines={["0508"]}
+          isAdmin
+          canWrite
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("10");
+    });
+    const createBtn = container.querySelector<HTMLButtonElement>("#caseLabelingCreateTask");
+    expect(createBtn).not.toBeNull();
+    expect(createBtn).not.toBeDisabled();
+
+    // Now force the same cached query to fail with HTTP 503 on refresh
+    failCases = true;
+    await client.invalidateQueries({ queryKey: ["labeling-gallery-cases"] });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+    expect(container.querySelector("#caseLabelingCount")?.textContent).toBe("—");
+    expect(createBtn).toBeDisabled();
+    fireEvent.click(createBtn!);
+    expect(showPage).not.toHaveBeenCalled();
+    const lastSynced = syncState.mock.calls.at(-1)?.[0] as { data?: { total?: number } } | undefined;
+    expect(lastSynced?.data?.total).toBe(0);
+  });
 });

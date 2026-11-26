@@ -73,7 +73,7 @@ export const LabelingNewTaskPage: React.FC<LabelingNewTaskPageProps> = ({
   const baselineQuery = selectedBaselines.join(",");
   const filters = useMemo(
     () => readLabelingFiltersFromUrl(selectedBaselines),
-    [selectedBaselines],
+    [active, selectedBaselines],
   );
 
   const [draft, setDraft] = useState<AllocationDraft>(() => createInitialAllocationDraft());

@@ -692,13 +692,16 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     placeholderData: (prev) => prev,
   });
 
-  const casesData: ReviewCasesResponse = casesQuery.data || {
-    items: [],
-    total: 0,
-    page: filters.page,
-    page_size: filters.pageSize,
-  };
-  const totalCount = Number(casesData.total || 0);
+  const casesData: ReviewCasesResponse =
+    casesQuery.isError || !casesQuery.data
+      ? {
+          items: [],
+          total: 0,
+          page: filters.page,
+          page_size: filters.pageSize,
+        }
+      : casesQuery.data;
+  const totalCount = casesQuery.isError ? 0 : Number(casesData.total || 0);
   const totalPages = Math.max(1, Math.ceil(totalCount / filters.pageSize));
 
   // Persist URL when user updates gallery filters
@@ -800,6 +803,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
 
   // Debounce search input -> filters.search & sync URL ?q=
   useEffect(() => {
+    if (!active) return;
     const trimmed = searchDraft.trim();
     if (trimmed === filters.search) return;
     const timer = window.setTimeout(() => {
@@ -811,7 +815,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       }));
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [searchDraft, filters.search, updateFilters]);
+  }, [active, searchDraft, filters.search, updateFilters]);
 
   // Sync classic bridge state for #reviewDetailView, topbar active Run/overview, and prev/next navigation
   useEffect(() => {
@@ -1129,7 +1133,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
   };
 
   const handleExportSelection = () => {
-    if (!totalCount) return;
+    if (casesQuery.isError || !totalCount) return;
     const p = new URLSearchParams({ format: "xlsx", gallery_scope: "true" });
     Object.entries(buildFilterPayload(true)).forEach(([k, v]) => {
       if (v && v !== "all") p.set(k, v);
@@ -1145,6 +1149,15 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
   const handleCreateAllocation = () => {
     if (!isAdmin) {
       showToast(bilingual(lang, "仅管理员可创建复核任务。", "Admin access is required."), true);
+      return;
+    }
+    if (casesQuery.isError) {
+      showToast(
+        casesQuery.error instanceof Error
+          ? casesQuery.error.message
+          : bilingual(lang, "读取 Issue 列表失败，请重试。", "Failed to load Issues. Please retry."),
+        true,
+      );
       return;
     }
     if (!effectiveRunId) {
@@ -1193,6 +1206,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     totalCount === 0 || effectiveConfig?.batch_prediction?.enabled === false;
 
   const handlePredictSelection = () => {
+    if (casesQuery.isError || !totalCount) return;
     if (totalCount > predictionBatchLimit) {
       showToast(
         bilingual(

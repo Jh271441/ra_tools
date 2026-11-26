@@ -168,4 +168,62 @@ describe("LabelingSummaryPage 1:1 parity", () => {
       expect(window.location.search).toContain("issue_ids=cn10001%2Ccn10002");
     });
   });
+
+  it("reads, displays, queries, and resets target_group=sample without expanding scope", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/manual-s6/labeling-summary?baselines=version-20261106&target_group=sample",
+    );
+    const summaryUrls: string[] = [];
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/dashboard-config")) {
+        return Promise.resolve(new Response(JSON.stringify(MOCK_CONFIG), { status: 200 }));
+      }
+      if (url.includes("/api/labeling/tasks")) {
+        return Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+      }
+      if (url.includes("/api/labeling/summary?")) {
+        summaryUrls.push(url);
+        const params = new URLSearchParams(url.split("?")[1] || "");
+        const total = params.get("target_group") === "sample" ? 117 : 465;
+        return Promise.resolve(
+          new Response(JSON.stringify({ ...MOCK_SUMMARY, total }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <LabelingSummaryPage
+          active
+          lang="zh"
+          theme="dark"
+          selectedBaselines={["version-20261106"]}
+          isAdmin
+        />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(summaryUrls.length).toBeGreaterThan(0);
+    });
+    expect(
+      new URLSearchParams(summaryUrls[0].split("?")[1] || "").get("target_group"),
+    ).toBe("sample");
+    expect(new URLSearchParams(window.location.search).get("target_group")).toBe("sample");
+    expect(container.querySelector("#labelSummaryTargetGroupPicker")?.textContent).toContain("抽样集");
+    await waitFor(() => {
+      expect(screen.getByText(/当前范围 117 个 Case/)).toBeInTheDocument();
+    });
+
+    // Reset clears target_group from URL and re-queries full cohort
+    fireEvent.click(container.querySelector("#labelSummaryReset")!);
+    await waitFor(() => {
+      expect(new URLSearchParams(window.location.search).get("target_group")).toBeNull();
+    });
+  });
 });

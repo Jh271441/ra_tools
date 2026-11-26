@@ -125,6 +125,7 @@ interface LabelSummaryRouteState {
   issueIds: string[];
   issueTags: string[];
   taskId: string;
+  targetGroup: string;
   status: string[];
   author: string[];
   assignee: string[];
@@ -144,6 +145,7 @@ function defaultRouteState(): LabelSummaryRouteState {
     issueIds: [],
     issueTags: [],
     taskId: "",
+    targetGroup: "",
     status: [],
     author: [],
     assignee: [],
@@ -163,6 +165,7 @@ function readRouteFromUrl(): LabelSummaryRouteState {
   const params = new URLSearchParams(window.location.search);
   const rawPage = Number(params.get("page") || 1);
   const rawSize = Number(params.get("page_size") || DEFAULT_CASE_PAGE_SIZE);
+  const rawTargetGroup = String(params.get("target_group") || "").trim().toLowerCase();
   return {
     search: String(params.get("q") || "").trim(),
     issueTags: parseFilterList(params.get("issue_tags")),
@@ -170,6 +173,7 @@ function readRouteFromUrl(): LabelSummaryRouteState {
       ISSUE_QUERY_ID_RE.test(v),
     ),
     taskId: String(params.get("task") || "").trim(),
+    targetGroup: ["sample", "low"].includes(rawTargetGroup) ? rawTargetGroup : "",
     status: normalizedLabelingStatusFilters(params.get("status"), {
       submittedOnly: true,
     }),
@@ -203,6 +207,7 @@ function buildLabelingSummaryUrl(
   const validIds = state.issueIds.filter((v) => ISSUE_QUERY_ID_RE.test(v));
   if (validIds.length) params.set("issue_ids", validIds.join(","));
   if (state.taskId) params.set("task", state.taskId);
+  if (state.targetGroup) params.set("target_group", state.targetGroup);
   if (state.status.length) params.set("status", joinFilterList(state.status));
   if (state.author.length) params.set("author", joinFilterList(state.author));
   if (state.assignee.length) params.set("assignee", joinFilterList(state.assignee));
@@ -236,6 +241,7 @@ function buildCaseDetailUrl(
     if (issueId) params.set("issue", issueId);
     params.set("work_split", task.id);
     if (task.appendable) params.set("task_view", "targets");
+    if (state.targetGroup) params.set("target_group", state.targetGroup);
     if (state.gtRelations.length) params.set("gt_relation", joinFilterList(state.gtRelations));
     if (baselines.length) params.set("baselines", baselines.join(","));
     return `${withWorkbenchBase("/review")}?${params.toString()}`;
@@ -243,6 +249,7 @@ function buildCaseDetailUrl(
   const params = new URLSearchParams();
   if (issueId) params.set("issue", issueId);
   if (state.taskId) params.set("task", state.taskId);
+  if (state.targetGroup) params.set("target_group", state.targetGroup);
   if (state.search) params.set("q", state.search);
   if (state.issueIds.length) params.set("issue_ids", state.issueIds.join(","));
   if (state.issueTags.length) params.set("issue_tags", joinFilterList(state.issueTags));
@@ -292,22 +299,30 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
 
   const baselinesKey = selectedBaselines.join(",");
 
+  const wasActiveRef = useRef<boolean>(active);
+
   // Sync route state on re-entry and popstate when active.
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      wasActiveRef.current = false;
+      return;
+    }
     const syncFromUrl = () => {
       const next = readRouteFromUrl();
       setRoute(next);
       setSearchDraft(next.search);
     };
-    syncFromUrl();
+    if (!wasActiveRef.current) {
+      syncFromUrl();
+    }
+    wasActiveRef.current = true;
     window.addEventListener("popstate", syncFromUrl);
     return () => window.removeEventListener("popstate", syncFromUrl);
   }, [active]);
 
   // Persist URL on route/baseline changes while active.
   useEffect(() => {
-    if (!active || typeof window === "undefined") return;
+    if (!active || !wasActiveRef.current || typeof window === "undefined") return;
     const nextUrl = buildLabelingSummaryUrl(route, selectedBaselines);
     const currentUrl = `${window.location.pathname}${window.location.search}`;
     if (nextUrl !== currentUrl) {
@@ -365,6 +380,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
     const p = new URLSearchParams({
       baselines: baselinesKey,
       task_id: effectiveTaskId,
+      target_group: route.targetGroup,
       q: route.search,
       issue_ids: route.issueIds.join(","),
       status: joinFilterList(route.status),
@@ -486,6 +502,21 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
     ],
     [lang],
   );
+
+  const targetGroupOptions: UiSelectOption[] = useMemo(() => {
+    const base: UiSelectOption[] = [
+      { value: "", label: bilingual(lang, "全部", "All") },
+      { value: "sample", label: bilingual(lang, "抽样集", "Random sample") },
+      {
+        value: "low",
+        label: bilingual(lang, "低置信度（不含抽样）", "Low confidence (excluding samples)"),
+      },
+    ];
+    if (route.targetGroup && !base.some((o) => o.value === route.targetGroup)) {
+      base.push({ value: route.targetGroup, label: route.targetGroup });
+    }
+    return base;
+  }, [route.targetGroup, lang]);
 
   // Derived charts data
   const statusItems: StatusSegmentItem[] = useMemo(() => {
@@ -675,11 +706,14 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
         button?: HTMLButtonElement | null,
       ) => Promise<void>;
     };
+    const activeSearch = searchDraft.trim();
+    const activeIssueIds = activeSearch ? [] : route.issueIds;
     const payload = {
       baselines: baselinesKey,
       task_id: route.taskId,
-      q: route.search,
-      issue_ids: route.issueIds.join(","),
+      target_group: route.targetGroup,
+      q: activeSearch,
+      issue_ids: activeIssueIds.join(","),
       status: joinFilterList(route.status),
       author: joinFilterList(route.author),
       assignee: joinFilterList(route.assignee),
@@ -996,6 +1030,24 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
               ariaLabel={bilingual(lang, "排除", "Exclusion")}
               onChange={(values) =>
                 setRoute((prev) => ({ ...prev, exclusion: values, cluster: "", page: 1 }))
+              }
+            />
+          </div>
+
+          <div className="ra-analysis-field filter-target-group">
+            <span>{bilingual(lang, "目标集合", "Target cohort")}</span>
+            <UiSelect
+              id="labelSummaryTargetGroupPicker"
+              value={route.targetGroup}
+              options={targetGroupOptions}
+              ariaLabel={bilingual(lang, "目标集合", "Target cohort")}
+              title={bilingual(
+                lang,
+                "按当前版本目标集合筛选；抽样优先于低置信度",
+                "Filter current version target cohorts; samples take precedence over low confidence",
+              )}
+              onChange={(val) =>
+                setRoute((prev) => ({ ...prev, targetGroup: val, cluster: "", page: 1 }))
               }
             />
           </div>
