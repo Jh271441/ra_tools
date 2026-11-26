@@ -5,12 +5,6 @@ import { bilingual, UiLanguage, withWorkbenchBase } from "../bridge/useWorkbench
 import { AllocationGroupSetup } from "../components/allocation/AllocationGroupSetup";
 import { AllocationLivePreview } from "../components/allocation/AllocationLivePreview";
 import { BatchCard } from "../components/allocation/BatchCard";
-import {
-  Historical0821Card,
-  Historical0821Partition,
-  historical0821Partition,
-  historical0821Title,
-} from "../components/allocation/Historical0821Card";
 import { TaskAllocationDialog } from "../components/allocation/TaskAllocationDialog";
 import { useAssignmentNaming } from "../components/allocation/useAssignmentNaming";
 import {
@@ -947,19 +941,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
 
   const splits = splitsQuery.data?.items || [];
   const metrics = splitsQuery.data?.metrics || {};
-  const boardEntries: Array<WorkSplitItem | { partition: Historical0821Partition; batches: WorkSplitItem[] }> =
-    splits.filter((item) => !historical0821Partition(item));
-  const firstHistoryIndex = splits.findIndex((item) => historical0821Partition(item));
-  if (firstHistoryIndex !== -1) {
-    const groups = (["0821-odd2", "0821-nonodd2"] as const).flatMap((partition) => {
-      const batches = splits.filter((item) => historical0821Partition(item) === partition);
-      return batches.length ? [{ partition, batches }] : [];
-    });
-    boardEntries.splice(firstHistoryIndex, 0, ...groups);
-  }
-  const activeCount = boardEntries.filter((entry) =>
-    "batches" in entry ? entry.batches.some((batch) => batch.is_current) : entry.is_current,
-  ).length;
+  const activeCount = splits.filter((item) => item.is_current).length;
   const totalAssignments =
     metrics.assignment_count ??
     splits.reduce((sum, s) => sum + Number(s.assignment_count || 0), 0);
@@ -1090,7 +1072,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       >
         <article className="review-assignment-metric">
           <small>{bilingual(lang, "任务", "Tasks")}</small>
-          <strong>{boardEntries.length}</strong>
+          <strong>{splits.length}</strong>
           <span>
             {bilingual(lang, `${activeCount} 个当前任务`, `${activeCount} current tasks`)}
           </span>
@@ -1424,7 +1406,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
       <section className="page-card review-assignment-list-card assignment-history">
         {(() => {
           const batchSearchTerms = batchSearch.trim().toLowerCase().split(/\s+/).filter(Boolean);
-          const matches = (item: WorkSplitItem, partition?: Historical0821Partition) => {
+          const matches = (item: WorkSplitItem) => {
             const cohort =
               item.role_cohort === "sampling"
                 ? "抽样集 sampling"
@@ -1439,25 +1421,20 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
               item.split_id,
               item.source_split_id,
               ...(item.baseline_ids || []),
-              ...(partition ? [historical0821Title(partition, "zh"), historical0821Title(partition, "en")] : []),
               item.appendable && !item.role_cohort ? "版本联合复核 version combined review" : "",
               cohort,
             ];
             const haystack = fields.filter(Boolean).join(" ").toLowerCase();
             return batchSearchTerms.every((term) => haystack.includes(term));
           };
-          const filteredSplits = boardEntries.filter((entry) =>
-            "batches" in entry
-              ? entry.batches.some((batch) => matches(batch, entry.partition))
-              : matches(entry),
-          );
-          const listStatusText = !boardEntries.length
+          const filteredSplits = splits.filter(matches);
+          const listStatusText = !splits.length
             ? ""
             : batchSearchTerms.length
               ? bilingual(
                   lang,
-                  `匹配 ${filteredSplits.length} / ${boardEntries.length} 个任务`,
-                  `${filteredSplits.length} of ${boardEntries.length} tasks`,
+                  `匹配 ${filteredSplits.length} / ${splits.length} 个任务`,
+                  `${filteredSplits.length} of ${splits.length} tasks`,
                 )
               : bilingual(
                   lang,
@@ -1588,22 +1565,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                     )}
                   </div>
                 ) : (
-                  filteredSplits.map((item) => "batches" in item ? (
-                    <Historical0821Card
-                      key={item.partition}
-                      partition={item.partition}
-                      batches={item.batches}
-                      matchedBatches={item.batches.filter((batch) => matches(batch, item.partition))}
-                      lang={lang}
-                      isAdmin={isAdmin}
-                      username={username}
-                      verified={verified}
-                      runNameLookup={runNameLookup}
-                      onOpenDetail={handleOpenDetail}
-                      onEditAllocation={setEditCampaignId}
-                      onShareLink={(sid) => void copyShareUrl(sid, true)}
-                    />
-                  ) : (
+                  filteredSplits.map((item) => (
                     <BatchCard
                       key={item.split_id}
                       item={item}

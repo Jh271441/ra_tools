@@ -192,10 +192,20 @@ class DatabaseWorkSplitsMixin:
             sources_by_id = {str(source["id"]): dict(source) for source in source_rows}
             historical_conflicts = self._historical_overlap_conflicts(conn, [
                 row["id"] for row in split_rows if row["workflow_mode"] == "model_review_and_case_label"
-                and task_reviewable(row) and legacy_batch_source(row, sources_by_id)
+                and task_reviewable(row) and (
+                    legacy_batch_source(row, sources_by_id)
+                    or _json_load(row["filter_json"], {}).get("merged_review_sources")
+                )
             ])
             historical_pending = pending_assignment_issue_ids(conn, list(historical_conflicts))
             split_ids = [str(row["id"]) for row in split_rows]
+            filters_by_split = {
+                str(row["id"]): _json_load(row["filter_json"], {}) for row in split_rows
+            }
+            grouped_split_ids = [
+                split_id for split_id, filters in filters_by_split.items()
+                if isinstance(filters, dict) and (filters.get("task_allocation") or {}).get("groups")
+            ]
             placeholders = ", ".join("?" for _ in split_ids)
             scope_rows = conn.execute(
                 f"""SELECT DISTINCT assignment.split_id, issue.baseline_scope
@@ -223,6 +233,19 @@ class DatabaseWorkSplitsMixin:
                 """,
                 split_ids,
             ).fetchall()
+            completed_group_slots = defaultdict(set)
+            if grouped_split_ids:
+                grouped_marks = ", ".join("?" for _ in grouped_split_ids)
+                for slot in conn.execute(
+                    f"""
+                    SELECT assignment.split_id, assignment.issue_id, assignment.assignee
+                    FROM review_work_assignments assignment
+                    JOIN issue_work_splits split ON split.id = assignment.split_id
+                    WHERE assignment.split_id IN ({grouped_marks}) AND ({ASSIGNMENT_SUBMITTED_SQL})
+                    """,
+                    grouped_split_ids,
+                ).fetchall():
+                    completed_group_slots[slot["split_id"]].add((slot["issue_id"], slot["assignee"]))
             change_rows = conn.execute(
                 f"""
                 SELECT split_id, COUNT(*) AS change_count
@@ -351,13 +374,17 @@ class DatabaseWorkSplitsMixin:
             assignment_count = int(row["assignment_count"] or 0) or current_assignment_count
             total_count = int(row["total_count"] or 0) or current_issue_count
             completed_count = sum(item["completed_count"] for item in members)
-            filter_snapshot = _json_load(row["filter_json"], {})
+            filter_snapshot = filters_by_split[split_id]
             alloc_groups = ((filter_snapshot.get("task_allocation") or {}).get("groups") or []) if isinstance(filter_snapshot, dict) else []
             if alloc_groups:
-                active_by_person = Counter(
-                    owner for grp in alloc_groups for owner in (grp.get("assignments") or {}).values() if owner
-                )
+                active_slots = [
+                    (issue_id, owner) for grp in alloc_groups
+                    for issue_id, owner in (grp.get("assignments") or {}).items() if owner
+                ]
+                active_by_person = Counter(owner for _, owner in active_slots)
                 if active_by_person:
+                    submitted = completed_group_slots[split_id]
+                    active_completed = Counter(owner for issue_id, owner in active_slots if (issue_id, owner) in submitted)
                     norm_members = []
                     for item in members:
                         uname = item["username"]
@@ -365,17 +392,22 @@ class DatabaseWorkSplitsMixin:
                         comp = item["completed_count"]
                         if act == 0 and comp == 0:
                             continue
-                        pend = max(0, act - min(act, comp))
+                        done = active_completed[uname]
                         norm_members.append({
                             **item,
                             "assigned_count": act,
-                            "pending_count": pend,
-                            "extra_completed_count": max(0, comp - (act - pend)),
-                            "completion_ratio": 1.0 if act == 0 and comp > 0 else round(min(1.0, comp / act), 4) if act else 0.0,
+                            "pending_count": act - done,
+                            "extra_completed_count": max(0, comp - done),
+                            "completion_ratio": round(done / act, 4) if act else 0.0,
                         })
                     members = norm_members
                     assignment_count = total_count if len(alloc_groups) == 1 else sum(active_by_person.values())
-                    completed_count = min(assignment_count, sum(min(m["assigned_count"], m["completed_count"]) for m in members) + (max(0, total_count - sum(active_by_person.values())) if len(alloc_groups) == 1 else 0))
+                    completed_count = min(
+                        assignment_count,
+                        sum(active_completed.values()) + (
+                            max(0, total_count - sum(active_by_person.values())) if len(alloc_groups) == 1 else 0
+                        ),
+                    )
             result.append(
                 {
                     "split_id": split_id,

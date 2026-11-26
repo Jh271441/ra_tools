@@ -198,7 +198,10 @@ describe("ReviewAssignmentsPage", () => {
     expect(screen.getByDisplayValue("4")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "应用调整" })).toBeDisabled();
     expect(mockApi.mock.calls.some(([path]) => path.endsWith("/allocation/preview"))).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "将可转派待办分给我" }));
+    const tools = screen.getByText("待办与交叉覆盖").closest("details")!;
+    expect(tools).not.toHaveAttribute("open");
+    fireEvent.click(within(tools).getByText("待办与交叉覆盖"));
+    fireEvent.click(within(tools).getByRole("button", { name: "将可转派待办分给我" }));
     expect(await screen.findByText("没有可转给你的待办")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "关闭" }));
     fireEvent.click(screen.getByRole("button", { name: "修改分配" }));
@@ -206,91 +209,50 @@ describe("ReviewAssignmentsPage", () => {
     expect(mockApi.mock.calls.filter(([path]) => path.endsWith("/allocation/preview"))).toHaveLength(1);
   });
 
-  it("uses ordinary task actions for both historical partitions and routes them to the selected batch", async () => {
-    const historical = (id: string, baseline: string, odd: string | null, cases: number) => ({
-      split_id: `campaign-${id}`, model_run_id: `run-${id}`, campaign_name: id,
-      source_created_at: "2026-09-09T13:18:07+08:00",
+  it("opens each merged dataset as a standard combined review task", async () => {
+    const campaign = (splitId: string, baseline: string, name: string) => ({
+      split_id: splitId, model_run_id: "merged-run", campaign_name: name, created_at: "2026-11-26",
       is_current: true, lifecycle: "active", workflow_mode: "model_review_and_case_label",
-      baseline_ids: [baseline], total_count: cases, assignment_count: cases * 2,
-      completed_count: cases * 2, pending_issue_ids: [], conflict_issue_ids: [],
-      filter_snapshot: { partition_parent_campaign_id: "parent", partition_field: "trip_odd", partition_value: odd },
+      baseline_ids: [baseline], filter_snapshot: { baselines: [baseline] },
     });
     mockApi.mockImplementation(async (path) => path.startsWith("/api/cases/work-splits?")
       ? { items: [
-          { split_id: "campaign-ordinary", campaign_name: "0508", is_current: true,
-            workflow_mode: "model_review_and_case_label", pending_issue_ids: ["cn12345678"],
-            filter_snapshot: { baselines: "0508" } },
-          { ...historical("odd2", "0821-odd2", "ODD2", 110), completed_count: 217,
-            pending_issue_ids: ["cn35722425", "cn35743259", "cn35690387"],
-            members: [
-              { username: "alice", assigned_count: 110, completed_count: 108, pending_count: 2 },
-              { username: "bob", assigned_count: 110, completed_count: 109, pending_count: 1 },
-            ] },
-          { ...historical("odd2-second", "0821-odd2", "ODD2", 2),
-            members: [
-              { username: "alice", assigned_count: 2, completed_count: 2, pending_count: 0 },
-              { username: "bob", assigned_count: 2, completed_count: 2, pending_count: 0 },
-            ] },
-          { ...historical("odd3", "0821-nonodd2", "ODD3", 88), members: [
-              { username: "alice", assigned_count: 110, completed_count: 127, pending_count: 0, extra_completed_count: 17 },
+          campaign("campaign-ordinary", "0508", "0508"),
+          campaign("campaign-odd2", "0821-odd2", "0821 历史 · ODD2 · 联合复核"),
+          { ...campaign("campaign-nonodd2", "0821-nonodd2", "0821 历史 · 非 ODD2 · 联合复核"), members: [
+              { username: "alice", assigned_count: 111, completed_count: 127, pending_count: 1, extra_completed_count: 17 },
               { username: "bob", assigned_count: 109, completed_count: 121, pending_count: 0, extra_completed_count: 12 },
               { username: "carol", assigned_count: 0, completed_count: 2, pending_count: 0, extra_completed_count: 2 },
-            ] },
-          { ...historical("unknown", "0821-nonodd2", null, 2), members: [
-              { username: "alice", assigned_count: 1, completed_count: 0 },
             ] },
         ] }
       : { items: [] });
 
     const { container } = renderPage();
-    await screen.findByText("0821 历史 · ODD2 联合复核");
-    expect(Array.from(container.querySelectorAll("[data-review-assignment-batch]"))
-      .map((item) => item.getAttribute("data-review-assignment-batch")))
-      .toEqual(["campaign-ordinary", "0821-odd2", "0821-nonodd2"]);
-    const odd2 = container.querySelector<HTMLElement>('[data-review-assignment-batch="0821-odd2"]')!;
-    const grid = within(odd2.querySelector<HTMLElement>(".review-assignment-member-grid")!);
-    expect(grid.getByText("alice")).toBeInTheDocument();
-    expect(grid.getByText("110 / 112")).toBeInTheDocument();
-    expect(grid.getByText("2 条待处理")).toBeInTheDocument();
-    expect(grid.getByText("bob")).toBeInTheDocument();
-    expect(grid.getByText("111 / 112")).toBeInTheDocument();
-    expect(grid.getByText("1 条待处理")).toBeInTheDocument();
-    expect(within(odd2).getByText("221 / 224 · 99%")).toBeInTheDocument();
-    const nonOdd2 = container.querySelector<HTMLElement>('[data-review-assignment-batch="0821-nonodd2"]')!;
-    expect(within(nonOdd2).getByText("110 / 111")).toBeInTheDocument();
-    expect(within(nonOdd2).getByLabelText("110 / 111").firstChild).toHaveStyle({ width: "99%" });
-    expect(within(nonOdd2).getByText("1 条待处理 · 另有相交提交 17 条")).toBeInTheDocument();
-    expect(within(nonOdd2).getByText("109 / 109")).toBeInTheDocument();
-    expect(within(nonOdd2).getByText("0 条待处理 · 另有相交提交 12 条")).toBeInTheDocument();
-    expect(within(nonOdd2).getByLabelText("0 / 0").firstChild).toHaveStyle({ width: "0%" });
-    expect(within(nonOdd2).getByText("0 条待处理 · 历史已标 2")).toBeInTheDocument();
+    await screen.findByText(/0821 历史 · ODD2 · 联合复核/);
     const ordinary = container.querySelector<HTMLElement>('[data-review-assignment-batch="campaign-ordinary"]')!;
     const footerLabels = (card: HTMLElement) =>
       Array.from(card.querySelectorAll("footer .review-assignment-batch-actions > *"), (control) => control.textContent);
-    expect(footerLabels(ordinary)).toEqual(["查看原筛选", "开始联合复核", "去原因聚类", "修改分配", "查看任务明细", "复制链接"]);
-    expect(footerLabels(odd2)).toEqual(footerLabels(ordinary));
-    expect(footerLabels(nonOdd2)).toEqual(footerLabels(ordinary));
-    expect(within(odd2).getByText("数据集: 0821 · ODD2 112 例")).toBeInTheDocument();
-    expect(within(nonOdd2).getByText("数据集: 0821 · 非 ODD2 90 例")).toBeInTheDocument();
-    expect(within(nonOdd2).getByText(/ODD 未填写 2 例/)).toBeInTheDocument();
-
-    fireEvent.click(within(odd2).getByRole("button", { name: "开始联合复核" }));
-    const reviewPicker = within(screen.getByRole("dialog", { name: /开始联合复核/ }));
-    const targets = reviewPicker.getAllByRole("link", { name: "开始联合复核" });
-    expect(targets.map((target) => {
-      const params = new URL(target.getAttribute("href")!, window.location.origin).searchParams;
-      return [params.get("work_split"), params.get("run"), params.get("task_progress")];
-    })).toEqual([
-      ["campaign-odd2", "run-odd2", "pending"],
-      ["campaign-odd2-second", "run-odd2-second", "pending"],
-    ]);
-    fireEvent.click(reviewPicker.getByRole("button", { name: "关闭" }));
-    fireEvent.click(within(nonOdd2).getByRole("button", { name: "查看任务明细" }));
-    const detailPicker = within(screen.getByRole("dialog", { name: /查看任务明细/ }));
-    const missingRow = detailPicker.getAllByRole("listitem").find((row) => row.textContent?.includes("ODD 未填写"))!;
-    fireEvent.click(within(missingRow).getByRole("button", { name: "查看任务明细" }));
+    for (const id of ["odd2", "nonodd2"]) {
+      const card = container.querySelector<HTMLElement>(`[data-review-assignment-batch="campaign-${id}"]`)!;
+      expect(footerLabels(card)).toEqual(footerLabels(ordinary));
+      const link = within(card).getByRole("link", { name: "开始联合复核" });
+      const params = new URL(link.getAttribute("href")!, window.location.origin).searchParams;
+      expect(params.get("work_split")).toBe(`campaign-${id}`);
+      expect(params.get("run")).toBe("merged-run");
+      expect(params.get("baselines")).toBe(`0821-${id}`);
+      expect(params.get("task_progress")).toBe("pending");
+    }
+    const nonOdd2 = within(container.querySelector<HTMLElement>('[data-review-assignment-batch="campaign-nonodd2"]')!);
+    expect(nonOdd2.getByText("110 / 111")).toBeInTheDocument();
+    expect(nonOdd2.getByLabelText("110 / 111").firstChild).toHaveStyle({ width: "99%" });
+    expect(nonOdd2.getByText("1 条待处理 · 另有相交提交 17 条")).toBeInTheDocument();
+    expect(nonOdd2.getByText("109 / 109")).toBeInTheDocument();
+    expect(nonOdd2.getByText("0 条待处理 · 另有相交提交 12 条")).toBeInTheDocument();
+    expect(nonOdd2.getByLabelText("0 / 0").firstChild).toHaveStyle({ width: "0%" });
+    fireEvent.click(nonOdd2.getByRole("button", { name: "查看任务明细" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(mockApi.mock.calls.some(([path]) =>
-      path.startsWith("/api/cases/work-splits/campaign-unknown?"),
+      path.startsWith("/api/cases/work-splits/campaign-nonodd2?"),
     )).toBe(true));
   });
 

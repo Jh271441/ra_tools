@@ -150,15 +150,23 @@ class AllocationProtectionMixin:
             raise ValueError("已有标注的任务、Run 或参考关联不明确，请先核对 / Saved evidence has ambiguous task, Run or reference links")
         adjudicated_cases = {r["issue_id"] for r in [*resolutions, *decisions]}
         frozen_cases = {r["issue_id"] for r in resolutions}
-        source_task = _json_load(split["filter_json"], {}).get("source_legacy_split_id")
-        if source_task and split["workflow_mode"] == "model_review_and_case_label":
+        filters = _json_load(split["filter_json"], {})
+        sources = {
+            (source["legacy_split_id"], source["run_id"])
+            for source in filters.get("merged_review_sources", [])
+            if source.get("legacy_split_id") and source.get("run_id")
+        }
+        if filters.get("source_legacy_split_id"):
+            sources.add((filters["source_legacy_split_id"], run))
+        if sources and split["workflow_mode"] == "model_review_and_case_label":
             # A migrated joint task still points at revisions from its original labeling task.
-            original = conn.execute("""
+            predicates = " OR ".join("(lc.task_id=? AND lc.source_run_id=?)" for _ in sources)
+            original = conn.execute(f"""
                 SELECT DISTINCT lc.issue_id,lc.baseline_scope FROM label_resolutions r
                 JOIN label_cases lc ON lc.id=r.label_case_id
                 JOIN campaign_issue_members m ON m.issue_id=lc.issue_id AND m.baseline_scope=lc.baseline_scope
-                WHERE m.campaign_id=? AND lc.task_id=? AND lc.source_run_id=?
-            """, (cid, source_task, run)).fetchall()
+                WHERE m.campaign_id=? AND ({predicates})
+            """, (cid, *(value for source in sorted(sources) for value in source))).fetchall()
             by_scope = defaultdict(set)
             for r in original:
                 by_scope[r["baseline_scope"]].add(r["issue_id"])
@@ -197,7 +205,7 @@ class AllocationProtectionMixin:
             "SELECT a.username,a.role,h.role AS human_role FROM access_users a "
             "LEFT JOIN human_user_roles h ON h.username=a.username ORDER BY a.username",
         ).fetchall()]
-        dataset_id = _json_load(split["filter_json"], {}).get("version_dataset_id")
+        dataset_id = filters.get("version_dataset_id")
         dataset = conn.execute("SELECT * FROM version_datasets WHERE id=?", (dataset_id,)).fetchone() if dataset_id else None
         targets = [dict(r) for r in conn.execute(
             "SELECT issue_id,is_target,updated_at FROM version_dataset_items WHERE dataset_id=? ORDER BY issue_id",

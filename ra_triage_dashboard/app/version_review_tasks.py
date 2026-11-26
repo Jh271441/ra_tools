@@ -140,7 +140,9 @@ def merge_version_task_list(parents, items, *, version_only=False, manual_only=F
     historical = []
     ordinary = []
     for item in retained:
-        if item.get('source_split_id') and item.get('workflow_mode') == 'model_review_and_case_label':
+        if item.get('workflow_mode') == 'model_review_and_case_label' and (
+            item.get('source_split_id') or (item.get('filter_snapshot') or {}).get('merged_review_sources')
+        ):
             historical.append(item)
         else:
             ordinary.append(item)

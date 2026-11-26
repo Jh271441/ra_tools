@@ -716,41 +716,6 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
 
           {config && draft ? (
             <div className="task-allocation-body">
-              <div className="allocation-review-status">
-                <div>
-                  {config.coverage && (
-                    <p className="dialog-copy">
-                      {bilingual(lang, "当前交叉覆盖", "Current cross-review coverage")}{" "}
-                      <strong>{crossCoverage(config.coverage)}</strong>
-                      {preview?.coverage_after && <> {"→"} <strong>{crossCoverage(preview.coverage_after)}</strong></>}
-                    </p>
-                  )}
-                  <p className="dialog-copy">
-                    {pendingCount
-                      ? bilingual(lang,
-                          `待办 ${numFmt.format(pendingCount)} 份 · 可转派 ${numFmt.format(config.movable_slots || 0)} 份 · 受保护 ${numFmt.format(config.saved_pending_slots || 0)} 份`,
-                          `${numFmt.format(pendingCount)} pending · ${numFmt.format(config.movable_slots || 0)} transferable · ${numFmt.format(config.saved_pending_slots || 0)} protected`)
-                      : bilingual(lang, "已全部完成", "All assignments completed")}
-                  </p>
-                </div>
-                <div className="review-assignment-batch-actions">
-                  {task?.workflow_mode === "model_review_and_case_label" && pendingCount > 0 && (
-                    <a className="button button-quiet" href={pendingReviewHref(task)} onClick={handleClose}>
-                      {bilingual(lang, "查看全部剩余 Issue", "View all pending cases")}
-                    </a>
-                  )}
-                  {canTakeOver && (pendingCount > 0 || takeOver) && (
-                    <button className="button button-secondary" type="button" disabled={busy} onClick={toggleTakeOver}>
-                      {takeOver
-                        ? bilingual(lang, "返回分配设置", "Back to allocation settings")
-                        : bilingual(lang, "将可转派待办分给我", "Assign movable work to me")}
-                    </button>
-                  )}
-                </div>
-              </div>
-              {takeOver && preview && (
-                <AllocationTakeoverDetails preview={preview} task={task} lang={lang} onNavigate={handleClose} />
-              )}
               <div className="task-allocation-settings" hidden={takeOver}>
                 <div className="allocation-basis-bar">
                   <div className="allocation-section-heading">
@@ -864,6 +829,46 @@ const TaskAllocationSession: React.FC<TaskAllocationDialogProps & { campaignId: 
                   />
                 </div>
               </section>
+              <details className="assignment-preview-groups">
+                <summary>{bilingual(lang, "待办与交叉覆盖", "Pending work and cross-review coverage")}</summary>
+                <div className="allocation-review-status">
+                  <div>
+                    {config.coverage && (
+                      <p className="dialog-copy">
+                        {bilingual(lang, "当前交叉覆盖", "Current cross-review coverage")}{" "}
+                        <strong>{crossCoverage(config.coverage)}</strong>
+                        {preview?.coverage_after && crossCoverage(preview.coverage_after) !== crossCoverage(config.coverage) && (
+                          <> {"→"} <strong>{crossCoverage(preview.coverage_after)}</strong></>
+                        )}
+                      </p>
+                    )}
+                    <p className="dialog-copy">
+                      {pendingCount
+                        ? bilingual(lang,
+                            `待办 ${numFmt.format(pendingCount)} 份 · 可转派 ${numFmt.format(config.movable_slots || 0)} 份 · 受保护 ${numFmt.format(config.saved_pending_slots || 0)} 份`,
+                            `${numFmt.format(pendingCount)} pending · ${numFmt.format(config.movable_slots || 0)} transferable · ${numFmt.format(config.saved_pending_slots || 0)} protected`)
+                        : bilingual(lang, "已全部完成", "All assignments completed")}
+                    </p>
+                  </div>
+                  <div className="review-assignment-batch-actions">
+                    {task?.workflow_mode === "model_review_and_case_label" && pendingCount > 0 && (
+                      <a className="button button-quiet" href={pendingReviewHref(task)} onClick={handleClose}>
+                        {bilingual(lang, "查看全部剩余 Issue", "View all pending cases")}
+                      </a>
+                    )}
+                    {canTakeOver && (pendingCount > 0 || takeOver) && (
+                      <button className="button button-secondary" type="button" disabled={busy} onClick={toggleTakeOver}>
+                        {takeOver
+                          ? bilingual(lang, "返回分配设置", "Back to allocation settings")
+                          : bilingual(lang, "将可转派待办分给我", "Assign movable work to me")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {takeOver && preview && (
+                  <AllocationTakeoverDetails preview={preview} task={task} lang={lang} onNavigate={handleClose} />
+                )}
+              </details>
             </div>
           ) : (
             <p className="dialog-copy">
