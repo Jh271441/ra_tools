@@ -93,7 +93,7 @@ function getMultiFilterValues(root) {
 }
 
 function updateMultiFilterSummary(root) {
-  if (!root || root.matches?.("select")) return;
+  if (!root || root.matches?.("select") || root.classList?.contains("ra-react-multiselect")) return;
   root.querySelectorAll('[data-multi-only]').forEach((button) => {
     button.textContent = uiText("仅此项", "Only this");
     button.title = uiText("只选这一项", "Only this");
@@ -192,6 +192,7 @@ function setMultiFilterValues(root, values) {
 
 function closeAllMultiFilters(except = null) {
   document.querySelectorAll(".multi-filter.is-open").forEach((root) => {
+    if (root.classList.contains("ra-react-multiselect")) return;
     if (except && root === except) return;
     root.classList.remove("is-open");
     const panel = root.querySelector(".multi-filter-panel");
@@ -210,6 +211,7 @@ function closeAllUiSelects(except = null) {
       ".ui-select.is-open, .review-status-picker.is-open, .detail-media-picker.is-open"
     )
     .forEach((root) => {
+      if (root.classList.contains("ra-react-select")) return;
       if (except && root === except) return;
       root.classList.remove("is-open");
       const panel =
@@ -475,7 +477,7 @@ let dashboardSelectObserver = null;
 let dashboardSelectLabelId = 0;
 
 function enhanceNativeUiSelect(select, { maxWidth = 520 } = {}) {
-  if (!select || select.multiple) return null;
+  if (!select || select.tagName !== "SELECT" || select.multiple) return null;
   let root = select.closest(".ui-select");
   if (!root?.classList.contains("dashboard-native-ui-select")
       && select.matches(".ui-select-native, .gateway-model-native-select")) return root;

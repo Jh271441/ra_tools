@@ -278,18 +278,34 @@ async def intent_experiments_page(request: Request) -> HTMLResponse:
 
 
 @router.get("/run-comparison", include_in_schema=False)
-@router.get("/run-collections", include_in_schema=False)
-@router.get("/multi-run-evaluation", include_in_schema=False)
 @router.get("/campaigns", include_in_schema=False)
 @router.get("/labeling-experiments", include_in_schema=False)
 @router.get("/labeling-summary", include_in_schema=False)
 @router.get("/rd-results", include_in_schema=False)
 async def run_comparison_page() -> HTMLResponse:
-    """Serve the read-only Run comparison workspace and Collection workspace."""
+    """Serve the read-only Run comparison workspace and labeling views."""
 
     return HTMLResponse(
         content=INDEX_HTML,
         headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@router.get("/run-collections", include_in_schema=False)
+@router.get("/multi-run-evaluation", include_in_schema=False)
+async def legacy_run_collections(request: Request) -> RedirectResponse:
+    # Multi-run evaluation UI is retired; keep /api/run-collections* and
+    # /api/run-evaluations* APIs intact while landing old bookmarks on Run comparison
+    # and preserving compatible dataset / run query parameters.
+    preserved = [
+        (key, value)
+        for key, value in request.query_params.multi_items()
+        if key in {"baselines", "baseline_run", "candidate_run", "baseline", "new"} and value
+    ]
+    target = f"run-comparison?{urlencode(preserved)}" if preserved else "run-comparison"
+    return RedirectResponse(
+        url=target,
+        status_code=307,
     )
 
 

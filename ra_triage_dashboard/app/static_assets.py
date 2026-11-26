@@ -85,8 +85,15 @@ class CachedStaticFiles(StaticFiles):
     def file_response(self, full_path, stat_result, scope: Scope, status_code: int = 200) -> Response:
         response = super().file_response(full_path, stat_result, scope, status_code=status_code)
         path = str(scope.get("path") or "")
+        query = scope.get("query_string") or b""
         if path.endswith((".js", ".css", ".woff2", ".woff", ".png", ".svg")):
-            response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+            is_hashed_dist = "/dist/assets/" in path or path.startswith("dist/assets/")
+            is_artifact_asset = "/artifacts/" in path or path.startswith("artifacts/")
+            is_versioned = b"v=" in query
+            if is_hashed_dist or is_artifact_asset or is_versioned:
+                response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+            else:
+                response.headers["Cache-Control"] = "public, max-age=0, must-revalidate"
         return response
 
 

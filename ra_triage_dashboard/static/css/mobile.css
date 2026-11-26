@@ -33,8 +33,16 @@
   .intent-summary-filters, .batch-history-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
+  .analysis-filters > * {
+    grid-column: auto !important;
+    grid-row: auto !important;
+    min-width: 0;
+  }
   .analysis-run-filter, .analysis-search-actions,
   .intent-summary-comment-field { grid-column: 1 / -1 !important; }
+  .analysis-search-actions {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -51,6 +59,10 @@
     grid-template-columns: minmax(0, 1fr) !important;
   }
   .analysis-decision-grid { grid-template-areas: "confusion" "status"; }
+  .analysis-decision-grid.analysis-has-gt {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas: "confusion" "status" "gt" !important;
+  }
   .review-detail-workspace > .review-pane,
   .review-pane { grid-column: auto !important; }
   .review-pane-resizer { display: none; }
@@ -74,12 +86,14 @@
   .batch-history-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
+  .analysis-filters > * { grid-column: auto !important; grid-row: auto !important; min-width: 0; }
   .filter-model-run, .filter-search,
   .analysis-run-filter, .analysis-search-actions,
   .intent-summary-comment-field {
     grid-column: 1 / -1 !important;
   }
-  .analysis-filters > * { grid-row: auto; }
+  .analysis-search-actions { grid-template-columns: minmax(0, 1fr); }
+  .analysis-search-actions .analysis-filter-actions { flex-wrap: wrap; justify-content: flex-start; }
   .analysis-case-row { grid-template-columns: minmax(130px, .7fr) minmax(0, 1.3fr); }
   .analysis-case-reason, .analysis-case-meta { grid-column: 1 / -1; }
   .analysis-case-meta { justify-content: flex-start; }
@@ -485,6 +499,7 @@
   .ui-info-button { min-width: 44px; min-height: 44px; }
   .review-filters.is-open, .analysis-filters.is-open { padding-top: 8px; gap: 12px; }
   #filterForm .ui-select-trigger, .review-filters .ui-select-trigger,
+  .analysis-filters .ui-select-trigger,
   .review-filters .multi-filter-trigger, .analysis-filters .multi-filter-trigger,
   .assignment-composer .ui-select-trigger { height: 44px; min-height: 44px; font-size: 16px; }
   .review-filters input:not([type="checkbox"]), .review-filters select,

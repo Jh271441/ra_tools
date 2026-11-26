@@ -273,10 +273,36 @@ function intentAvailableDatasets() {
   return (state.intentLabeling.datasets || []).filter((item) => item.available);
 }
 
+function syncIntentTopbarDatasets(items, selectedIds, page) {
+  if (Array.isArray(items) && items.length) {
+    state.intentLabeling.datasets = items;
+  }
+  const selected = parseFilterList(selectedIds);
+  if (page === "intent-experiments") {
+    state.intentLabeling.experimentDatasetIds = selected;
+    state.intentLabeling.experimentDatasetId = selected[0] || "";
+  } else if (page === "intent-summary") {
+    state.intentLabeling.summaryDatasetIds = selected;
+    state.intentLabeling.summaryDatasetId = selected[0] || "";
+  } else if (page === "intent") {
+    state.intentLabeling.selectedDatasetIds = selected;
+    state.intentLabeling.datasetId = selected[0] || "";
+  }
+  renderIntentTopbarDatasetPicker(selected);
+}
+
 function applyIntentTopbarDatasetSelection(values) {
   const selected = parseFilterList(values);
   if (!selected.length) return;
   if (state.activePage === "intent-experiments") {
+    if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments"))) {
+      state.intentLabeling.experimentDatasetIds = selected;
+      state.intentLabeling.experimentDatasetId = selected[0] || "";
+      renderIntentTopbarDatasetPicker(selected);
+      window.dispatchEvent(new CustomEvent("ra:intent-datasets-change", { detail: { page: "intent-experiments", datasetIds: selected } }));
+      window.__RA_REACT_WORKBENCH__?.notifySync?.();
+      return;
+    }
     loadIntentExperimentAdmin({ datasetIds: selected, force: true })
       .catch((error) => showToast(error.message, true));
     return;
@@ -291,7 +317,21 @@ function applyIntentTopbarDatasetSelection(values) {
     state.intentLabeling.summaryExperimentId = "";
     state.intentLabeling.summaryAssignees = [];
     state.intentLabeling.summaryPage = 1;
+    if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary"))) {
+      renderIntentTopbarDatasetPicker(selected);
+      window.dispatchEvent(new CustomEvent("ra:intent-datasets-change", { detail: { page: "intent-summary", datasetIds: selected } }));
+      window.__RA_REACT_WORKBENCH__?.notifySync?.();
+      return;
+    }
     loadIntentSummary({ datasetIds: selected, force: true }).catch((error) => showToast(error.message, true));
+    return;
+  }
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent"))) {
+    state.intentLabeling.selectedDatasetIds = selected;
+    state.intentLabeling.datasetId = datasetId;
+    renderIntentTopbarDatasetPicker(selected);
+    window.dispatchEvent(new CustomEvent("ra:intent-datasets-change", { detail: { page: "intent", datasetIds: selected } }));
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
     return;
   }
   (async () => {
@@ -780,6 +820,9 @@ function updateIntentExperimentCaseCountLimit({ reset = false } = {}) {
 }
 
 function renderIntentExperiments() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments"))) {
+    return;
+  }
   const container = $("#intentExperimentList");
   if (!container) return;
   const experiments = state.intentLabeling.experiments || [];
@@ -869,6 +912,11 @@ function renderIntentExperiments() {
 }
 
 async function loadIntentExperiments({ force = false, resetCaseCount = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments"))) {
+    if (force) window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-experiments");
+    else window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   const intent = state.intentLabeling;
   const requestedIds = [...(intent.experimentDatasetIds || [])];
   const cacheKey = requestedIds.slice().sort().join(",");
@@ -892,6 +940,19 @@ async function loadIntentExperiments({ force = false, resetCaseCount = false } =
 }
 
 async function loadIntentExperimentAdmin({ datasetId = "", datasetIds = null, force = false } = {}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments"))) {
+    const intent = state.intentLabeling;
+    if (Array.isArray(datasetIds) && datasetIds.length) {
+      intent.experimentDatasetIds = parseFilterList(datasetIds);
+      intent.experimentDatasetId = intent.experimentDatasetIds[0] || "";
+    } else if (datasetId) {
+      intent.experimentDatasetIds = [datasetId];
+      intent.experimentDatasetId = datasetId;
+    }
+    if (force) window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-experiments");
+    else window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   const intent = state.intentLabeling;
   restoreIntentWorkspacePreferences();
   const previousScope = [...(intent.experimentDatasetIds || [])].sort().join(",");

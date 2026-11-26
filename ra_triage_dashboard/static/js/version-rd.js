@@ -1,5 +1,6 @@
 /* Counts come only from the server's shared Manual Issue-label projection. */
 function renderVersionRD(d=null, failed=false, scopeState=versionDatasetState) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-datasets") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-datasets"))) return;
   const el=document.getElementById('versionRDPanel'),s=scopeState;
   if(!el)return;
   if(failed||!d||d.source_status==='unsupported'||!d.total)el._versionRDMarkup=null;

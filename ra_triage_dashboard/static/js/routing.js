@@ -237,7 +237,11 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if (typeof renderRunManager === "function" && state.modelRuns?.length) renderRunManager();
   } catch (_) {}
   try {
-    if ($("#workSplitPanel") && !$("#workSplitPanel").hidden) {
+    const reviewAssignmentsReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments")
+    );
+    if (!reviewAssignmentsReactOwned && $("#workSplitPanel") && !$("#workSplitPanel").hidden) {
       enhanceNativeUiSelect($("#workSplitWorkflowMode"));
       enhanceNativeUiSelect($("#workSplitComparison"));
       if (typeof renderWorkSplitScopeCount === "function") renderWorkSplitScopeCount(workSplitTotal(), workSplitFilters());
@@ -247,7 +251,11 @@ function applyUiLanguage(language, { persist = true } = {}) {
     }
   } catch (_) {}
   try {
-    if (state.activePage === "labeling-new-task" && $("#labelingTaskGroupSetup")?.childElementCount) {
+    const labelingNewTaskReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task")
+    );
+    if (!labelingNewTaskReactOwned && state.activePage === "labeling-new-task" && $("#labelingTaskGroupSetup")?.childElementCount) {
       displayCreationGroupSetup("labelingTask");
       renderAssignmentNameStatus("labeling");
       renderCreationAllocationPreview("labelingTask");
@@ -262,7 +270,11 @@ function applyUiLanguage(language, { persist = true } = {}) {
     if ($("#taskAllocationDialog")?.open) renderTaskAllocationEditor();
   } catch (_) {}
   try {
-    if (state.activePage === "intent-experiments" && typeof initializeIntentExperimentSelects === "function") {
+    const intentExpReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")
+    );
+    if (!intentExpReactOwned && state.activePage === "intent-experiments" && typeof initializeIntentExperimentSelects === "function") {
       initializeIntentExperimentSelects();
       initializeIntentExperimentEditSelect();
       renderIntentExperimentMembers();
@@ -323,13 +335,16 @@ function comparisonStatusParam(values) {
 
 function setReviewComparisonStatus(
   comparisonStatus,
-  { hasRun = Boolean($("#modelRunFilter")?.value) } = {}
+  { hasRun = Boolean($("#modelRunFilter")?.value || state.selectedRunId) } = {}
 ) {
   let nextValues = parseComparisonStatuses(comparisonStatus);
   if (!hasRun) nextValues = [];
   const nextStatus = comparisonStatusParam(nextValues);
   state.reviewComparisonStatus = nextStatus;
   state.failureOnly = nextStatus === "mismatch";
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    return nextStatus;
+  }
   const root = $("#comparisonFilter");
   if (root) {
     root.classList.toggle("is-disabled", !hasRun);
@@ -346,6 +361,12 @@ function setReviewComparisonStatus(
 }
 
 function selectedReviewComparisonStatus() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    if (!state.selectedRunId) return "all";
+    return comparisonStatusParam(
+      state.reviewComparisonStatus || (state.failureOnly ? "mismatch" : "all")
+    );
+  }
   const runId = $("#modelRunFilter")?.value || state.selectedRunId;
   if (!runId) return "all";
   const root = $("#comparisonFilter");
@@ -639,9 +660,9 @@ function parsePageRoute() {
   const uxAlias = legacyModelReviewCampaign
     ? "review"
     : pathname === "/run-collections"
-    ? "run-collections"
+    ? "comparison"
     : pathname === "/multi-run-evaluation"
-      ? "run-collections"
+      ? "comparison"
       : pathname === "/labeling-experiments"
         ? "labeling-new-task"
         : pathname === "/labeling-summary"
@@ -711,6 +732,42 @@ function parsePageRoute() {
 }
 
 function currentReviewRouteOptions(overrides = {}) {
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+  const rf = reviewOwned && state._reactReviewFilters ? state._reactReviewFilters : null;
+  if (rf) {
+    return {
+      issue: state.selectedId,
+      runId: state.selectedRunId,
+      comparisonStatus: state.reviewComparisonStatus,
+      failureOnly: state.failureOnly,
+      search: rf.search || "",
+      issueIds: [...(state.reviewIssueIds || [])],
+      gtLabel: [...(rf.gtLabel || [])],
+      modelLabel: [...(rf.modelLabel || [])],
+      annotationAuthor: [...(rf.annotationAuthor || [])],
+      reviewStatus: [...(rf.reviewStatus || [])],
+      labelStates: [...(rf.labelStates || [])],
+      gtRelations: [...(rf.gtRelations || [])],
+      issueTags: parseFilterList(state.reviewIssueTags || []),
+      targetGroup: state.reviewTargetGroup || "",
+      commentState: rf.commentState || "all",
+      workAssignee: [...(rf.workAssignee || [])],
+      workSplitId: state.reviewWorkSplitId || "",
+      taskView: state.reviewTaskView || "",
+      taskProgress: selectedCombinedTaskProgress(),
+      baselines: state.reviewTaskContext?.baseline_ids || state.selectedBaselineIds,
+      forceBaselines: Boolean(state.reviewTaskContext),
+      workflowMode: state.reviewWorkflowMode || "model_review_and_case_label",
+      exclusion: rf.exclusion || "all",
+      clusterKey: state.clusterKey,
+      casePage: state.casePage,
+      casePageSize: state.casePageSize,
+      ...overrides,
+    };
+  }
   return {
     issue: state.selectedId,
     runId: state.selectedRunId,
@@ -771,6 +828,27 @@ function persistCurrentReviewRoute(overrides = {}) {
 
 function applyReviewRouteControls(route) {
   if (!route) return;
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
+    state.reviewIssueIds = Array.isArray(route.reviewIssueIds)
+      ? [...new Set(route.reviewIssueIds.filter((value) => /^[A-Za-z0-9_-]{3,128}$/.test(String(value))))]
+      : [];
+    state.reviewWorkSplitId = route.workSplitId || "";
+    state.reviewTaskView = route.workSplitId ? (route.taskView || "") : "";
+    state.reviewTaskProgress = route.workSplitId ? (route.taskProgress || []) : [];
+    state.reviewWorkflowMode = route.workflowMode || "model_review_and_case_label";
+    state.reviewIssueTags = route.issueTags || [];
+    state.reviewTargetGroup = route.targetGroup || "";
+    state.clusterKey = route.clusterKey || "";
+    state.casePage = Math.max(1, Number(route.casePage) || 1);
+    state.casePageSize = CASE_PAGE_SIZES.includes(Number(route.casePageSize))
+      ? Number(route.casePageSize)
+      : DEFAULT_CASE_PAGE_SIZE;
+    if (route.comparisonStatus !== null && route.comparisonStatus !== undefined) {
+      state.reviewComparisonStatus = comparisonStatusParam(route.comparisonStatus);
+      state.failureOnly = state.reviewComparisonStatus === "mismatch";
+    }
+    return;
+  }
   if ($("#searchInput")) $("#searchInput").value = route.search || "";
   state.reviewIssueIds = Array.isArray(route.reviewIssueIds)
     ? [...new Set(route.reviewIssueIds.filter((value) => /^[A-Za-z0-9_-]{3,128}$/.test(String(value))))]
@@ -872,6 +950,7 @@ function persistCurrentAnalysisRoute(overrides = {}) {
 }
 
 function applyAnalysisRouteControls(route) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const filters = route?.analysisFilters || route || {};
   if ($("#analysisIssueInput")) {
     $("#analysisIssueInput").value = parseFilterList(filters.issueIds).join(", ");
@@ -1314,6 +1393,7 @@ function showPage(
     restoreRoute = false,
     loadPageData = true,
     preserveScroll = false,
+    queryParams = null,
     intentDatasetId = "",
     intentDatasetIds = [],
     intentCaseId = "",
@@ -1329,20 +1409,26 @@ function showPage(
   } = {}
 ) {
   if(page==="daily-review"){window.location.replace(withBase("/daily-review")+window.location.search);return;}
-  const target = PAGE_ROUTES[page] ? page : "review";
+  const target = page === "run-collections" ? "comparison" : PAGE_ROUTES[page] ? page : "review";
   const previousPage = state.activePage;
-  if (previousPage === "trail-history" && trailHistory.busy) return;
-  if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
-  if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
+  const trailHistoryReactOwned = typeof window !== "undefined" && Boolean(window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-history") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-history"));
+  if (!trailHistoryReactOwned) {
+    if (previousPage === "trail-history" && trailHistory.busy) return;
+    if (previousPage === "trail-history" && target !== "trail-history") $("#trailHistoryDialog")?.close();
+    if (target === "trail-history" && restoreRoute) restoreTrailHistoryRoute();
+  }
   if (target === 'daily-cron' && restoreRoute && typeof restoreCronScope === 'function') restoreCronScope();
   if (["labeling", "review"].includes(previousPage) && typeof caseLabelDecisionUi !== "undefined" && caseLabelDecisionUi.editor) {
     if (caseLabelDecisionUi.saving) return;
     exitCaseDecisionEditor();
   }
   const pageLoads = [];
-  if (previousPage === 'rd-results' && rdResults.committing) return;
-  if (target !== "rd-results" && typeof rdResults !== "undefined") { rdResults.previewOpen = false; rdForgetPreview(); }
-  if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
+  const rdResultsReactOwned = typeof window !== "undefined" && Boolean(window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results"));
+  if (!rdResultsReactOwned) {
+    if (previousPage === 'rd-results' && rdResults.committing) return;
+    if (target !== "rd-results" && typeof rdResults !== "undefined") { rdResults.previewOpen = false; rdForgetPreview(); }
+    if (target === "rd-results" && loadPageData) pageLoads.push(() => loadRdResults());
+  }
   state.pageNavigationEpoch = Number(state.pageNavigationEpoch || 0) + 1;
   if (previousPage === "review" && target !== "review" && typeof cancelCaseHydration === "function") cancelCaseHydration();
   if (previousPage === "review" && target !== "review" && typeof cancelCaseListLoad === "function") cancelCaseListLoad();
@@ -1354,10 +1440,10 @@ function showPage(
   document.body.dataset.activePage = target;
   if (typeof setVersionDatasetsActive === "function") setVersionDatasetsActive(target === "version-datasets");
   if (typeof setVersionMetricsActive === "function") setVersionMetricsActive(target === "version-metrics");
-  if (target === "version-metrics" && loadPageData) pageLoads.push(() => loadVersionMetrics());
+  if (target === "version-metrics" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics"))) pageLoads.push(() => loadVersionMetrics());
   if (typeof setDailyCronActive === "function") setDailyCronActive(target === "daily-cron");
   if (typeof setDailyReviewActive === "function") setDailyReviewActive(target === "daily-review");
-  if (typeof ensureRunCollectionsDedicatedPage === "function") {
+  if (typeof ensureRunCollectionsDedicatedPage === "function" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) {
     ensureRunCollectionsDedicatedPage(target);
   }
   document.querySelectorAll("[data-page]").forEach((section) => {
@@ -1378,14 +1464,14 @@ function showPage(
     if (importKind) setImportKind(importKind);
     else activateRunSourceTab(runSourceTab || "upload");
   }
-  if (target === "comparison") {
+  if (target === "comparison" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("comparison") || window.__RA_REACT_OWNED_PAGES__?.includes?.("comparison"))) {
     renderRunComparisonSelectors?.();
     renderRunComparison?.();
     if (loadPageData) {
       pageLoads.push(() => loadRunComparison({ historyMode: historyMode || "replace" }).catch((error) => showToast(error.message, true)));
     }
   }
-  if (target === "run-collections") {
+  if (target === "run-collections" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") || window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))) {
     renderRunCollectionSelectors?.();
     if (loadPageData && typeof loadRunCollectionsWorkbench === "function") {
       pageLoads.push(() => loadRunCollectionsWorkbench({ restoreRoute }).catch((error) => showToast(error.message, true)));
@@ -1421,11 +1507,15 @@ function showPage(
       showToast(uiText("实验分配仅限管理员。", "Experiment assignment requires admin access."), true);
       return showPage("review", { historyMode: historyMode || "replace" });
     }
-    if (loadPageData && typeof enterLabelingNewTask === "function") {
+    const labelingNewTaskOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task")
+    );
+    if (loadPageData && typeof enterLabelingNewTask === "function" && !labelingNewTaskOwned) {
       pageLoads.push(() => enterLabelingNewTask().catch((error) => showToast(error.message, true)));
     }
   }
-  if (target === "prediction") {
+  if (target === "prediction" && !(typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction")))) {
     const issueIds = issues.length ? issues : issue ? [issue] : [];
     ensurePredictionBatchName();
     const issueInput = $("#predictionBatchIssues");
@@ -1455,7 +1545,11 @@ function showPage(
       experimentId: intentExperimentId,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "review-assignments" && loadPageData && typeof loadReviewAssignments === "function") {
+  const reviewAssignmentsOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments")
+  );
+  if (target === "review-assignments" && loadPageData && typeof loadReviewAssignments === "function" && !reviewAssignmentsOwned) {
     if (!reviewAssignmentSplitId) {
       state.reviewAssignments.selectedSplitId = "";
       state.reviewAssignments.detail = null;
@@ -1469,10 +1563,14 @@ function showPage(
   if (["labeling-summary", "rd-results"].includes(target) && !state.session.identity_pending && !hasDashboardWriteRole()) {
     return showPage("review", { historyMode: "replace" });
   }
-  if (target === "labeling-summary" && loadPageData) {
+  if (target === "labeling-summary" && loadPageData && !(typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary")))) {
     pageLoads.push(() => loadLabelingSummary().catch((error) => showToast(error.message, true)));
   }
-  if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function") {
+  const campaignsReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("campaigns") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("campaigns")
+  );
+  if (target === "campaigns" && loadPageData && typeof loadCampaigns === "function" && !campaignsReactOwned) {
     pageLoads.push(() => loadCampaigns({
       campaignId,
       purpose: campaignPurpose,
@@ -1485,13 +1583,25 @@ function showPage(
       discussionChannel,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function") {
+  const intentExpReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")
+  );
+  const intentSummaryReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary")
+  );
+  const trailUpdateReactOwned = typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update")
+  );
+  if (target === "intent-experiments" && loadPageData && typeof loadIntentExperimentAdmin === "function" && !intentExpReactOwned) {
     pageLoads.push(() => loadIntentExperimentAdmin({
       datasetId: intentDatasetId,
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
     }).catch((error) => showToast(error.message, true)));
   }
-  if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function") {
+  if (target === "intent-summary" && loadPageData && typeof loadIntentSummary === "function" && !intentSummaryReactOwned) {
     pageLoads.push(() => loadIntentSummary({
       datasetId: intentDatasetId,
       datasetIds: intentDatasetIds.length ? intentDatasetIds : null,
@@ -1504,7 +1614,7 @@ function showPage(
     // presses Escape, clicks outside, or toggles the trigger.
     renderAnalysisRunFilter();
   }
-  if (target === "trail-update" && state.trailUpdate.tab !== "issue") {
+  if (target === "trail-update" && state.trailUpdate.tab !== "issue" && !trailUpdateReactOwned) {
     const trailPage = $("#trailAttributeUpdatePage");
     state.trailUpdate.runId = "";
     const needsPreview =
@@ -1535,14 +1645,14 @@ function showPage(
     }
   }
   if (target === "daily-review" && loadPageData) pageLoads.push(() => loadDailyReview());
-  if (target === "daily-cron" && loadPageData) {
+  if (target === "daily-cron" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) {
     pageLoads.push(() => loadDailyCron());
   }
-  if (target === "status" && loadPageData) {
+  if (target === "status" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
     pageLoads.push(() => loadStatus().catch((error) => showToast(error.message, true)));
   }
-  if (target === "trail-history" && loadPageData) pageLoads.push(() => loadTrailHistory());
-  if (target === "users" && loadPageData) {
+  if (target === "trail-history" && loadPageData && !trailHistoryReactOwned) pageLoads.push(() => loadTrailHistory());
+  if (target === "users" && loadPageData && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
     pageLoads.push(() => loadAccessUsers().catch((error) => showToast(error.message, true)));
     pageLoads.push(() => loadMentionUsers().catch((error) => showToast(error.message, true)));
   }
@@ -1587,11 +1697,36 @@ function showPage(
       Boolean(issue) &&
       (historyMode === "push" || Boolean(window.history.state?.openedFromGallery)),
   };
+  const targetOwnedByReact =
+    typeof window !== "undefined"
+    && ["labeling-summary", "analysis", "comparison", "run-collections"].includes(target)
+    && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.(target)
+      || window.__RA_REACT_OWNED_PAGES__?.includes?.(target)
+    );
   if (historyMode === "push") {
-    history.pushState(historyState, "", pageUrl(target, routeOptions));
+    if (targetOwnedByReact) {
+      const nextUrl = new URL(withBase((PAGE_ROUTES[target] || PAGE_ROUTES.review).path), window.location.origin);
+      if (queryParams && typeof queryParams === "object") {
+        Object.entries(queryParams).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && String(value) !== "") {
+            nextUrl.searchParams.set(key, String(value));
+          }
+        });
+      }
+      const baselineVal = typeof selectedBaselineQueryValue === "function" ? selectedBaselineQueryValue() : "";
+      if (!nextUrl.searchParams.has("baselines") && baselineVal) {
+        nextUrl.searchParams.set("baselines", baselineVal);
+      }
+      history.pushState(historyState, "", `${nextUrl.pathname}${nextUrl.search}`);
+    } else {
+      history.pushState(historyState, "", pageUrl(target, routeOptions));
+    }
   }
   if (historyMode === "replace") {
-    history.replaceState(historyState, "", pageUrl(target, routeOptions));
+    if (!targetOwnedByReact) {
+      history.replaceState(historyState, "", pageUrl(target, routeOptions));
+    }
   }
   // Loaders capture page/URL ownership only after the route is committed.
   // Starting them above pushState would make a valid new-page read look stale.
@@ -1607,6 +1742,9 @@ function showPage(
     load();
   }
   if (typeof syncSystemStatusRefresh === "function") syncSystemStatusRefresh();
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.notifySync) {
+    window.__RA_REACT_WORKBENCH__.notifySync();
+  }
   // Instant scroll keeps tab switches snappy; avoid smooth-scroll lag between pages.
   if (!preserveScroll && (target !== "review" || issue)) {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -1639,13 +1777,16 @@ function navigatePage(page, options = {}) {
   if (enteringReviewHome) {
     const list = $("#issueList");
     const hasCards = Boolean(list?.querySelector("article[data-issue-id], .issue-grid-empty"));
+    const expectedOverviewScope = `${typeof selectedBaselineQueryValue === "function" ? selectedBaselineQueryValue() : ""}|${state.selectedRunId || ""}`;
+    const overviewStale = Boolean(state.overviewScopeKey) && state.overviewScopeKey !== expectedOverviewScope;
     const needsReload =
       state.reviewQueueStale ||
       !Array.isArray(state.cases) ||
       !state.cases.length ||
-      !hasCards;
+      !hasCards ||
+      overviewStale;
     if (needsReload) {
-      reloadReviewGallery({ includeOverview: false, historyMode: "" }).catch((error) =>
+      reloadReviewGallery({ includeOverview: overviewStale, historyMode: "" }).catch((error) =>
         showToast(error.message, true)
       );
     } else {

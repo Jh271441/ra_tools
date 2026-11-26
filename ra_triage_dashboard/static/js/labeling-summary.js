@@ -59,6 +59,7 @@ function restoreLabelSummaryRoute({ force = false } = {}) {
 }
 
 function refreshLabelSummaryLanguage() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) return;
   if (state.activePage !== "labeling-summary" || !labelSummaryData) return;
   // Do not discard a restored task before the task directory has loaded.
   renderLabelSummaryFilters({ items: labelSummaryTasks }, labelSummaryData);
@@ -359,6 +360,7 @@ function labelSummaryCaseMarkup(item) {
 }
 
 function renderLabelingSummary(data) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) return;
   const root = $("#labelSummaryContent");
   const comparable = (data.pairs || []).reduce((sum, row) => sum + Number(row.count || 0), 0);
   const matches = (data.pairs || []).filter((row) => row.gt === row.label).reduce((sum, row) => sum + Number(row.count || 0), 0);
@@ -407,6 +409,10 @@ function cancelLabelingSummaryLoad() {
 }
 
 async function loadLabelingSummary() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling-summary");
+    return;
+  }
   if (state.activePage !== "labeling-summary") return;
   let pageContext = capturePageContext();
   restoreLabelSummaryRoute();

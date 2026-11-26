@@ -138,8 +138,12 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
       modelReviewFacets?.reviewers || []
     )
   );
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
   const reviewSelect = $("#reviewerFilter");
-  if (reviewSelect) {
+  if (reviewSelect && !reviewOwned) {
     renderMultiFilter(reviewSelect, {
       options: reviewerOptionsWithSelected(reviewerOptions, reviewSelection),
       selected: reviewSelection,
@@ -153,7 +157,7 @@ async function loadReviewers(selections = reviewerFilterSelections()) {
     });
   }
   const analysisReviewer = $("#analysisReviewerFilter");
-  if (analysisReviewer) {
+  if (analysisReviewer && !(typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis")))) {
     renderMultiFilter(analysisReviewer, {
       options: reviewerOptionsWithSelected(analysisReviewerOptions, analysisSelection),
       selected: analysisSelection,
@@ -181,6 +185,7 @@ function selectedCombinedTaskProgress() {
 }
 
 function renderReviewProgressFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   if (typeof renderNextPendingTaskButton === 'function') renderNextPendingTaskButton();
   const root = $('#reviewTaskProgressFilter');
   if (!root) return;
@@ -235,6 +240,7 @@ function renderTargetGroupPicker(selector, selected, onChange) {
 }
 
 function renderReviewTargetGroupPicker() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   renderTargetGroupPicker('#reviewTargetGroupPicker', state.reviewTargetGroup, value => {
     state.reviewTargetGroup = value;
     scheduleReviewFilterReload(0);
@@ -242,6 +248,7 @@ function renderReviewTargetGroupPicker() {
 }
 
 function renderReviewIssueTagFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   renderIssueTagFilter('#reviewIssueTagFilter', selectedReviewIssueTags(), values => {
     state.reviewIssueTags = values;
     scheduleReviewFilterReload(0);
@@ -283,6 +290,7 @@ function renderIssueTagFilter(selector, selected, onChange) {
 }
 
 function renderReviewCatalogFilters() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) return;
   renderReviewTargetGroupPicker();
   renderReviewIssueTagFilter();
   const onChange = () => scheduleReviewFilterReload?.(0);
@@ -399,6 +407,9 @@ function setAnalysisComparisonStatus(
   if (!hasRun) nextValues = [];
   const nextStatus = comparisonStatusParam(nextValues);
   state.reviewAnalysis.comparisonStatus = nextStatus;
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+    return nextStatus;
+  }
   const root = $("#analysisComparisonFilter");
   if (root) {
     root.classList.toggle("is-disabled", !hasRun);
@@ -415,6 +426,7 @@ function setAnalysisComparisonStatus(
 }
 
 function renderAnalysisComparisonFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const root = $("#analysisComparisonFilter");
   if (!root || typeof renderMultiFilter !== "function") return;
   const hasRun = Boolean($("#analysisRunFilter")?.value || state.selectedRunId);
@@ -443,6 +455,7 @@ function bindAnalysisComparisonPicker() {
 }
 
 function renderAnalysisRunFilter() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const select = $("#analysisRunFilter");
   const picker = $("#analysisRunPicker");
   if (!select) return;
@@ -534,17 +547,23 @@ async function loadRuns({
     candidate = "";
   }
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
-  if (picker && typeof populateUiSelect === "function") {
-    populateUiSelect(picker, runOptions, state.selectedRunId);
-    bindUiSelect(picker, { maxHeight: 360, maxWidth: 520 });
-  } else if (select) {
-    select.innerHTML = runOptions
-      .map(
-        (item) =>
-          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
-      )
-      .join("");
-    select.value = state.selectedRunId;
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+  if (!reviewOwned) {
+    if (picker && typeof populateUiSelect === "function") {
+      populateUiSelect(picker, runOptions, state.selectedRunId);
+      bindUiSelect(picker, { maxHeight: 360, maxWidth: 520 });
+    } else if (select) {
+      select.innerHTML = runOptions
+        .map(
+          (item) =>
+            `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+        )
+        .join("");
+      select.value = state.selectedRunId;
+    }
   }
   if (preferDefault && !previousRunId && state.selectedRunId) {
     // A Run is an overlay on the immutable selected GT workset. Selecting or
@@ -564,6 +583,9 @@ async function loadRuns({
   renderRunSourceSummary();
   renderActiveRun();
   renderRunManager();
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager")) {
+    window.__RA_REACT_WORKBENCH__.refreshPage("runs-manager");
+  }
   if (typeof renderRunComparisonSelectors === "function") {
     renderRunComparisonSelectors();
   }
@@ -780,6 +802,7 @@ function changeRunManagerPageSize(value) {
 }
 
 function renderRunFilters() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) return;
   const select = $("#runPersonFilter");
   if (!select) return;
   const previous = select.value;
@@ -836,6 +859,7 @@ function renderActiveRun(overview = null) {
 }
 
 function renderRunManager() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) return;
   const list = $("#modelRunList");
   if (!list) return;
   const filteredRuns = filteredModelRuns();

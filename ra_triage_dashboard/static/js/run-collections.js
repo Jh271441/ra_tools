@@ -12,11 +12,22 @@ const runCollectionUi = {
   restoring: false,
 };
 
+function isRunCollectionsReactOwned() {
+  return (
+    typeof window !== "undefined" &&
+    Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections")
+    )
+  );
+}
+
 function runCollectionCanWrite() {
   return Boolean(state.session?.is_admin && state.session?.verified);
 }
 
 function ensureRunCollectionsDedicatedPage(targetPage = state.activePage) {
+  if (isRunCollectionsReactOwned()) return;
   const workbench = document.getElementById("runCollectionsWorkbench");
   const host = document.getElementById("runCollectionsDedicatedHost");
   if (!workbench || !host) return;
@@ -162,6 +173,7 @@ function renderRunCollectionLabelReferenceSet(scopes = [], values = {}) {
 }
 
 function renderRunCollectionSelectors() {
+  if (isRunCollectionsReactOwned()) return;
   const collectionSelect = $("#runCollectionSelect");
   if (!collectionSelect) return;
   applyRunCollectionReadOnlyGating();
@@ -408,6 +420,10 @@ async function loadRunCollectionEvaluation(contextId, { page = 1, search = "", h
 }
 
 async function loadRunCollectionsWorkbench({ restoreRoute = false } = {}) {
+  if (isRunCollectionsReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("run-collections");
+    return;
+  }
   const select = $("#runCollectionSelect");
   if (!select) return;
   const params = new URLSearchParams(window.location.search);
@@ -541,6 +557,7 @@ async function runCollectionEvaluate() {
 }
 
 function bindRunCollectionsEvents() {
+  if (isRunCollectionsReactOwned()) return;
   if (window.__runCollectionsBound) return;
   window.__runCollectionsBound = true;
   $("#runCollectionRefreshButton")?.addEventListener("click", () => {

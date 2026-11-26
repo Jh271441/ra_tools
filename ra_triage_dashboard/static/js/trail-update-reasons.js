@@ -194,6 +194,9 @@ function bindTrailReasonEvents() {
 }
 
 function refreshTrailReasonLanguage() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-update") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-update"))) {
+    return;
+  }
   if (!state.trailUpdate?.data) return;
   renderTrailAttributePreview(state.trailUpdate.data);
   syncTrailSelectionControls();

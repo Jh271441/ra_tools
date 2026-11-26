@@ -1,0 +1,307 @@
+{
+  "_AnalysisCharts-CIPreHAl.js": {
+    "file": "assets/AnalysisCharts-CIPreHAl.js",
+    "name": "AnalysisCharts",
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "_IssueQueryModal-Cble-81H.js": {
+    "file": "assets/IssueQueryModal-Cble-81H.js",
+    "name": "IssueQueryModal",
+    "imports": [
+      "src/main.tsx",
+      "_AnalysisCharts-CIPreHAl.js",
+      "_analysisHelpers-3cBOSwZO.js",
+      "_Toast-Cw93czdy.js",
+      "_index-CwV_uvtp.js"
+    ]
+  },
+  "_MultiSelect-DDVd6pnR.js": {
+    "file": "assets/MultiSelect-DDVd6pnR.js",
+    "name": "MultiSelect",
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "_Toast-Cw93czdy.js": {
+    "file": "assets/Toast-Cw93czdy.js",
+    "name": "Toast"
+  },
+  "_analysisHelpers-3cBOSwZO.js": {
+    "file": "assets/analysisHelpers-3cBOSwZO.js",
+    "name": "analysisHelpers",
+    "imports": [
+      "src/main.tsx",
+      "_AnalysisCharts-CIPreHAl.js"
+    ]
+  },
+  "_index-CwV_uvtp.js": {
+    "file": "assets/index-CwV_uvtp.js",
+    "name": "index",
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "_useAssignmentNaming-DH7fPUiI.js": {
+    "file": "assets/useAssignmentNaming-DH7fPUiI.js",
+    "name": "useAssignmentNaming",
+    "imports": [
+      "src/main.tsx",
+      "_index-CwV_uvtp.js",
+      "_Toast-Cw93czdy.js"
+    ]
+  },
+  "src/features/cron-graph/CronGraphCanvas.tsx": {
+    "file": "assets/CronGraphCanvas-RK6FDRfw.js",
+    "name": "CronGraphCanvas",
+    "src": "src/features/cron-graph/CronGraphCanvas.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_index-CwV_uvtp.js"
+    ],
+    "css": [
+      "assets/CronGraphCanvas-BnuhLJ6X.css"
+    ]
+  },
+  "src/main.tsx": {
+    "file": "assets/main-N1lhxk2D.js",
+    "name": "main",
+    "src": "src/main.tsx",
+    "isEntry": true,
+    "dynamicImports": [
+      "src/pages/DailyCronPage.tsx",
+      "src/pages/RunsManagerIsland.tsx",
+      "src/pages/VersionMetricsPage.tsx",
+      "src/pages/VersionDatasetsPage.tsx",
+      "src/pages/LabelingSummaryPage.tsx",
+      "src/pages/ReviewAnalysisPage.tsx",
+      "src/pages/RunComparisonPage.tsx",
+      "src/pages/TrailHistoryPage.tsx",
+      "src/pages/RdResultsPage.tsx",
+      "src/pages/BatchPredictionPage.tsx",
+      "src/pages/IntentSummaryPage.tsx",
+      "src/pages/IntentExperimentsPage.tsx",
+      "src/pages/TrailUpdatePage.tsx",
+      "src/pages/CampaignsPage.tsx",
+      "src/pages/IntentLabelingPage.tsx",
+      "src/pages/ReviewAssignmentsPage.tsx",
+      "src/pages/LabelingNewTaskPage.tsx",
+      "src/pages/ReviewGalleryIsland.tsx",
+      "src/pages/CaseLabelingGalleryIsland.tsx"
+    ],
+    "css": [
+      "assets/main-DEkNnvS1.css"
+    ]
+  },
+  "src/pages/BatchPredictionPage.tsx": {
+    "file": "assets/BatchPredictionPage-CsR79NKN.js",
+    "name": "BatchPredictionPage",
+    "src": "src/pages/BatchPredictionPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "src/pages/CampaignsPage.tsx": {
+    "file": "assets/CampaignsPage-C5Jrvj51.js",
+    "name": "CampaignsPage",
+    "src": "src/pages/CampaignsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_AnalysisCharts-CIPreHAl.js"
+    ]
+  },
+  "src/pages/CaseLabelingGalleryIsland.tsx": {
+    "file": "assets/CaseLabelingGalleryIsland-Dtp6Y6hw.js",
+    "name": "CaseLabelingGalleryIsland",
+    "src": "src/pages/CaseLabelingGalleryIsland.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_MultiSelect-DDVd6pnR.js",
+      "_AnalysisCharts-CIPreHAl.js",
+      "_IssueQueryModal-Cble-81H.js",
+      "_Toast-Cw93czdy.js",
+      "_analysisHelpers-3cBOSwZO.js",
+      "_index-CwV_uvtp.js"
+    ]
+  },
+  "src/pages/DailyCronPage.tsx": {
+    "file": "assets/DailyCronPage-BGJrgWl1.js",
+    "name": "DailyCronPage",
+    "src": "src/pages/DailyCronPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ],
+    "dynamicImports": [
+      "src/features/cron-graph/CronGraphCanvas.tsx"
+    ]
+  },
+  "src/pages/IntentExperimentsPage.tsx": {
+    "file": "assets/IntentExperimentsPage-DY01GB2S.js",
+    "name": "IntentExperimentsPage",
+    "src": "src/pages/IntentExperimentsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_index-CwV_uvtp.js",
+      "_MultiSelect-DDVd6pnR.js"
+    ]
+  },
+  "src/pages/IntentLabelingPage.tsx": {
+    "file": "assets/IntentLabelingPage-zCt-Qgs_.js",
+    "name": "IntentLabelingPage",
+    "src": "src/pages/IntentLabelingPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_MultiSelect-DDVd6pnR.js"
+    ]
+  },
+  "src/pages/IntentSummaryPage.tsx": {
+    "file": "assets/IntentSummaryPage-Ct_4qFbR.js",
+    "name": "IntentSummaryPage",
+    "src": "src/pages/IntentSummaryPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_index-CwV_uvtp.js",
+      "_MultiSelect-DDVd6pnR.js"
+    ]
+  },
+  "src/pages/LabelingNewTaskPage.tsx": {
+    "file": "assets/LabelingNewTaskPage-DpOPk2zn.js",
+    "name": "LabelingNewTaskPage",
+    "src": "src/pages/LabelingNewTaskPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_useAssignmentNaming-DH7fPUiI.js",
+      "_Toast-Cw93czdy.js",
+      "_index-CwV_uvtp.js"
+    ]
+  },
+  "src/pages/LabelingSummaryPage.tsx": {
+    "file": "assets/LabelingSummaryPage-T6k0Xc1W.js",
+    "name": "LabelingSummaryPage",
+    "src": "src/pages/LabelingSummaryPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_AnalysisCharts-CIPreHAl.js",
+      "_MultiSelect-DDVd6pnR.js",
+      "_analysisHelpers-3cBOSwZO.js"
+    ]
+  },
+  "src/pages/RdResultsPage.tsx": {
+    "file": "assets/RdResultsPage-CO7CHaPu.js",
+    "name": "RdResultsPage",
+    "src": "src/pages/RdResultsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "src/pages/ReviewAnalysisPage.tsx": {
+    "file": "assets/ReviewAnalysisPage-Bw8QEALH.js",
+    "name": "ReviewAnalysisPage",
+    "src": "src/pages/ReviewAnalysisPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_AnalysisCharts-CIPreHAl.js",
+      "_MultiSelect-DDVd6pnR.js",
+      "_analysisHelpers-3cBOSwZO.js"
+    ]
+  },
+  "src/pages/ReviewAssignmentsPage.tsx": {
+    "file": "assets/ReviewAssignmentsPage-BWiaCjtM.js",
+    "name": "ReviewAssignmentsPage",
+    "src": "src/pages/ReviewAssignmentsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_useAssignmentNaming-DH7fPUiI.js",
+      "_Toast-Cw93czdy.js",
+      "_index-CwV_uvtp.js"
+    ]
+  },
+  "src/pages/ReviewGalleryIsland.tsx": {
+    "file": "assets/ReviewGalleryIsland-D1yjV1VT.js",
+    "name": "ReviewGalleryIsland",
+    "src": "src/pages/ReviewGalleryIsland.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_MultiSelect-DDVd6pnR.js",
+      "_AnalysisCharts-CIPreHAl.js",
+      "_IssueQueryModal-Cble-81H.js",
+      "_Toast-Cw93czdy.js",
+      "_analysisHelpers-3cBOSwZO.js",
+      "_index-CwV_uvtp.js"
+    ]
+  },
+  "src/pages/RunComparisonPage.tsx": {
+    "file": "assets/RunComparisonPage-ClrIvcU_.js",
+    "name": "RunComparisonPage",
+    "src": "src/pages/RunComparisonPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_index-CwV_uvtp.js"
+    ]
+  },
+  "src/pages/RunsManagerIsland.tsx": {
+    "file": "assets/RunsManagerIsland-DVTCZN-9.js",
+    "name": "RunsManagerIsland",
+    "src": "src/pages/RunsManagerIsland.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "src/pages/TrailHistoryPage.tsx": {
+    "file": "assets/TrailHistoryPage-CcXzM3I5.js",
+    "name": "TrailHistoryPage",
+    "src": "src/pages/TrailHistoryPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_index-CwV_uvtp.js"
+    ]
+  },
+  "src/pages/TrailUpdatePage.tsx": {
+    "file": "assets/TrailUpdatePage-CJu0_QLP.js",
+    "name": "TrailUpdatePage",
+    "src": "src/pages/TrailUpdatePage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_index-CwV_uvtp.js",
+      "_MultiSelect-DDVd6pnR.js"
+    ]
+  },
+  "src/pages/VersionDatasetsPage.tsx": {
+    "file": "assets/VersionDatasetsPage-BnJAaRJl.js",
+    "name": "VersionDatasetsPage",
+    "src": "src/pages/VersionDatasetsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx"
+    ]
+  },
+  "src/pages/VersionMetricsPage.tsx": {
+    "file": "assets/VersionMetricsPage-28-AQxfp.js",
+    "name": "VersionMetricsPage",
+    "src": "src/pages/VersionMetricsPage.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "src/main.tsx",
+      "_MultiSelect-DDVd6pnR.js"
+    ]
+  }
+}

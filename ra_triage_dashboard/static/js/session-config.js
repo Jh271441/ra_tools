@@ -122,8 +122,14 @@ function renderSession() {
     if (intentLabelingNav) intentLabelingNav.hidden = !canViewIntent;
     const intentExperimentsNav = $("#intentExperimentsNavButton");
     if (intentExperimentsNav) intentExperimentsNav.hidden = !canViewIntent;
-    $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
-    $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
+    const intentExpReactOwned = typeof window !== "undefined" && (
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")
+    );
+    if (!intentExpReactOwned) {
+      $("#intentExperimentForm")?.closest(".intent-experiment-create")?.classList.toggle("hidden", !state.session.can_manage_intent);
+      $("#intentExperimentsPage")?.classList.toggle("is-readonly", canViewIntent && !state.session.can_manage_intent);
+    }
     const intentSummaryNav = $("#intentSummaryNavButton");
     if (intentSummaryNav) intentSummaryNav.hidden = !canViewIntent;
     if (canViewIntent && typeof restoreSidebarNavGroups === "function") {
@@ -156,6 +162,13 @@ function renderSession() {
   if (typeof renderGtSyncStatus === "function") renderGtSyncStatus();
   if (typeof renderVersionMetrics === "function") renderVersionMetrics();
   if (typeof syncReviewWorkflowMode === "function") syncReviewWorkflowMode(state.selectedCase);
+  if (typeof window !== "undefined") {
+    window.__RA_TRIAGE_STATE__ = state;
+    window.__RA_TRIAGE_SESSION__ = state.session ? { ...state.session } : null;
+    if (window.__RA_REACT_WORKBENCH__?.notifySync) {
+      window.__RA_REACT_WORKBENCH__.notifySync();
+    }
+  }
 }
 
 async function loadSession() {
@@ -440,6 +453,7 @@ function renderLabelGtFilter(root, { selected = [], onChange = null, labeling = 
 }
 
 function renderAnalysisCatalogFilters() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) return;
   const onChange = () => scheduleAnalysisFilterReload();
   renderAnalysisWorkAgreementPicker(state.reviewAnalysis.workAgreement || "all");
   renderAnalysisCommentStatePicker();
@@ -524,6 +538,10 @@ function renderAnalysisCatalogFilters() {
 }
 
 function renderAccessUsers({preserveDrafts=false}={}) {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   const drafts=preserveDrafts?new Map([...document.querySelectorAll("[data-access-user]")].map(row=>[row.dataset.accessUser,{role:row.querySelector("[data-access-role]").value,intent_permission:row.querySelector("[data-intent-permission]").value,annotation_role:row.querySelector("[data-annotation-role]").value}])):new Map();
   const target = $("#accessUserList");
   if (!target) return;
@@ -551,6 +569,10 @@ async function loadAccessUsers() {
 }
 
 function renderMentionUsers() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
+    window.__RA_REACT_WORKBENCH__?.notifySync?.();
+    return;
+  }
   const target = $("#mentionUserList");
   if (!target) return;
   if (!state.mentionUsers.length) {
@@ -779,5 +801,6 @@ async function loadOverview() {
   const data = await api(`/api/overview${query}`);
   if (requestSeq !== overviewRequestSeq || runId !== state.selectedRunId
       || baselines !== selectedBaselineQueryValue()) return;
+  state.overviewScopeKey = `${baselines}|${runId || ""}`;
   renderOverview(data);
 }

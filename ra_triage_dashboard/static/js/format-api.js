@@ -323,6 +323,7 @@ async function setBaselineScopes(
   state.casePage = 1;
   state.clusterKey = "";
   state.reviewIssueIds = [];
+  state.reviewQueueStale = true;
   state.reviewAnalysis.data = null;
   state.caseListRequestSeq += 1;
   state.caseRequestSeq += 1;
@@ -331,7 +332,23 @@ async function setBaselineScopes(
     clearDetail({ showGallery: state.activePage === "review" });
   }
   renderBaselinePicker();
-  if (!skipHistory && typeof pageUrl === "function") {
+  const activeReactOwned =
+    typeof window !== "undefined"
+    && ["labeling-summary", "analysis"].includes(state.activePage)
+    && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.(state.activePage)
+      || window.__RA_REACT_OWNED_PAGES__?.includes?.(state.activePage)
+    );
+  if (!skipHistory && activeReactOwned) {
+    const parsedUrl = new URL(window.location.href);
+    if (next.length) parsedUrl.searchParams.set("baselines", next.join(","));
+    else parsedUrl.searchParams.delete("baselines");
+    window.history.replaceState(
+      window.history.state || {},
+      "",
+      `${parsedUrl.pathname}${parsedUrl.search}`,
+    );
+  } else if (!skipHistory && typeof pageUrl === "function") {
     const routeOptions = state.activePage === "campaigns"
       && typeof campaignRouteOptions === "function"
       ? campaignRouteOptions()
@@ -343,27 +360,49 @@ async function setBaselineScopes(
     });
     window.history.replaceState(window.history.state || {}, "", nextUrl);
   }
+  if (typeof window !== "undefined" && window.__RA_REACT_WORKBENCH__?.notifySync) {
+    window.__RA_REACT_WORKBENCH__.notifySync();
+  }
   const pageContext = capturePageContext();
   try {
     await loadConfig();
     if (!isPageContextCurrent(pageContext)) return;
-    if (state.activePage === "rd-results") { await loadRdResults(); return; }
+    if (state.activePage === "rd-results") {
+      if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results")) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("rd-results");
+        await loadOverview().catch(() => {});
+      } else {
+        await Promise.all([loadRdResults(), loadOverview().catch(() => {})]);
+      }
+      return;
+    }
     if (state.activePage === "review-assignments") {
-      if (typeof refreshWorkSplitCreatorForDataset === "function") await refreshWorkSplitCreatorForDataset();
+      void loadOverview().catch(() => {});
+      if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments")) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("review-assignments");
+      } else if (typeof refreshWorkSplitCreatorForDataset === "function") {
+        await refreshWorkSplitCreatorForDataset();
+      }
       return;
     }
     if (state.activePage === "labeling-summary") {
-      await loadLabelingSummary();
+      await Promise.all([loadLabelingSummary(), loadOverview().catch(() => {})]);
       return;
     }
     if (state.activePage === "labeling-new-task") {
-      await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks(),
-        loadCaseLabelingCases({ page: 1, persistRoute: false })]);
-      if (isPageContextCurrent(pageContext)) queueCreationGroupPreview("labelingTask");
+      void loadOverview().catch(() => {});
+      if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task")) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling-new-task");
+      } else {
+        await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks(),
+          loadCaseLabelingCases({ page: 1, persistRoute: false })]);
+        if (isPageContextCurrent(pageContext)) queueCreationGroupPreview("labelingTask");
+      }
       return;
     }
     if (state.activePage === "labeling") {
       state.selectedRunId = "";
+      void loadOverview().catch(() => {});
       await enterCaseLabeling({ route: parsePageRoute() });
       return;
     }
@@ -394,9 +433,27 @@ async function setBaselineScopes(
     } else if (state.activePage === "trail-update") {
       await loadTrailAttributePreview(true);
     } else if (state.activePage === "comparison") {
-      state.runComparison.page = 1;
-      renderRunComparisonSelectors({ repairCoverage: true });
-      await loadRunComparison();
+      if (
+        typeof window !== "undefined" &&
+        (window.__RA_REACT_WORKBENCH__?.ownsPage?.("comparison") ||
+          window.__RA_REACT_OWNED_PAGES__?.includes?.("comparison"))
+      ) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("comparison");
+      } else {
+        state.runComparison.page = 1;
+        renderRunComparisonSelectors({ repairCoverage: true });
+        await loadRunComparison();
+      }
+    } else if (state.activePage === "run-collections") {
+      if (
+        typeof window !== "undefined" &&
+        (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") ||
+          window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))
+      ) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("run-collections");
+      } else if (typeof loadRunCollectionsWorkbench === "function") {
+        await loadRunCollectionsWorkbench();
+      }
     }
   } catch (error) {
     showToast(error.message || String(error), true);
@@ -814,17 +871,26 @@ async function refreshChangedDataNow() {
     ? reviewerFilterSelections()
     : undefined;
   if (state.activePage === "review") {
+    const reviewOwned = typeof window !== "undefined" && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+    );
     await Promise.all([
       loadConfig(),
       loadRuns({ preserveEmpty: !state.selectedRunId }),
       loadOverview(),
-      loadCases({ keepSelection: true, page: state.casePage }),
-      loadClusters(),
-      loadReviewers(reviewerSelections),
-      typeof loadWorkAssignees === "function"
-        ? loadWorkAssignees()
-        : Promise.resolve(),
+      ...(reviewOwned ? [] : [
+        loadCases({ keepSelection: true, page: state.casePage }),
+        loadClusters(),
+        loadReviewers(reviewerSelections),
+        typeof loadWorkAssignees === "function"
+          ? loadWorkAssignees()
+          : Promise.resolve(),
+      ]),
     ]);
+    if (reviewOwned) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("review");
+    }
     if (!isPageContextCurrent(pageContext)) return;
     if (state.selectedId) {
       if (
@@ -844,13 +910,22 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "labeling") {
+    const labelingOwned = typeof window !== "undefined" && Boolean(
+      window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling") ||
+      window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling")
+    );
     await Promise.all([
       loadConfig(),
-      loadCaseLabelingTasks(),
-      // A background list refresh must not clear the selected detail's URL:
-      // deferred Trail reads use that route to reject obsolete responses.
-      loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false }),
+      ...(labelingOwned ? [] : [
+        loadCaseLabelingTasks(),
+        // A background list refresh must not clear the selected detail's URL:
+        // deferred Trail reads use that route to reject obsolete responses.
+        loadCaseLabelingCases({ page: state.caseLabeling.page, persistRoute: false }),
+      ]),
     ]);
+    if (labelingOwned) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling");
+    }
     if (!isPageContextCurrent(pageContext)) return;
     if (state.caseLabeling.issueId) {
       if (state.caseLabeling.dirty) {
@@ -883,10 +958,38 @@ async function refreshChangedDataNow() {
       loadRuns({ preserveEmpty: true }),
       loadOverview(),
     ]);
-    if (state.session.is_admin) await loadRunComparison();
+    if (
+      typeof window !== "undefined" &&
+      (window.__RA_REACT_WORKBENCH__?.ownsPage?.("comparison") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("comparison"))
+    ) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("comparison");
+    } else if (state.session.is_admin) {
+      await loadRunComparison();
+    }
+    return;
+  }
+  if (state.activePage === "run-collections") {
+    await Promise.all([
+      loadRuns({ preserveEmpty: true }),
+      loadOverview(),
+    ]);
+    if (
+      typeof window !== "undefined" &&
+      (window.__RA_REACT_WORKBENCH__?.ownsPage?.("run-collections") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("run-collections"))
+    ) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("run-collections");
+    } else if (typeof loadRunCollectionsWorkbench === "function") {
+      await loadRunCollectionsWorkbench();
+    }
     return;
   }
   if (state.activePage === "review-assignments") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("review-assignments");
+      return;
+    }
     await loadReviewAssignments({
       force: true,
       splitId: state.reviewAssignments?.selectedSplitId || "",
@@ -894,6 +997,10 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "labeling-new-task") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling-new-task");
+      return;
+    }
     // Collaboration updates must not reset the in-progress assignment form.
     await Promise.all([loadCaseLabelingTasks(), loadLabelingCombinedTasks()]);
     return;
@@ -913,10 +1020,19 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "prediction") {
-    await Promise.all([loadPredictionBatches(), loadOverview()]);
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("prediction");
+      await loadOverview().catch(() => {});
+    } else {
+      await Promise.all([loadPredictionBatches(), loadOverview()]);
+    }
     return;
   }
   if (state.activePage === "intent") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent");
+      return;
+    }
     const intent = state.intentLabeling;
     if (!intent.datasetId) return;
     const selected = [...(intent.selectedAssignees || [])];
@@ -933,6 +1049,10 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "intent-experiments") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-experiments");
+      return;
+    }
     if (!intentAvailableDatasets().length) {
       renderIntentExperimentMembers();
       renderIntentExperiments();
@@ -944,6 +1064,10 @@ async function refreshChangedDataNow() {
     return;
   }
   if (state.activePage === "intent-summary") {
+    if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary")) {
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-summary");
+      return;
+    }
     await loadIntentSummary({ datasetIds: state.intentLabeling.summaryDatasetIds, force: true });
     return;
   }

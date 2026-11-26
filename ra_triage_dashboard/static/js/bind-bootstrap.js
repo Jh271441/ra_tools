@@ -203,7 +203,12 @@ function bindEvents() {
       closeMobileSidebar();
     });
   });
-  $("#filterForm").addEventListener("submit", async (event) => {
+  const reviewOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review")
+    || window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+  if (!reviewOwned) {
+  $("#filterForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     // Filters auto-apply on change; form submit is treated as reset.
     await resetReviewFilters();
@@ -212,7 +217,13 @@ function bindEvents() {
     resetReviewFilters().catch((error) => showToast(error.message, true));
   });
   $("#searchInput")?.addEventListener("input", () => scheduleReviewFilterReload(280));
-  $("#reviewAnalysisFilterForm").addEventListener("submit", async (event) => {
+  }
+  const analysisOwned = typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis")
+    || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis")
+  );
+  if (!analysisOwned) {
+  $("#reviewAnalysisFilterForm")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     state.reviewAnalysis.page = 1;
     try {
@@ -221,7 +232,7 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#analysisRunFilter").addEventListener("change", async () => {
+  $("#analysisRunFilter")?.addEventListener("change", async () => {
     const runId = $("#analysisRunFilter").value;
     if (runId !== state.selectedRunId) {
       state.reviewAnalysis.workSplitId = "";
@@ -253,9 +264,11 @@ function bindEvents() {
   } else if (typeof bindAnalysisComparisonPicker === "function") {
     bindAnalysisComparisonPicker();
   }
+  }
   if (typeof bindTrailAttributeUpdateEvents === "function") {
     bindTrailAttributeUpdateEvents();
   }
+  if (!analysisOwned) {
   $("#analysisSearchInput")?.addEventListener("input", () => {
     scheduleAnalysisFilterReload(220);
   });
@@ -264,6 +277,7 @@ function bindEvents() {
   });
   $("#analysisCommentSearchInput")?.addEventListener("input", () => scheduleAnalysisFilterReload(220));
   $("#analysisCommentStateFilter")?.addEventListener("change", () => scheduleAnalysisFilterReload(0));
+  }
   document.addEventListener("click", () => closeAllMultiFilters());
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -287,7 +301,8 @@ function bindEvents() {
     true
   );
   window.addEventListener("resize", () => closeAllMultiFilters());
-  $("#resetReviewAnalysisButton").addEventListener("click", async () => {
+  if (!analysisOwned) {
+  $("#resetReviewAnalysisButton")?.addEventListener("click", async () => {
     $("#analysisRunFilter").value = "";
     setAnalysisComparisonStatus("all", { hasRun: false });
     [
@@ -326,17 +341,17 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  $("#exportReviewAnalysisCsvButton").addEventListener("click", () => downloadReviewAnalysis("csv"));
+  $("#exportReviewAnalysisCsvButton")?.addEventListener("click", () => downloadReviewAnalysis("csv"));
   $("#analysisWorkAgreementFilter")?.addEventListener("change", () => {
     state.reviewAnalysis.workAgreement = $("#analysisWorkAgreementFilter").value || "all";
     scheduleAnalysisFilterReload(0);
   });
-  $("#exportReviewAnalysisXlsxButton").addEventListener("click", () => downloadReviewAnalysis("xlsx"));
-  $("#exportTrailExpectedOutputButton").addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
-  $("#analysisPagePrevious").addEventListener("click", () => {
+  $("#exportReviewAnalysisXlsxButton")?.addEventListener("click", () => downloadReviewAnalysis("xlsx"));
+  $("#exportTrailExpectedOutputButton")?.addEventListener("click", () => downloadReviewAnalysis("trail_xlsx"));
+  $("#analysisPagePrevious")?.addEventListener("click", () => {
     changeAnalysisPage(-1).catch((error) => showToast(error.message, true));
   });
-  $("#analysisPageNext").addEventListener("click", () => {
+  $("#analysisPageNext")?.addEventListener("click", () => {
     changeAnalysisPage(1).catch((error) => showToast(error.message, true));
   });
   const analysisPageJump = $("#analysisPageJump");
@@ -362,7 +377,9 @@ function bindEvents() {
   $("#analysisPageSize")?.addEventListener("change", (event) => {
     changeAnalysisPageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
-  $("#modelRunFilter").addEventListener("change", async () => {
+  }
+  if (!reviewOwned) {
+  $("#modelRunFilter")?.addEventListener("change", async () => {
     const previousRunId = state.selectedRunId;
     state.selectedRunId = $("#modelRunFilter").value;
     if (state.selectedRunId !== previousRunId) {
@@ -431,9 +448,10 @@ function bindEvents() {
   casePageJump?.addEventListener("focus", () => {
     window.requestAnimationFrame(() => casePageJump.select());
   });
-  $("#casePageSize").addEventListener("change", (event) => {
+  $("#casePageSize")?.addEventListener("change", (event) => {
     changeCasePageSize(event.target.value).catch((error) => showToast(error.message, true));
   });
+  }
   $("#refreshButton").addEventListener("click", async (event) => {
     if (state.activePage === "rd-results") { await loadRdResults(); return; }
     const pageContext = capturePageContext();
@@ -457,20 +475,28 @@ function bindEvents() {
         return;
       }
       if (state.activePage === "intent-experiments") {
-        await loadIntentExperimentAdmin({
-          datasetId: state.intentLabeling.experimentDatasetId,
-          datasetIds: state.intentLabeling.experimentDatasetIds,
-          force: true,
-        });
+        if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments")) {
+          window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-experiments");
+        } else {
+          await loadIntentExperimentAdmin({
+            datasetId: state.intentLabeling.experimentDatasetId,
+            datasetIds: state.intentLabeling.experimentDatasetIds,
+            force: true,
+          });
+        }
         showToast(t("toast.page_refreshed"));
         return;
       }
       if (state.activePage === "intent-summary") {
-        await loadIntentSummary({
-          datasetId: state.intentLabeling.summaryDatasetId,
-          datasetIds: state.intentLabeling.summaryDatasetIds,
-          force: true,
-        });
+        if (window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary")) {
+          window.__RA_REACT_WORKBENCH__?.refreshPage?.("intent-summary");
+        } else {
+          await loadIntentSummary({
+            datasetId: state.intentLabeling.summaryDatasetId,
+            datasetIds: state.intentLabeling.summaryDatasetIds,
+            force: true,
+          });
+        }
         showToast(t("toast.page_refreshed"));
         return;
       }
@@ -486,8 +512,28 @@ function bindEvents() {
         await loadDailyCron();
         return;
       }
+      if (state.activePage === "labeling-summary" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) {
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling-summary");
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "analysis" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
+        await loadOverview();
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("analysis");
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
+      if (state.activePage === "prediction" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+        await loadOverview().catch(() => {});
+        window.__RA_REACT_WORKBENCH__?.refreshPage?.("prediction");
+        showToast(t("toast.page_refreshed"));
+        return;
+      }
       await refreshAll();
       if (!isPageContextCurrent(pageContext)) return;
+      if (window.__RA_REACT_WORKBENCH__?.ownsPage?.(state.activePage)) {
+        window.__RA_REACT_WORKBENCH__.refreshPage?.(state.activePage);
+      }
       if (state.activePage === "analysis") {
         await loadReviewReasonAnalysis();
       } else if (state.selectedId) {
@@ -498,24 +544,28 @@ function bindEvents() {
       showToast(error.message, true);
     }
   });
-  if (typeof bindCronGraphEvents === "function") bindCronGraphEvents();
-  $("#dailyCronRefresh")?.addEventListener("click", () => loadDailyCron());
-  $("#dailyCronSearch")?.addEventListener("input", () => renderDailyCronJobs());
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) {
+    if (typeof bindCronGraphEvents === "function") bindCronGraphEvents();
+    $("#dailyCronRefresh")?.addEventListener("click", () => loadDailyCron());
+    $("#dailyCronSearch")?.addEventListener("input", () => renderDailyCronJobs());
+  }
   $("#gtSyncButton")?.addEventListener("click", () => {
     refreshAuthoritativeGt().catch((error) => showToast(error.message, true));
   });
-  $("#refreshSystemStatusButton").addEventListener("click", async () => {
-    const button = $("#refreshSystemStatusButton");
-    button.disabled = true;
-    try {
-      await loadStatus();
-      showToast(t("toast.status_refreshed"));
-    } catch (error) {
-      showToast(error.message, true);
-    } finally {
-      button.disabled = false;
-    }
-  });
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
+    $("#refreshSystemStatusButton")?.addEventListener("click", async () => {
+      const button = $("#refreshSystemStatusButton");
+      button.disabled = true;
+      try {
+        await loadStatus();
+        showToast(t("toast.status_refreshed"));
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
   $("#checkTrailButton").addEventListener("click", () => syncTrail("preview"));
   $("#syncTrailButton").addEventListener("click", () => syncTrail("create"));
   $("#runManagerImportButton").addEventListener("click", () => {
@@ -527,77 +577,82 @@ function bindEvents() {
   $("#openTrailImportButton").addEventListener("click", () => {
     activateRunSourceTab("trail");
   });
-  $("#reviewUploadModelButton").addEventListener("click", () => openRunImport("model"));
-  $("#accessUserForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = $("#accessUserName");
-    const username = String(input.value || "").trim().toLowerCase();
-    if (!username) return showToast(t("toast.enter_username"), true);
-    const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
-    submit.disabled = true;
-    try {
-      await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value, $("#accessAnnotationRole").value);
-      input.value = "";
-      showToast(t("toast.access_saved"));
-    } catch (error) {
-      showToast(error.message, true);
-    } finally {
-      submit.disabled = false;
-    }
-  });
-  $("#accessUserList").addEventListener("click", async (event) => {
-    const row = event.target.closest("[data-access-user]");
-    if (!row) return;
-    const username = row.dataset.accessUser;
-    if (event.target.closest("[data-save-access-user]")) {
+  if (!reviewOwned) {
+    $("#reviewUploadModelButton")?.addEventListener("click", () => openRunImport("model"));
+  }
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
+    $("#accessUserForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = $("#accessUserName");
+      const username = String(input.value || "").trim().toLowerCase();
+      if (!username) return showToast(t("toast.enter_username"), true);
+      const submit = event.submitter || event.currentTarget.querySelector("button[type='submit']");
+      submit.disabled = true;
       try {
-        await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value, row.querySelector("[data-annotation-role]").value);
-        showToast(t("toast.access_updated"));
-      } catch (error) { showToast(error.message, true); }
-    }
-    if (event.target.closest("[data-remove-access-user]")) {
-      if (!window.confirm(t("access.confirm_remove", { user: username }))) return;
-      try {
-        const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
-        acknowledgeLocalChange(result);
-        await loadAccessUsers();
-        showToast(t("toast.access_removed"));
-      } catch (error) { showToast(error.message, true); }
-    }
-  });
-  $("#mentionUserForm")?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const input = $("#mentionUserName");
-    const username = String(input?.value || "").trim().toLowerCase();
-    if (!username) return showToast("请输入 LDAP 用户名。", true);
-    try {
-      await saveMentionUser(username, true);
-      input.value = "";
-      showToast("可 @ 人员已保存。");
-    } catch (error) { showToast(error.message, true); }
-  });
-  $("#mentionUserList")?.addEventListener("click", async (event) => {
-    const row = event.target.closest("[data-mention-user]");
-    if (!row) return;
-    const username = row.dataset.mentionUser;
-    try {
-      if (event.target.closest("[data-save-mention-user]")) {
-        await saveMentionUser(username, row.querySelector("[data-mention-enabled]").checked);
-        showToast("@ 人员状态已更新。");
-      } else if (event.target.closest("[data-remove-mention-user]")) {
-        const result = await api(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" });
-        acknowledgeLocalChange(result);
-        await loadMentionUsers();
-        showToast("@ 人员已移除。");
+        await saveAccessUser(username, $("#accessUserRole").value, $("#accessIntentPermission").value, $("#accessAnnotationRole").value);
+        input.value = "";
+        showToast(t("toast.access_saved"));
+      } catch (error) {
+        showToast(error.message, true);
+      } finally {
+        submit.disabled = false;
       }
-    } catch (error) { showToast(error.message, true); }
-  });
+    });
+    $("#accessUserList")?.addEventListener("click", async (event) => {
+      const row = event.target.closest("[data-access-user]");
+      if (!row) return;
+      const username = row.dataset.accessUser;
+      if (event.target.closest("[data-save-access-user]")) {
+        try {
+          await saveAccessUser(username, row.querySelector("[data-access-role]").value, row.querySelector("[data-intent-permission]").value, row.querySelector("[data-annotation-role]").value);
+          showToast(t("toast.access_updated"));
+        } catch (error) { showToast(error.message, true); }
+      }
+      if (event.target.closest("[data-remove-access-user]")) {
+        if (!window.confirm(t("access.confirm_remove", { user: username }))) return;
+        try {
+          const result = await api(`/api/access-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+          acknowledgeLocalChange(result);
+          await loadAccessUsers();
+          showToast(t("toast.access_removed"));
+        } catch (error) { showToast(error.message, true); }
+      }
+    });
+    $("#mentionUserForm")?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const input = $("#mentionUserName");
+      const username = String(input?.value || "").trim().toLowerCase();
+      if (!username) return showToast("请输入 LDAP 用户名。", true);
+      try {
+        await saveMentionUser(username, true);
+        input.value = "";
+        showToast("可 @ 人员已保存。");
+      } catch (error) { showToast(error.message, true); }
+    });
+    $("#mentionUserList")?.addEventListener("click", async (event) => {
+      const row = event.target.closest("[data-mention-user]");
+      if (!row) return;
+      const username = row.dataset.mentionUser;
+      try {
+        if (event.target.closest("[data-save-mention-user]")) {
+          await saveMentionUser(username, row.querySelector("[data-mention-enabled]").checked);
+          showToast("@ 人员状态已更新。");
+        } else if (event.target.closest("[data-remove-mention-user]")) {
+          const result = await api(`/api/mention-users/${encodeURIComponent(username)}`, { method: "DELETE" });
+          acknowledgeLocalChange(result);
+          await loadMentionUsers();
+          showToast("@ 人员已移除。");
+        }
+      } catch (error) { showToast(error.message, true); }
+    });
+  }
   bindAnalysisDiscussionEditor();
   bindAnalysisDiscussionEnterSubmit();
   $("#analysisDiscussionDialog")?.addEventListener("close", closeAnalysisDiscussion);
   $("#analysisDiscussionForm")?.addEventListener("submit", saveAnalysisDiscussion);
+  if (!reviewOwned) {
   $("#exportFilteredIssuesButton")?.addEventListener("click", downloadFilteredReviewIssues);
-  $("#predictFilteredButton").addEventListener("click", () => {
+  $("#predictFilteredButton")?.addEventListener("click", () => {
     const limit = predictionBatchLimit();
     if (state.caseTotal > limit) {
       showToast(
@@ -618,86 +673,92 @@ function bindEvents() {
       "filtered"
     );
   });
-  $("#refreshRunsButton").addEventListener("click", async () => {
-    try {
-      await loadRuns();
-      await loadOverview();
-      showToast(t("toast.runs_refreshed"));
-    } catch (error) {
-      showToast(error.message, true);
-    }
-  });
-  $("#runPersonFilter").addEventListener("change", resetRunManagerPageAndRender);
-  $("#runKindFilter").addEventListener("change", resetRunManagerPageAndRender);
-  $("#runSearchInput").addEventListener("input", resetRunManagerPageAndRender);
-  $("#runPagePrevious")?.addEventListener("click", () => changeRunManagerPage(-1));
-  $("#runPageNext")?.addEventListener("click", () => changeRunManagerPage(1));
-  const runPageJump = $("#runPageJump");
-  const commitRunPageJump = () => jumpToRunManagerPage(runPageJump?.value);
-  $("#runPageJumpButton")?.addEventListener("click", commitRunPageJump);
-  runPageJump?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commitRunPageJump();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      renderRunManager();
-      runPageJump.blur();
-    }
-  });
-  runPageJump?.addEventListener("focus", () => {
-    window.requestAnimationFrame(() => runPageJump.select());
-  });
-  $("#runPageSize")?.addEventListener("change", (event) => {
-    changeRunManagerPageSize(event.target.value);
-  });
-  $("#batchRequesterFilter").addEventListener("change", () => {
-    loadPredictionBatches().catch((error) => showToast(error.message, true));
-  });
-  $("#batchStatusFilter").addEventListener("change", () => {
-    loadPredictionBatches().catch((error) => showToast(error.message, true));
-  });
-  ["#batchModelFilter", "#batchPromptFilter", "#batchInputFilter"].forEach((selector) => {
-    $(selector).addEventListener("change", () => {
+  }
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("runs-manager") || window.__RA_REACT_OWNED_PAGES__?.includes?.("runs-manager"))) {
+    $("#refreshRunsButton")?.addEventListener("click", async () => {
+      try {
+        await loadRuns();
+        await loadOverview();
+        showToast(t("toast.runs_refreshed"));
+      } catch (error) {
+        showToast(error.message, true);
+      }
+    });
+    $("#runPersonFilter")?.addEventListener("change", resetRunManagerPageAndRender);
+    $("#runKindFilter")?.addEventListener("change", resetRunManagerPageAndRender);
+    $("#runSearchInput")?.addEventListener("input", resetRunManagerPageAndRender);
+    $("#runPagePrevious")?.addEventListener("click", () => changeRunManagerPage(-1));
+    $("#runPageNext")?.addEventListener("click", () => changeRunManagerPage(1));
+    const runPageJump = $("#runPageJump");
+    const commitRunPageJump = () => jumpToRunManagerPage(runPageJump?.value);
+    $("#runPageJumpButton")?.addEventListener("click", commitRunPageJump);
+    runPageJump?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitRunPageJump();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        renderRunManager();
+        runPageJump.blur();
+      }
+    });
+    runPageJump?.addEventListener("focus", () => {
+      window.requestAnimationFrame(() => runPageJump.select());
+    });
+    $("#runPageSize")?.addEventListener("change", (event) => {
+      changeRunManagerPageSize(event.target.value);
+    });
+  }
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+    $("#batchRequesterFilter")?.addEventListener("change", () => {
       loadPredictionBatches().catch((error) => showToast(error.message, true));
     });
-  });
-  $("#refreshPredictionBatchesButton").addEventListener("click", () => {
-    loadPredictionBatches()
-      .then(() => showToast(t("toast.batch_refreshed")))
-      .catch((error) => showToast(error.message, true));
-  });
-  $("#refreshGatewayModelsButton").addEventListener("click", () => {
-    const button = $("#refreshGatewayModelsButton");
-    button.disabled = true;
-    loadGatewayModels({ refresh: true })
-      .then(() => showToast(t("toast.models_refreshed")))
-      .catch((error) => showToast(error.message, true))
-      .finally(() => {
-        button.disabled = false;
+    $("#batchStatusFilter")?.addEventListener("change", () => {
+      loadPredictionBatches().catch((error) => showToast(error.message, true));
+    });
+    ["#batchModelFilter", "#batchPromptFilter", "#batchInputFilter"].forEach((selector) => {
+      $(selector)?.addEventListener("change", () => {
+        loadPredictionBatches().catch((error) => showToast(error.message, true));
       });
-  });
-  $("#predictionModelSelect").addEventListener("change", () => {
-    state.selectedGatewayModelId = $("#predictionModelSelect").value;
-    renderGatewayModels();
-  });
-  $("#predictionPromptSelect").addEventListener("change", loadSelectedPromptTemplate);
-  $("#predictionPromptTemplate").addEventListener("input", updatePromptEditorSummary);
-  $("#predictionInputProfile").addEventListener("change", applyBatchInputPreset);
-  $("#predictionCameraPreset").addEventListener("change", applyCameraFramePreset);
-  $("#predictionFrameOffsets").addEventListener("input", () => {
-    syncCameraFramePreset();
-    renderBatchRuntimeSummary();
-  });
-  $("#predictionUseRaEvent").addEventListener("change", () => {
-    if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
-    renderBatchRuntimeSummary();
-  });
-  $("#predictionUseRaOptions").addEventListener("change", () => {
-    if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
-    renderBatchRuntimeSummary();
-  });
-  $("#predictionUseBev").addEventListener("change", renderBatchRuntimeSummary);
+    });
+    $("#refreshPredictionBatchesButton")?.addEventListener("click", () => {
+      loadPredictionBatches()
+        .then(() => showToast(t("toast.batch_refreshed")))
+        .catch((error) => showToast(error.message, true));
+    });
+    $("#refreshGatewayModelsButton")?.addEventListener("click", () => {
+      const button = $("#refreshGatewayModelsButton");
+      if (!button) return;
+      button.disabled = true;
+      loadGatewayModels({ refresh: true })
+        .then(() => showToast(t("toast.models_refreshed")))
+        .catch((error) => showToast(error.message, true))
+        .finally(() => {
+          button.disabled = false;
+        });
+    });
+    $("#predictionModelSelect")?.addEventListener("change", () => {
+      state.selectedGatewayModelId = $("#predictionModelSelect").value;
+      renderGatewayModels();
+    });
+    $("#predictionPromptSelect")?.addEventListener("change", loadSelectedPromptTemplate);
+    $("#predictionPromptTemplate")?.addEventListener("input", updatePromptEditorSummary);
+    $("#predictionInputProfile")?.addEventListener("change", applyBatchInputPreset);
+    $("#predictionCameraPreset")?.addEventListener("change", applyCameraFramePreset);
+    $("#predictionFrameOffsets")?.addEventListener("input", () => {
+      syncCameraFramePreset();
+      renderBatchRuntimeSummary();
+    });
+    $("#predictionUseRaEvent")?.addEventListener("change", () => {
+      if (!$("#predictionUseRaEvent").checked) $("#predictionUseRaOptions").checked = false;
+      renderBatchRuntimeSummary();
+    });
+    $("#predictionUseRaOptions")?.addEventListener("change", () => {
+      if ($("#predictionUseRaOptions").checked) $("#predictionUseRaEvent").checked = true;
+      renderBatchRuntimeSummary();
+    });
+    $("#predictionUseBev")?.addEventListener("change", renderBatchRuntimeSummary);
+  }
   $("#languageToggleButton").addEventListener("click", () => {
     applyUiLanguage(state.uiLanguage === "en" ? "zh" : "en");
   });
@@ -732,12 +793,14 @@ function bindEvents() {
   $("#copyImportExampleButton").addEventListener("click", () => copyImportExample().catch((error) => showToast(error.message, true)));
   $("#importForm").addEventListener("submit", submitImport);
   $("#autotriageImportForm").addEventListener("submit", submitAutoTriageImport);
-  $("#predictionBatchIssues").addEventListener("input", () => {
-    state.batchDraftSource = "";
-    updatePredictionBatchCount();
-    renderPredictionSourceSummary();
-  });
-  $("#predictionBatchForm").addEventListener("submit", submitPredictionBatch);
+  if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+    $("#predictionBatchIssues")?.addEventListener("input", () => {
+      state.batchDraftSource = "";
+      updatePredictionBatchCount();
+      renderPredictionSourceSummary();
+    });
+    $("#predictionBatchForm")?.addEventListener("submit", submitPredictionBatch);
+  }
   $("#sourcePreviewPrevious").addEventListener("click", () => {
     if (!state.sourcePreview.runId || state.sourcePreview.page <= 1) return;
     loadSourcePreviewPage(state.sourcePreview.runId, state.sourcePreview.page - 1).catch((error) => showToast(error.message, true));
@@ -957,7 +1020,7 @@ function bindEvents() {
         )
       : "all";
     state.selectedRunId = nextRunId;
-    $("#modelRunFilter").value = nextRunId;
+    if ($("#modelRunFilter")) $("#modelRunFilter").value = nextRunId;
     state.reviewComparisonStatus = nextComparisonStatus;
     setReviewComparisonStatus(nextComparisonStatus, {
       hasRun: Boolean(nextRunId),
@@ -1155,17 +1218,27 @@ async function bootstrap() {
     // now; keep catalog initialization for later SPA navigation in parallel.
     let independentPageResult = null;
     if (initialRoute.page === "version-metrics") {
-      independentPageResult = settleInitialRequests([loadVersionMetrics()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("version-metrics") || window.__RA_REACT_OWNED_PAGES__?.includes?.("version-metrics"))) {
+        independentPageResult = settleInitialRequests([loadVersionMetrics()], "页面");
+      }
     } else if (initialRoute.page === "status") {
-      independentPageResult = settleInitialRequests([loadStatus()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("status") || window.__RA_REACT_OWNED_PAGES__?.includes?.("status"))) {
+        independentPageResult = settleInitialRequests([loadStatus()], "页面");
+      }
     } else if (initialRoute.page === "rd-results") {
-      independentPageResult = settleInitialRequests([loadRdResults()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("rd-results") || window.__RA_REACT_OWNED_PAGES__?.includes?.("rd-results"))) {
+        independentPageResult = settleInitialRequests([loadRdResults()], "页面");
+      }
     } else if (initialRoute.page === "users") {
-      independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("users") || window.__RA_REACT_OWNED_PAGES__?.includes?.("users"))) {
+        independentPageResult = settleInitialRequests([loadAccessUsers(), loadMentionUsers()], "页面");
+      }
     } else if (initialRoute.page === "review-assignments") {
-      independentPageResult = settleInitialRequests([loadReviewAssignments({
-        splitId: initialRoute.reviewAssignmentSplitId,
-      })], "页面");
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) {
+        independentPageResult = settleInitialRequests([loadReviewAssignments({
+          splitId: initialRoute.reviewAssignmentSplitId,
+        })], "页面");
+      }
     }
     // Only Run-dependent views need the catalog before their first payload.
     // Other routes render their own data while the shared catalog initializes
@@ -1216,12 +1289,18 @@ async function bootstrap() {
     if (independentPageResult) {
       initialPageRequests.push(independentPageResult);
     } else if (initialRoute.page === "review" && !reviewTaskContextFailed) {
-      initialPageRequests.push(
-        { name: "Issue 图库", promise: loadCases({
-          keepSelection: Boolean(initialRoute.issue),
-          page: initialRoute.casePage,
-        }) }
+      const reviewReactOwned = typeof window !== "undefined" && Boolean(
+        window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+        window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
       );
+      if (!reviewReactOwned) {
+        initialPageRequests.push(
+          { name: "Issue 图库", promise: loadCases({
+            keepSelection: Boolean(initialRoute.issue),
+            page: initialRoute.casePage,
+          }) }
+        );
+      }
       if (initialRoute.issue) {
         initialDetailRequest = selectCase(initialRoute.issue, {
           updateRoute: false, videoDiscovery: initialVideoDiscovery,
@@ -1232,9 +1311,13 @@ async function bootstrap() {
     } else if (initialRoute.page === "daily-cron") {
       initialPageRequests.push(initialCronRequest || loadDailyCron());
     } else if (initialRoute.page === "trail-history") {
-      initialPageRequests.push(loadTrailHistory());
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("trail-history") || window.__RA_REACT_OWNED_PAGES__?.includes?.("trail-history"))) {
+        initialPageRequests.push(loadTrailHistory());
+      }
     } else if (initialRoute.page === "prediction") {
-      initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("prediction") || window.__RA_REACT_OWNED_PAGES__?.includes?.("prediction"))) {
+        initialPageRequests.push(loadPredictionConfig(), loadPredictionBatches());
+      }
     } else if (initialRoute.page === "comparison") {
       initialPageRequests.push(loadRunComparison({ historyMode: "" }));
     } else if (initialRoute.page === "run-collections") {
@@ -1242,36 +1325,48 @@ async function bootstrap() {
     } else if (initialRoute.page === "labeling") {
       initialPageRequests.push(enterCaseLabeling({ route: initialRoute }));
     } else if (initialRoute.page === "labeling-new-task") {
-      initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-new-task") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-new-task"))) {
+        initialPageRequests.push(enterLabelingNewTask({ route: initialRoute }));
+      }
     } else if (initialRoute.page === "review-assignments") {
-      initialPageRequests.push(loadReviewAssignments({
-        splitId: initialRoute.reviewAssignmentSplitId,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("review-assignments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review-assignments"))) {
+        initialPageRequests.push(loadReviewAssignments({
+          splitId: initialRoute.reviewAssignmentSplitId,
+        }));
+      }
     } else if (initialRoute.page === "labeling-summary") {
-      initialPageRequests.push(loadLabelingSummary());
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) {
+        initialPageRequests.push(loadLabelingSummary());
+      }
     } else if (initialRoute.page === "campaigns") {
-      initialPageRequests.push(loadCampaigns({
-        campaignId: initialRoute.campaignId,
-        purpose: initialRoute.campaignPurpose,
-        lifecycle: initialRoute.campaignLifecycle,
-        query: initialRoute.campaignQuery,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("campaigns") || window.__RA_REACT_OWNED_PAGES__?.includes?.("campaigns"))) {
+        initialPageRequests.push(loadCampaigns({
+          campaignId: initialRoute.campaignId,
+          purpose: initialRoute.campaignPurpose,
+          lifecycle: initialRoute.campaignLifecycle,
+          query: initialRoute.campaignQuery,
+        }));
+      }
     } else if (initialRoute.page === "intent") {
-      initialPageRequests.push(loadIntentLabeling({
-        datasetId: initialRoute.intentDatasetId,
-        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
-        caseId: initialRoute.intentCaseId,
-        offsetMs: initialRoute.intentOffsetMs,
-        assignees: initialRoute.intentAssignees,
-        experimentId: initialRoute.intentExperimentId,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent"))) {
+        initialPageRequests.push(loadIntentLabeling({
+          datasetId: initialRoute.intentDatasetId,
+          datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
+          caseId: initialRoute.intentCaseId,
+          offsetMs: initialRoute.intentOffsetMs,
+          assignees: initialRoute.intentAssignees,
+          experimentId: initialRoute.intentExperimentId,
+        }));
+      }
     } else if (initialRoute.page === "intent-experiments") {
-      initialPageRequests.push(loadIntentExperimentAdmin({
-        datasetId: initialRoute.intentDatasetId,
-        datasetIds: (initialRoute.intentDatasetIds || []).length
-          ? initialRoute.intentDatasetIds
-          : null,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-experiments") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-experiments"))) {
+        initialPageRequests.push(loadIntentExperimentAdmin({
+          datasetId: initialRoute.intentDatasetId,
+          datasetIds: (initialRoute.intentDatasetIds || []).length
+            ? initialRoute.intentDatasetIds
+            : null,
+        }));
+      }
     } else if (initialRoute.page === "intent-summary") {
       state.intentLabeling.summaryExperimentId = initialRoute.intentExperimentId || "";
       state.intentLabeling.summaryAssignees = initialRoute.intentSummaryOwners || [];
@@ -1279,12 +1374,14 @@ async function bootstrap() {
       state.intentLabeling.summaryPageSize = initialRoute.intentSummaryPageSize || 20;
       state.intentLabeling.summaryAxis = initialRoute.intentSummaryAxis || "all";
       state.intentLabeling.summaryCommentQuery = initialRoute.intentSummaryCommentQuery || "";
-      initialPageRequests.push(loadIntentSummary({
-        datasetId: initialRoute.intentDatasetId,
-        datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
-      }));
+      if (!(window.__RA_REACT_WORKBENCH__?.ownsPage?.("intent-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("intent-summary"))) {
+        initialPageRequests.push(loadIntentSummary({
+          datasetId: initialRoute.intentDatasetId,
+          datasetIds: (initialRoute.intentDatasetIds || []).length ? initialRoute.intentDatasetIds : null,
+        }));
+      }
     }
-    if (initialRoute.page === "analysis") {
+    if (initialRoute.page === "analysis" && !(window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis") || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis"))) {
       initialPageRequests.push(loadReviewReasonAnalysis());
     }
     const initialPageResults = settleInitialRequests(

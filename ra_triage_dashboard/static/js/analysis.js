@@ -19,7 +19,15 @@ function analysisExclusionLabel(value) {
   }[value] || uiText("全部（含问题排除）", "All (including shielded)");
 }
 
+function isAnalysisReactOwned() {
+  return typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("analysis")
+    || window.__RA_REACT_OWNED_PAGES__?.includes?.("analysis")
+  );
+}
+
 function renderAnalysisWorkAgreementPicker(selected = "") {
+  if (isAnalysisReactOwned()) return;
   const picker = $("#analysisWorkAgreementPicker");
   const value = selected || $("#analysisWorkAgreementFilter")?.value || "all";
   populateUiSelect(
@@ -36,6 +44,7 @@ function renderAnalysisWorkAgreementPicker(selected = "") {
 }
 
 function renderAnalysisCommentStatePicker(selected = "") {
+  if (isAnalysisReactOwned()) return;
   const picker = $("#analysisCommentStatePicker");
   const value = selected || $("#analysisCommentStateFilter")?.value || "all";
   populateUiSelect(picker, [
@@ -323,6 +332,7 @@ function renderAnalysisCases(data) {
 }
 
 function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
+  if (isAnalysisReactOwned()) return;
   const summary = data.summary || {};
   state.reviewAnalysis.page = Number(data.page || 1);
   $("#analysisReviewCount").textContent = summary.latest_reviews ?? 0;
@@ -357,6 +367,7 @@ function renderReviewReasonAnalysis(data, { animatePies = true } = {}) {
 }
 
 function paintAnalysisFromCache() {
+  if (isAnalysisReactOwned()) return false;
   const data = state.reviewAnalysis?.data;
   if (!data) return false;
   // A cached response may belong to a different history entry (for example,
@@ -377,6 +388,11 @@ function paintAnalysisFromCache() {
  * Used by sidebar navigation and popstate so tab switches stay snappy without blanking.
  */
 async function enterAnalysisPage({ includeOverview = false } = {}) {
+  if (isAnalysisReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("analysis");
+    if (includeOverview && typeof loadOverview === "function") await loadOverview();
+    return;
+  }
   if (!state.config) return;
   const painted = paintAnalysisFromCache();
   const loads = [loadReviewReasonAnalysis({ keepPainted: painted })];
@@ -385,6 +401,10 @@ async function enterAnalysisPage({ includeOverview = false } = {}) {
 }
 
 async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
+  if (isAnalysisReactOwned()) {
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("analysis");
+    return;
+  }
   const pageContext = capturePageContext();
   const requestSeq = ++state.reviewAnalysis.requestSeq;
   void loadAnalysisWorkSplits().catch(() => {

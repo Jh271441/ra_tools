@@ -284,6 +284,7 @@ function ensureCronGraphLibrary() {
 }
 
 async function renderDailyCronGraph() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) return;
   if (!dailyCronState.active) return;
   const root = $("#dailyCronGraph");
   if (!root) return;
@@ -351,6 +352,7 @@ function renderCronRunSelector() {
 }
 
 function bindCronGraphEvents() {
+  if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("daily-cron") || window.__RA_REACT_OWNED_PAGES__?.includes?.("daily-cron"))) return;
   $("#dailyCronRunDate")?.addEventListener("change", event => {
     const value = event.target.value;
     dailyCronState.selectedDay = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
@@ -428,4 +430,29 @@ function buildIncrementalCronGraph(v,definitionLane='') {
   if (definitionLane !== 'main') edges.push(edge('media-source','text-input',true),edge('text-input','text-export'),edge('text-export','text-verify'),edge('text-verify','text-index'),edge('text-export','text-recover',true),edge('text-recover','text-export',true),edge('text-verify','text-source',true),edge('text-source','text-index',true));
   if(definitionLane){lanes=lanes.filter(x=>x.id===definitionLane+'-lane'||definitionLane==='media'&&x.id==='text-lane');const ids=new Set(lanes.flatMap(x=>x.nodes.map(n=>n.id)));edges=edges.filter(x=>ids.has(x.source)&&ids.has(x.target));lanes.forEach(l=>l.nodes.forEach(n=>{n.data.status='definition';n.data.stateLabel=cronGraphStateLabel('definition');n.data.progress=null;}));}
   return {lanes,edges,selectedNode:dailyCronState.selectedNode||'',definition:Boolean(definitionLane),active,theme:state.colorTheme||'dark',ui:{minimap:uiText('流程缩略图','Workflow minimap'),loading:uiText('加载运行图…','Loading graph…'),error:uiText('运行图暂不可用','Graph unavailable')}};
+}
+
+if (typeof window !== "undefined") {
+  window.__RA_CRON_GRAPH_BRIDGE__ = {
+    ensureLibrary: ensureCronGraphLibrary,
+    buildModel: (
+      data,
+      {
+        selectedVersion = "",
+        selectedDay = "",
+        selectedNode = "",
+        error = false,
+        active = true,
+        definitionLane = "",
+      } = {}
+    ) => {
+      dailyCronState.data = data;
+      dailyCronState.selectedVersion = selectedVersion;
+      dailyCronState.selectedDay = selectedDay;
+      dailyCronState.selectedNode = selectedNode;
+      dailyCronState.error = Boolean(error);
+      dailyCronState.active = Boolean(active);
+      return buildDailyCronGraph(data, definitionLane);
+    },
+  };
 }

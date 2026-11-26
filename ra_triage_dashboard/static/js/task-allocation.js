@@ -711,6 +711,7 @@ async function saveTaskAllocationRemoval() {
 function bindTaskAllocationEditor() {
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-edit-task-allocation]");
-    if (button) openTaskAllocationEditor(button.dataset.editTaskAllocation, button);
+    if (!button || button.closest("[data-react-island]")) return;
+    openTaskAllocationEditor(button.dataset.editTaskAllocation, button);
   });
 }

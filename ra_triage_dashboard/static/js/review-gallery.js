@@ -3,6 +3,61 @@
  * Loaded as a classic script (shared global scope). Do not convert to
  * ES modules without auditing cross-file function/state dependencies.
  */
+function isReviewGalleryReactOwned() {
+  return typeof window !== "undefined" && Boolean(
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  );
+}
+
+function syncReviewGalleryState(snapshot = {}) {
+  if (!snapshot || typeof snapshot !== "object") return;
+  const previousRunId = state.selectedRunId;
+  if ("selectedRunId" in snapshot) state.selectedRunId = String(snapshot.selectedRunId || "");
+  if (Array.isArray(snapshot.modelRuns)) state.modelRuns = snapshot.modelRuns;
+  if ("reviewComparisonStatus" in snapshot) {
+    state.reviewComparisonStatus = String(snapshot.reviewComparisonStatus || "all");
+  }
+  if ("failureOnly" in snapshot) state.failureOnly = Boolean(snapshot.failureOnly);
+  if (Array.isArray(snapshot.reviewIssueIds)) state.reviewIssueIds = [...snapshot.reviewIssueIds];
+  if (Array.isArray(snapshot.reviewIssueTags)) state.reviewIssueTags = [...snapshot.reviewIssueTags];
+  if ("reviewTargetGroup" in snapshot) state.reviewTargetGroup = String(snapshot.reviewTargetGroup || "");
+  if ("reviewWorkSplitId" in snapshot) state.reviewWorkSplitId = String(snapshot.reviewWorkSplitId || "");
+  if ("reviewTaskView" in snapshot) state.reviewTaskView = String(snapshot.reviewTaskView || "");
+  if (Array.isArray(snapshot.reviewTaskProgress)) state.reviewTaskProgress = [...snapshot.reviewTaskProgress];
+  if ("reviewTaskContext" in snapshot) state.reviewTaskContext = snapshot.reviewTaskContext || null;
+  if ("reviewTaskContextError" in snapshot) state.reviewTaskContextError = snapshot.reviewTaskContextError || null;
+  if ("reviewWorkflowMode" in snapshot) {
+    state.reviewWorkflowMode = String(snapshot.reviewWorkflowMode || "model_review_and_case_label");
+  }
+  if ("clusterKey" in snapshot) state.clusterKey = String(snapshot.clusterKey || "");
+  if ("casePage" in snapshot) state.casePage = Math.max(1, Number(snapshot.casePage) || 1);
+  if ("casePageSize" in snapshot) {
+    state.casePageSize = CASE_PAGE_SIZES.includes(Number(snapshot.casePageSize))
+      ? Number(snapshot.casePageSize)
+      : DEFAULT_CASE_PAGE_SIZE;
+  }
+  if (Array.isArray(snapshot.cases)) state.cases = snapshot.cases;
+  if ("caseTotal" in snapshot) state.caseTotal = Number(snapshot.caseTotal || 0);
+  state._reactReviewFilters = {
+    search: String(snapshot.search || ""),
+    gtLabel: Array.isArray(snapshot.gtLabel) ? [...snapshot.gtLabel] : [],
+    modelLabel: Array.isArray(snapshot.modelLabel) ? [...snapshot.modelLabel] : [],
+    annotationAuthor: Array.isArray(snapshot.annotationAuthor) ? [...snapshot.annotationAuthor] : [],
+    reviewStatus: Array.isArray(snapshot.reviewStatus) ? [...snapshot.reviewStatus] : [],
+    labelStates: Array.isArray(snapshot.labelStates) ? [...snapshot.labelStates] : [],
+    gtRelations: Array.isArray(snapshot.gtRelations) ? [...snapshot.gtRelations] : [],
+    commentState: String(snapshot.commentState || "all"),
+    exclusion: String(snapshot.exclusion || "all"),
+    workAssignee: Array.isArray(snapshot.workAssignee) ? [...snapshot.workAssignee] : [],
+  };
+  renderCaseNavigation();
+  if (state.selectedRunId !== previousRunId) {
+    if (typeof renderActiveRun === "function") renderActiveRun();
+    if (typeof loadOverview === "function") void loadOverview().catch(() => {});
+  }
+}
+
 function reviewComparisonStatusForItem(item) {
   if (!state.selectedRunId) return "";
   const prediction = item?.prediction || {};
@@ -225,6 +280,7 @@ function totalCasePages() {
 }
 
 function renderCasePagination() {
+  if (isReviewGalleryReactOwned()) return;
   const totalPages = totalCasePages();
   const previous = $("#casePagePrevious");
   const next = $("#casePageNext");
@@ -457,6 +513,13 @@ function returnToReviewGallery() {
   }
   clearDetail({ showGallery: true });
   showPage("review", { historyMode: "replace", issue: "" });
+  if (isReviewGalleryReactOwned()) {
+    if (state.reviewQueueStale) {
+      state.reviewQueueStale = false;
+      window.__RA_REACT_WORKBENCH__?.refreshPage?.("review");
+    }
+    return;
+  }
   if (state.reviewQueueStale) {
     void loadCases({keepSelection:true, fresh:true, queueIds:confirmedReviewQueueIds()})
       .catch(error => showToast(error.message, true));
@@ -466,6 +529,10 @@ function returnToReviewGallery() {
 function renderCases(data) {
   state.cases = data.items || [];
   state.caseTotal = Number(data.total ?? state.cases.length);
+  if (isReviewGalleryReactOwned()) {
+    renderCaseNavigation();
+    return;
+  }
   $("#caseCount").textContent = state.caseTotal;
   updateFilteredPredictionButton();
   renderCasePagination();
@@ -838,36 +905,43 @@ async function loadCases({
   fresh = false,
   queueIds = null,
 } = {}) {
+  if (isReviewGalleryReactOwned() && !state.selectedId) {
+    state.casePage = Math.max(1, Number(page) || 1);
+    window.__RA_REACT_WORKBENCH__?.refreshPage?.("review");
+    return;
+  }
   const pageContext = capturePageContext();
   const requestSeq = ++state.caseListRequestSeq;
   cancelCaseListLoad();
   const controller = state.caseListController = new AbortController();
   state.casePage = Math.max(1, Number(page) || 1);
   const params = new URLSearchParams();
-  const search = $("#searchInput").value.trim();
-  const gtLabel = joinFilterList(getMultiFilterValues($("#gtFilter")));
-  const modelLabel = joinFilterList(getMultiFilterValues($("#annotationFilter")));
-  const annotationAuthor = joinFilterList(
-    typeof reviewerFilterSelection === "function"
-      ? reviewerFilterSelection("review")
-      : getMultiFilterValues($("#reviewerFilter"))
-  );
-  const reviewStatus = joinFilterList(
-    selectedModelReviewStatuses()
-  );
-  const labelState = joinFilterList(
-    selectedReviewLabelStates()
-  );
-  const workAssignee = joinFilterList(
-    typeof workAssigneeFilterSelection === "function"
-      ? workAssigneeFilterSelection()
-      : getMultiFilterValues($("#workAssigneeFilter"))
-  );
-  const exclusion =
-    typeof selectedReviewExclusionFilter === "function"
+  const rf = isReviewGalleryReactOwned() && state._reactReviewFilters ? state._reactReviewFilters : null;
+  const search = rf ? rf.search : ($("#searchInput")?.value.trim() || "");
+  const gtLabel = rf ? joinFilterList(rf.gtLabel) : joinFilterList(getMultiFilterValues($("#gtFilter")));
+  const modelLabel = rf ? joinFilterList(rf.modelLabel) : joinFilterList(getMultiFilterValues($("#annotationFilter")));
+  const annotationAuthor = rf
+    ? joinFilterList(rf.annotationAuthor)
+    : joinFilterList(
+        typeof reviewerFilterSelection === "function"
+          ? reviewerFilterSelection("review")
+          : getMultiFilterValues($("#reviewerFilter"))
+      );
+  const reviewStatus = rf ? joinFilterList(rf.reviewStatus) : joinFilterList(selectedModelReviewStatuses());
+  const labelState = rf ? joinFilterList(rf.labelStates) : joinFilterList(selectedReviewLabelStates());
+  const workAssignee = rf
+    ? joinFilterList(rf.workAssignee)
+    : joinFilterList(
+        typeof workAssigneeFilterSelection === "function"
+          ? workAssigneeFilterSelection()
+          : getMultiFilterValues($("#workAssigneeFilter"))
+      );
+  const exclusion = rf
+    ? rf.exclusion || "all"
+    : typeof selectedReviewExclusionFilter === "function"
       ? selectedReviewExclusionFilter()
       : "all";
-  const commentState = selectedReviewDiscussionFilter();
+  const commentState = rf ? rf.commentState || "all" : selectedReviewDiscussionFilter();
   const runFilter = $("#modelRunFilter");
   // During first paint the Run request and gallery request overlap.  A deep
   // link already owns ``state.selectedRunId``, but the native select has no
@@ -875,7 +949,7 @@ async function loadCases({
   // value erase the route Run; once options exist, the select is authoritative
   // and a deliberate "不叠加模型输出" choice still clears it normally.
   const runOptionsReady = Boolean(
-    runFilter && [...runFilter.options].some((option) => option.value)
+    !rf && runFilter && [...runFilter.options].some((option) => option.value)
   );
   if (runOptionsReady) {
     state.selectedRunId = runFilter.value;
@@ -890,7 +964,7 @@ async function loadCases({
   const taskProgress = joinFilterList(selectedCombinedTaskProgress());
   if (taskProgress) params.set('task_progress', taskProgress);
   if (labelState) params.set("label_state", labelState);
-  const gtRelations = joinFilterList(selectedReviewGtRelations());
+  const gtRelations = rf ? joinFilterList(rf.gtRelations) : joinFilterList(selectedReviewGtRelations());
   if (gtRelations) params.set("gt_relation", gtRelations);
   const issueTags = joinFilterList(selectedReviewIssueTags());
   if (issueTags) params.set("issue_tags", issueTags);

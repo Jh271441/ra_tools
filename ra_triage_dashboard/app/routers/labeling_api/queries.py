@@ -144,6 +144,7 @@ async def labeling_summary(
     request: Request,
     baselines: str = "",
     task_id: str = "",
+    target_group: str = "",
     q: str = "",
     issue_ids: str = "",
     issue_tags: str = "",
@@ -169,6 +170,7 @@ async def labeling_summary(
     selected_issue_ids = await asyncio.to_thread(
         restrict_version_issue_ids, baselines, request=request,
         issue_ids=normalized_issue_ids, task_id=task_id,
+        target_group=_as_text(target_group) or None,
     )
     normalized_gt_relation = _labeling_filter_values(
         gt_relation, allowed={"matches_gt", "differs_from_gt", "fills_missing_gt"},
