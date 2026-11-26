@@ -300,17 +300,20 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
   const baselinesKey = selectedBaselines.join(",");
 
   const wasActiveRef = useRef<boolean>(active);
+  const lastPersistedStateRef = useRef<string | null>(null);
 
   // Sync route state on re-entry and popstate when active.
   useEffect(() => {
     if (!active) {
       wasActiveRef.current = false;
+      lastPersistedStateRef.current = null;
       return;
     }
     const syncFromUrl = () => {
       const next = readRouteFromUrl();
       setRoute(next);
       setSearchDraft(next.search);
+      lastPersistedStateRef.current = null;
     };
     if (!wasActiveRef.current) {
       syncFromUrl();
@@ -320,9 +323,17 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
     return () => window.removeEventListener("popstate", syncFromUrl);
   }, [active]);
 
-  // Persist URL on route/baseline changes while active.
+  // Persist URL only after initial mount / URL sync so cold links keep ?baselines=...
+  // intact while classic bootstrap() finishes hydrating state.selectedBaselineIds.
   useEffect(() => {
     if (!active || !wasActiveRef.current || typeof window === "undefined") return;
+    const key = JSON.stringify({ route, baselines: selectedBaselines });
+    if (lastPersistedStateRef.current === null) {
+      lastPersistedStateRef.current = key;
+      return;
+    }
+    if (lastPersistedStateRef.current === key) return;
+    lastPersistedStateRef.current = key;
     const nextUrl = buildLabelingSummaryUrl(route, selectedBaselines);
     const currentUrl = `${window.location.pathname}${window.location.search}`;
     if (nextUrl !== currentUrl) {

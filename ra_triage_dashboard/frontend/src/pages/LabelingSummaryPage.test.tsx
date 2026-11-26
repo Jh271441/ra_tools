@@ -246,4 +246,30 @@ describe("LabelingSummaryPage 1:1 parity", () => {
     });
     expect(container.querySelector("#labelSummaryTargetGroupPicker")).toBeNull();
   });
+
+  it("does not overwrite cold-link ?baselines= on initial mount before classic bootstrap hydrates selectedBaselines", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/manual-s6/labeling-summary?baselines=version-20261106&target_group=sample",
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <LabelingSummaryPage
+          active
+          lang="zh"
+          theme="dark"
+          selectedBaselines={["0508"]}
+          isAdmin
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("cn998877")).toBeInTheDocument();
+    });
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("baselines")).toBe("version-20261106");
+    expect(params.get("target_group")).toBe("sample");
+  });
 });
