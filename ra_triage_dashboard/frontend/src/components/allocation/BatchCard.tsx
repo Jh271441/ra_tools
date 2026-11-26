@@ -6,7 +6,6 @@ import {
   campaignsHistoryHref,
   formatClassicTime,
   formatVersionDatasetTime,
-  pendingReviewHref,
   reviewAssignmentBatchHref,
   reviewAssignmentCanReview,
   reviewAssignmentFilterLabel,
@@ -56,6 +55,63 @@ const MemberCard: React.FC<{ member: WorkSplitMember; lang: UiLanguage }> = ({ m
     </div>
   );
 };
+
+interface ManualBatchCardProps {
+  item: WorkSplitItem;
+  lang: UiLanguage;
+  title: string;
+  metadata: string;
+  conflictBadge?: React.ReactNode;
+  actions: React.ReactNode;
+  children?: React.ReactNode;
+}
+
+export function ManualBatchCard({ item, lang, title, metadata, conflictBadge, actions, children }: ManualBatchCardProps) {
+  const percent = reviewAssignmentPercent(item.completion_ratio);
+  const isCurrent = reviewAssignmentCanReview(item);
+  const status = reviewAssignmentLifecycleLabel({ ...item, is_current: isCurrent }, lang);
+  const statusClass = isCurrent ? "is-manual" : "is-superseded";
+  const changeNote = Number(item.change_count || 0)
+    ? bilingual(lang, `已转派 ${item.change_count} 次`, `${item.change_count} transfers`)
+    : bilingual(lang, "尚未转派", "No transfers");
+
+  return (
+    <article className="review-assignment-batch" data-review-assignment-batch={item.split_id}>
+      <header className="review-assignment-batch-header">
+        <div>
+          <strong className="review-assignment-batch-title">{title}</strong>
+          <span className="review-assignment-batch-meta">{metadata}</span>
+          <span className="review-assignment-batch-meta">{reviewAssignmentFilterLabel(item, lang)}</span>
+        </div>
+        <span className={`review-assignment-status ${statusClass}`}>{status}</span>
+      </header>
+      <div className="review-assignment-progress">
+        <div className="review-assignment-progress-heading">
+          <span className="review-assignment-progress-label">
+            {bilingual(lang, "整体进度", "Overall progress")}
+            {conflictBadge}
+          </span>
+          <strong>{`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`}</strong>
+        </div>
+        <div className="review-assignment-progress-track">
+          <span style={{ width: `${percent}%` }} />
+        </div>
+      </div>
+      <div className="review-assignment-member-grid">
+        {item.members?.length ? (
+          item.members.map((member) => <MemberCard key={member.username} member={member} lang={lang} />)
+        ) : (
+          <span className="quiet-meta">{bilingual(lang, "没有成员记录", "No member data")}</span>
+        )}
+      </div>
+      <footer className="review-assignment-batch-footer">
+        <span>{`${item.total_count || 0} ${bilingual(lang, "个 Issue", "Issues")} · ${changeNote}`}</span>
+        <div className="review-assignment-batch-actions">{actions}</div>
+      </footer>
+      {children}
+    </article>
+  );
+}
 
 export const BatchCard: React.FC<BatchCardProps> = ({
   item,
@@ -117,7 +173,6 @@ export const BatchCard: React.FC<BatchCardProps> = ({
       );
     }
     const combined = item.workflow_mode === "model_review_and_case_label";
-    const pending = item.pending_issue_ids?.length || 0;
     return (
       <>
         <a
@@ -128,12 +183,6 @@ export const BatchCard: React.FC<BatchCardProps> = ({
             ? bilingual(lang, "开始联合复核", "Start combined review")
             : bilingual(lang, "去判错复核", "Open Review")}
         </a>
-        {combined && pending > 0 && (
-          <a className="button button-quiet" href={pendingReviewHref(item)}>
-            {bilingual(lang, `查看剩余 ${pending} 个 Issue`,
-              `View ${pending} pending ${pending === 1 ? "case" : "cases"}`)}
-          </a>
-        )}
         <a
           className="button button-quiet"
           href={reviewAssignmentBatchHref(item, "analysis", username, verified)}
@@ -249,17 +298,6 @@ export const BatchCard: React.FC<BatchCardProps> = ({
     filter_snapshot: item.source_filter_snapshot || item.filter_snapshot,
   };
   const isCurrent = reviewAssignmentCanReview(normalized);
-  const percent = reviewAssignmentPercent(normalized.completion_ratio);
-  const status = reviewAssignmentLifecycleLabel({ ...normalized, is_current: isCurrent }, lang);
-  const statusClass = isCurrent ? "is-manual" : "is-superseded";
-  const filterLabel = reviewAssignmentFilterLabel(normalized, lang);
-  const changeNote = Number(normalized.change_count || 0)
-    ? bilingual(
-        lang,
-        `已转派 ${normalized.change_count} 次`,
-        `${normalized.change_count} transfers`,
-      )
-    : bilingual(lang, "尚未转派", "No transfers");
   const filterSnap = normalized.filter_snapshot || {};
   const hasSourceFilter =
     isCurrent &&
@@ -268,47 +306,14 @@ export const BatchCard: React.FC<BatchCardProps> = ({
     );
 
   return (
-    <article className="review-assignment-batch" data-review-assignment-batch={normalized.split_id}>
-      <header className="review-assignment-batch-header">
-        <div>
-          <strong className="review-assignment-batch-title">
-            {`${roleVersionTaskName(normalized, lang, runNameLookup)} · ${formatClassicTime(
-              normalized.created_at,
-            )}`}
-          </strong>
-          <span className="review-assignment-batch-meta">
-            {`${normalized.split_id} · ${
-              normalized.created_by || bilingual(lang, "未记录", "Unknown")
-            } · ${reviewAssignmentModeLabel(normalized, lang)}`}
-          </span>
-          <span className="review-assignment-batch-meta">{filterLabel}</span>
-        </div>
-        <span className={`review-assignment-status ${statusClass}`}>{status}</span>
-      </header>
-      <div className="review-assignment-progress">
-        <div className="review-assignment-progress-heading">
-          <span className="review-assignment-progress-label">
-            {bilingual(lang, "整体进度", "Overall progress")}
-            {renderConflictBadge(normalized)}
-          </span>
-          <strong>{`${normalized.completed_count || 0} / ${normalized.assignment_count || 0} · ${percent}%`}</strong>
-        </div>
-        <div className="review-assignment-progress-track">
-          <span style={{ width: `${percent}%` }} />
-        </div>
-      </div>
-      <div className="review-assignment-member-grid">
-        {(normalized.members || []).length ? (
-          (normalized.members || []).map((member) => (
-            <MemberCard key={member.username} member={member} lang={lang} />
-          ))
-        ) : (
-          <span className="quiet-meta">{bilingual(lang, "没有成员记录", "No member data")}</span>
-        )}
-      </div>
-      <footer className="review-assignment-batch-footer">
-        <span>{`${normalized.total_count || 0} ${bilingual(lang, "个 Issue", "Issues")} · ${changeNote}`}</span>
-        <div className="review-assignment-batch-actions">
+    <ManualBatchCard
+      item={normalized}
+      lang={lang}
+      title={`${roleVersionTaskName(normalized, lang, runNameLookup)} · ${formatClassicTime(normalized.created_at)}`}
+      metadata={`${normalized.split_id} · ${normalized.created_by || bilingual(lang, "未记录", "Unknown")} · ${reviewAssignmentModeLabel(normalized, lang)}`}
+      conflictBadge={renderConflictBadge(normalized)}
+      actions={(
+        <>
           {hasSourceFilter && (
             <a
               className="button button-quiet"
@@ -329,8 +334,8 @@ export const BatchCard: React.FC<BatchCardProps> = ({
           >
             {bilingual(lang, "复制链接", "Copy link")}
           </button>
-        </div>
-      </footer>
-    </article>
+        </>
+      )}
+    />
   );
 };

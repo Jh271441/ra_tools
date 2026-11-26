@@ -206,7 +206,7 @@ describe("ReviewAssignmentsPage", () => {
     expect(mockApi.mock.calls.filter(([path]) => path.endsWith("/allocation/preview"))).toHaveLength(1);
   });
 
-  it("groups historical 0821 batches and opens the exact pending queue for all owners", async () => {
+  it("shows historical partitions in the usual assignment-card format without pending-count buttons", async () => {
     const historical = (id: string, baseline: string, odd: string | null, cases: number) => ({
       split_id: `campaign-${id}`, model_run_id: `run-${id}`, campaign_name: id,
       source_created_at: "2026-09-09T13:18:07+08:00",
@@ -217,9 +217,19 @@ describe("ReviewAssignmentsPage", () => {
     });
     mockApi.mockImplementation(async (path) => path.startsWith("/api/cases/work-splits?")
       ? { items: [
-          { split_id: "campaign-ordinary", campaign_name: "Ordinary", is_current: true },
+          { split_id: "campaign-ordinary", campaign_name: "0508", is_current: true,
+            workflow_mode: "model_review_and_case_label", pending_issue_ids: ["cn12345678"] },
           { ...historical("odd2", "0821-odd2", "ODD2", 110), completed_count: 217,
-            pending_issue_ids: ["cn35722425", "cn35743259", "cn35690387"] },
+            pending_issue_ids: ["cn35722425", "cn35743259", "cn35690387"],
+            members: [
+              { username: "alice", assigned_count: 110, completed_count: 108, pending_count: 2 },
+              { username: "bob", assigned_count: 110, completed_count: 109, pending_count: 1 },
+            ] },
+          { ...historical("odd2-second", "0821-odd2", "ODD2", 2),
+            members: [
+              { username: "alice", assigned_count: 2, completed_count: 2, pending_count: 0 },
+              { username: "bob", assigned_count: 2, completed_count: 2, pending_count: 0 },
+            ] },
           historical("odd3", "0821-nonodd2", "ODD3", 88),
           historical("unknown", "0821-nonodd2", null, 2),
         ] }
@@ -230,13 +240,22 @@ describe("ReviewAssignmentsPage", () => {
     expect(Array.from(container.querySelectorAll("[data-review-assignment-batch]"))
       .map((item) => item.getAttribute("data-review-assignment-batch")))
       .toEqual(["campaign-ordinary", "0821-odd2", "0821-nonodd2"]);
-    fireEvent.click(screen.getByRole("button", { name: "查看剩余 3 个 Issue" }));
-    const target = screen.getByRole("link", { name: "查看剩余 3 个 Issue" });
+    const odd2 = container.querySelector<HTMLElement>('[data-review-assignment-batch="0821-odd2"]')!;
+    const grid = within(odd2.querySelector<HTMLElement>(".review-assignment-member-grid")!);
+    expect(grid.getByText("alice")).toBeInTheDocument();
+    expect(grid.getByText("110 / 112")).toBeInTheDocument();
+    expect(grid.getByText("2 条待处理")).toBeInTheDocument();
+    expect(grid.getByText("bob")).toBeInTheDocument();
+    expect(grid.getByText("111 / 112")).toBeInTheDocument();
+    expect(grid.getByText("1 条待处理")).toBeInTheDocument();
+    expect(within(odd2).getByText("221 / 224 · 99%")).toBeInTheDocument();
+    fireEvent.click(within(odd2).getByRole("button", { name: "查看批次" }));
+    const target = within(odd2).getAllByRole("link", { name: "开始联合复核" })[0];
     const params = new URL(target.getAttribute("href")!, window.location.origin).searchParams;
     expect(params.get("work_split")).toBe("campaign-odd2");
     expect(params.get("task_progress")).toBe("pending");
-    expect(params.get("issue_ids")).toBe("cn35722425,cn35743259,cn35690387");
-    expect(params.has("work_assignee")).toBe(false);
+    expect(screen.queryByRole("link", { name: /查看剩余/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /查看剩余/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "ODD 未填写 · 2 例" }));
     const nonOdd2 = container.querySelector<HTMLElement>('[data-review-assignment-batch="0821-nonodd2"]')!;
     expect(within(nonOdd2).getByText(/2 例 · ODD 未填写/)).toBeInTheDocument();

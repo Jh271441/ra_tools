@@ -1596,6 +1596,8 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                       matchedBatches={item.batches.filter((batch) => matches(batch, item.partition))}
                       lang={lang}
                       isAdmin={isAdmin}
+                      username={username}
+                      verified={verified}
                       onOpenDetail={handleOpenDetail}
                       onEditAllocation={setEditCampaignId}
                     />
