@@ -57,7 +57,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-894`;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-895`;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -127,7 +127,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-894`;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-895`;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -1893,7 +1893,6 @@
               <details class="vm-scope"><summary class="button button-quiet"><span class="ui-lang-zh">更多筛选</span><span class="ui-lang-en">More filters</span></summary><div class="vm-scope-filters">
                 <label for="vmReference"><span class="ui-lang-zh">评测参考</span><span class="ui-lang-en">Reference</span><select id="vmReference"><option value="release">GT</option></select></label>
                 <label for="vmExclusion"><span class="ui-lang-zh">排除口径</span><span class="ui-lang-en">Exclusions</span><select id="vmExclusion"><option value="all">全部三分类有效</option></select></label>
-                <label for="vmThreshold"><span class="ui-lang-zh">模拟 conf 阈值</span><span class="ui-lang-en">Simulation conf threshold</span><select id="vmThreshold"><option value="0.90">0.90</option></select></label>
               </div><button id="vmReset" type="button" class="button button-secondary" data-vm-zh="重置选项" data-vm-en="Reset options">重置选项</button></details>
               <div class="vm-toolbar-actions"><button id="vmRefresh" class="button button-quiet" type="button" data-vm-zh="更新指标" data-vm-en="Update metrics">更新指标</button></div>
               </div>
@@ -1901,7 +1900,10 @@
               <span id="vmStatus" class="vm-job-status" role="status" hidden></span>
               <div class="vm-chart-heading">
                 <div id="vmLegend" class="vm-legend" role="group"></div>
-                <div class="vm-chart-meta"><span id="vmDataFreshness"></span><span id="vmThresholdNote"></span><span class="model-review-run-help ui-info" data-ui-info>
+                <div class="vm-chart-meta"><span id="vmDataFreshness"></span><div class="vm-chart-threshold">
+                  <label for="vmThreshold"><span class="ui-lang-zh">人工模拟 conf &lt;</span><span class="ui-lang-en">Simulated review conf &lt;</span></label>
+                  <select id="vmThreshold"><option value="0.90">0.90</option></select>
+                </div><span class="model-review-run-help ui-info" data-ui-info>
                   <button id="vmInfoButton" type="button" class="button button-secondary vm-info-button" data-ui-info-trigger aria-expanded="false" aria-controls="vmInfoTooltip" data-vm-aria-zh="指标统计口径" data-vm-aria-en="Metric definitions" aria-label="指标统计口径">ⓘ</button>
                   <span id="vmInfoTooltip" class="model-review-run-tooltip ui-info-tooltip" role="tooltip">
                     <strong><span class="ui-lang-zh">统计口径</span><span class="ui-lang-en">Metric definitions</span></strong>
@@ -2685,7 +2687,7 @@
         link.href = `${window.__RA_TRIAGE_BASE__ || ""}${link.dataset.appPath}`;
       });
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-894`;
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-895`;
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
