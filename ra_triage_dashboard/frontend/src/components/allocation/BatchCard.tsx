@@ -11,6 +11,7 @@ import {
   reviewAssignmentCanReview,
   reviewAssignmentFilterLabel,
   reviewAssignmentLifecycleLabel,
+  reviewAssignmentMemberPending,
   reviewAssignmentModeLabel,
   reviewAssignmentPercent,
   reviewAssignmentSourceHref,
@@ -45,16 +46,16 @@ interface BatchAction {
 
 const MemberCard: React.FC<{ member: WorkSplitMember; lang: UiLanguage }> = ({ member, lang }) => {
   const assigned = Number(member.assigned_count || 0);
-  const completed = Number(member.completed_count || 0);
-  const pending = Number(member.pending_count || 0);
+  const submitted = Number(member.completed_count || 0);
   const extra = Number(member.extra_completed_count || 0);
-  const percent =
-    assigned === 0 && completed > 0 ? 100 : reviewAssignmentPercent(member.completion_ratio);
+  const pending = reviewAssignmentMemberPending(member);
+  const completed = assigned - pending;
+  const percent = reviewAssignmentPercent(assigned ? completed / assigned : 0);
   const note =
-    assigned === 0 && completed > 0
-      ? bilingual(lang, `0 条待处理 · 历史已标 ${completed}`, `0 pending · ${completed} prior completed`)
+    assigned === 0 && submitted > 0
+      ? bilingual(lang, `0 条待处理 · 历史已标 ${submitted}`, `0 pending · ${submitted} prior completed`)
       : extra > 0
-        ? bilingual(lang, `${pending} 条待处理 · 含相交 ${extra} 条`, `${pending} pending · +${extra} overlap`)
+        ? bilingual(lang, `${pending} 条待处理 · 另有相交提交 ${extra} 条`, `${pending} pending · +${extra} overlap`)
         : bilingual(lang, `${pending} 条待处理`, `${pending} pending`);
   return (
     <div className="review-assignment-member">

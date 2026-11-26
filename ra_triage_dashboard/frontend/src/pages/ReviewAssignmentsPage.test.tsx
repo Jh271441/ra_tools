@@ -231,8 +231,14 @@ describe("ReviewAssignmentsPage", () => {
               { username: "alice", assigned_count: 2, completed_count: 2, pending_count: 0 },
               { username: "bob", assigned_count: 2, completed_count: 2, pending_count: 0 },
             ] },
-          historical("odd3", "0821-nonodd2", "ODD3", 88),
-          historical("unknown", "0821-nonodd2", null, 2),
+          { ...historical("odd3", "0821-nonodd2", "ODD3", 88), members: [
+              { username: "alice", assigned_count: 110, completed_count: 127, pending_count: 0, extra_completed_count: 17 },
+              { username: "bob", assigned_count: 109, completed_count: 121, pending_count: 0, extra_completed_count: 12 },
+              { username: "carol", assigned_count: 0, completed_count: 2, pending_count: 0, extra_completed_count: 2 },
+            ] },
+          { ...historical("unknown", "0821-nonodd2", null, 2), members: [
+              { username: "alice", assigned_count: 1, completed_count: 0 },
+            ] },
         ] }
       : { items: [] });
 
@@ -251,6 +257,13 @@ describe("ReviewAssignmentsPage", () => {
     expect(grid.getByText("1 条待处理")).toBeInTheDocument();
     expect(within(odd2).getByText("221 / 224 · 99%")).toBeInTheDocument();
     const nonOdd2 = container.querySelector<HTMLElement>('[data-review-assignment-batch="0821-nonodd2"]')!;
+    expect(within(nonOdd2).getByText("110 / 111")).toBeInTheDocument();
+    expect(within(nonOdd2).getByLabelText("110 / 111").firstChild).toHaveStyle({ width: "99%" });
+    expect(within(nonOdd2).getByText("1 条待处理 · 另有相交提交 17 条")).toBeInTheDocument();
+    expect(within(nonOdd2).getByText("109 / 109")).toBeInTheDocument();
+    expect(within(nonOdd2).getByText("0 条待处理 · 另有相交提交 12 条")).toBeInTheDocument();
+    expect(within(nonOdd2).getByLabelText("0 / 0").firstChild).toHaveStyle({ width: "0%" });
+    expect(within(nonOdd2).getByText("0 条待处理 · 历史已标 2")).toBeInTheDocument();
     const ordinary = container.querySelector<HTMLElement>('[data-review-assignment-batch="campaign-ordinary"]')!;
     const footerLabels = (card: HTMLElement) =>
       Array.from(card.querySelectorAll("footer .review-assignment-batch-actions > *"), (control) => control.textContent);

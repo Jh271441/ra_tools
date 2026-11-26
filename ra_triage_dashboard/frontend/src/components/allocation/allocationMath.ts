@@ -143,6 +143,12 @@ export interface WorkSplitMember {
   completion_ratio?: number;
 }
 
+export function reviewAssignmentMemberPending(member: WorkSplitMember): number {
+  const assigned = Number(member.assigned_count || 0);
+  const completed = Number(member.completed_count || 0) - Number(member.extra_completed_count || 0);
+  return Math.min(assigned, Math.max(0, member.pending_count ?? assigned - completed));
+}
+
 export interface WorkSplitItem {
   split_id: string;
   id?: string;

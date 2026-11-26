@@ -3,6 +3,7 @@ import { BatchCard, BatchCardProps } from "./BatchCard";
 import {
   i18nLocaleTag,
   reviewAssignmentCanReview,
+  reviewAssignmentMemberPending,
   WorkSplitItem,
   WorkSplitMember,
 } from "./allocationMath";
@@ -45,14 +46,12 @@ export function Historical0821Card({
     for (const member of batch.members || []) {
       const previous = members.get(member.username);
       const assignedCount = (previous?.assigned_count || 0) + (member.assigned_count || 0);
-      const completedCount = (previous?.completed_count || 0) + (member.completed_count || 0);
       members.set(member.username, {
         username: member.username,
         assigned_count: assignedCount,
-        completed_count: completedCount,
-        pending_count: (previous?.pending_count || 0) + (member.pending_count || 0),
+        completed_count: (previous?.completed_count || 0) + (member.completed_count || 0),
+        pending_count: (previous?.pending_count || 0) + reviewAssignmentMemberPending(member),
         extra_completed_count: (previous?.extra_completed_count || 0) + (member.extra_completed_count || 0),
-        completion_ratio: assignedCount ? completedCount / assignedCount : 0,
       });
     }
   }
