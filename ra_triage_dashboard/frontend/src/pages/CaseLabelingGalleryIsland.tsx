@@ -283,49 +283,59 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
     prevBaselinesKeyRef.current = key;
   }, [selectedBaselines]);
 
-  // Debounce search input -> filters.search
-  useEffect(() => {
-    if (searchDraft === filters.search) return;
-    const timer = window.setTimeout(() => {
-      setFilters((prev) => ({
-        ...prev,
-        search: searchDraft.trim(),
-        issueIds: searchDraft.trim() ? [] : prev.issueIds,
-        page: 1,
-      }));
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [searchDraft, filters.search]);
-
   // Persist URL when user edits filters (preserve deep-linked ?issue= if present on initial mount)
   const persistRoute = useCallback(
     (next: LabelingFilterState, clearIssue = true) => {
       if (!active || typeof window === "undefined") return;
       const win = window as unknown as LegacyLabelingBridgeWindow;
-      if (typeof win.pageUrl !== "function") return;
       const currentIssue = clearIssue
         ? ""
         : new URLSearchParams(window.location.search).get("issue") || "";
-      const nextUrl = win.pageUrl("labeling", {
-        issue: currentIssue,
-        taskId: next.taskId,
-        targetGroup: next.targetGroup,
-        issueTags: next.issueTags,
-        search: next.search,
-        issueIds: next.issueIds,
-        status: next.status,
-        author: next.author,
-        assignee: next.assignee,
-        cluster: next.cluster,
-        label: next.label,
-        gt: next.gt,
-        gtRelations: next.gtRelations,
-        commentState: next.commentState,
-        exclusion: next.exclusion,
-        page: next.page,
-        pageSize: next.pageSize,
-        baselines: selectedBaselines,
-      });
+      let nextUrl = "";
+      if (typeof win.pageUrl === "function") {
+        nextUrl = win.pageUrl("labeling", {
+          issue: currentIssue,
+          taskId: next.taskId,
+          targetGroup: next.targetGroup,
+          issueTags: next.issueTags,
+          search: next.search,
+          issueIds: next.issueIds,
+          status: next.status,
+          author: next.author,
+          assignee: next.assignee,
+          cluster: next.cluster,
+          label: next.label,
+          gt: next.gt,
+          gtRelations: next.gtRelations,
+          commentState: next.commentState,
+          exclusion: next.exclusion,
+          page: next.page,
+          pageSize: next.pageSize,
+          baselines: selectedBaselines,
+        });
+      } else {
+        const params = new URLSearchParams();
+        if (currentIssue) params.set("issue", currentIssue);
+        if (next.taskId) params.set("task", next.taskId);
+        if (next.targetGroup) params.set("target_group", next.targetGroup);
+        if (next.issueTags.length) params.set("issue_tags", joinFilterList(next.issueTags));
+        if (next.search) params.set("q", next.search);
+        if (next.issueIds.length) params.set("issue_ids", next.issueIds.join(","));
+        if (next.status.length) params.set("status", joinFilterList(next.status));
+        if (next.author.length) params.set("author", joinFilterList(next.author));
+        if (next.assignee.length) params.set("assignee", joinFilterList(next.assignee));
+        if (next.cluster) params.set("cluster", next.cluster);
+        if (next.label.length) params.set("label", joinFilterList(next.label));
+        if (next.gt.length) params.set("gt", joinFilterList(next.gt));
+        if (next.gtRelations.length) params.set("gt_relation", joinFilterList(next.gtRelations));
+        if (next.commentState.length) params.set("comment_state", joinFilterList(next.commentState));
+        if (next.exclusion.length) params.set("exclusion", joinFilterList(next.exclusion));
+        if (next.page > 1) params.set("page", String(next.page));
+        if (next.pageSize !== DEFAULT_CASE_PAGE_SIZE) params.set("page_size", String(next.pageSize));
+        if (selectedBaselines.length) params.set("baselines", selectedBaselines.join(","));
+        const qs = params.toString();
+        nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+      }
       const currentUrl = `${window.location.pathname}${window.location.search}`;
       if (nextUrl && nextUrl !== currentUrl) {
         window.history.replaceState({ page: "labeling" }, "", nextUrl);
@@ -344,6 +354,21 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
     },
     [persistRoute],
   );
+
+  // Debounce search input -> filters.search & sync URL ?q=
+  useEffect(() => {
+    const trimmed = searchDraft.trim();
+    if (trimmed === filters.search) return;
+    const timer = window.setTimeout(() => {
+      updateFilters((prev) => ({
+        ...prev,
+        search: trimmed,
+        issueIds: trimmed ? [] : prev.issueIds,
+        page: 1,
+      }));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, filters.search, updateFilters]);
 
   // Tasks query
   const tasksQuery = useQuery<{ items?: LabelingTaskItem[] }>({
@@ -690,6 +715,22 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
   const taskProgress = selectedTask?.progress;
   const showTaskProgressStrip = Boolean(selectedTask && taskProgress && Number(taskProgress.total));
 
+  const casesErrorMessage = casesQuery.isError
+    ? casesQuery.error instanceof Error
+      ? casesQuery.error.message
+      : bilingual(lang, "读取 Case 列表失败，请重试。", "Failed to load Cases. Please retry.")
+    : "";
+
+  const lastCasesErrorRef = useRef<string>("");
+  useEffect(() => {
+    if (casesQuery.isError && casesErrorMessage && lastCasesErrorRef.current !== casesErrorMessage) {
+      lastCasesErrorRef.current = casesErrorMessage;
+      showToast(casesErrorMessage, true);
+    } else if (!casesQuery.isError) {
+      lastCasesErrorRef.current = "";
+    }
+  }, [casesQuery.isError, casesErrorMessage]);
+
   const emptyContent = isInactiveScope ? (
     <div className="empty-state issue-grid-empty case-labeling-inactive-state">
       <h2>
@@ -729,6 +770,18 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
       ) : (
         <p>{bilingual(lang, "当前还没有已激活的标注数据集。", "No enabled labeling datasets yet.")}</p>
       )}
+    </div>
+  ) : casesQuery.isError ? (
+    <div className="empty-state issue-grid-empty case-labeling-error-state" role="alert">
+      <h2>{bilingual(lang, "Case 列表读取失败", "Failed to load Cases")}</h2>
+      <p>{casesErrorMessage}</p>
+      <button
+        className="button button-quiet"
+        type="button"
+        onClick={() => void casesQuery.refetch()}
+      >
+        {bilingual(lang, "重试", "Retry")}
+      </button>
     </div>
   ) : casesQuery.isLoading ? (
     <div className="no-asset issue-grid-empty">
@@ -854,6 +907,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               lang={lang}
               searchable
               summaryCount
+              groupNavigation
               placeholder={bilingual(lang, "全部 Issue 标签", "All Issue tags")}
               ariaLabel={bilingual(lang, "Issue 标签筛选", "Issue tag filter")}
               title={bilingual(
@@ -1018,7 +1072,11 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
           <div className="case-labeling-heading-copy">
             <h2>{bilingual(lang, "问题图库", "Issue Gallery")}</h2>
             <span className="count-pill" id="caseLabelingCount">
-              {isInactiveScope ? "0" : casesQuery.isLoading ? "—" : String(data.total || 0)}
+              {isInactiveScope
+                ? "0"
+                : casesQuery.isLoading || casesQuery.isError
+                  ? "—"
+                  : String(data.total || 0)}
             </span>
           </div>
           <div className="gallery-heading-actions">
@@ -1026,7 +1084,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               className="button button-quiet"
               id="caseLabelingExportIssues"
               type="button"
-              disabled={exportingIssues || isInactiveScope || !Number(data.total || 0)}
+              disabled={exportingIssues || isInactiveScope || casesQuery.isError || !Number(data.total || 0)}
               title={bilingual(
                 lang,
                 "导出当前筛选下的全部 Issue ID（CSV）",
@@ -1042,7 +1100,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               className="button button-quiet"
               id="caseLabelingExportGt"
               type="button"
-              disabled={exportingGt || isInactiveScope || !isAdmin}
+              disabled={exportingGt || isInactiveScope || casesQuery.isError || !isAdmin}
               onClick={(e) => void handleExportGt(e)}
             >
               {bilingual(lang, "导出 GT 更新", "Export GT updates")}
@@ -1053,7 +1111,32 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               type="button"
               onClick={() => {
                 const win = window as unknown as LegacyLabelingBridgeWindow;
-                win.navigatePage?.("labeling-summary");
+                const queryParams: Record<string, string> = {};
+                const activeSearch = searchDraft.trim() || filters.search;
+                if (filters.taskId) queryParams.task = filters.taskId;
+                if (activeSearch) queryParams.q = activeSearch;
+                if (filters.issueIds.length) queryParams.issue_ids = filters.issueIds.join(",");
+                if (filters.issueTags.length) queryParams.issue_tags = joinFilterList(filters.issueTags);
+                if (filters.gtRelations.length) queryParams.gt_relation = joinFilterList(filters.gtRelations);
+                if (filters.status.length) queryParams.status = joinFilterList(filters.status);
+                if (filters.author.length) queryParams.author = joinFilterList(filters.author);
+                if (filters.assignee.length) queryParams.assignee = joinFilterList(filters.assignee);
+                if (filters.label.length) queryParams.label = joinFilterList(filters.label);
+                if (filters.gt.length) queryParams.gt = joinFilterList(filters.gt);
+                if (filters.commentState.length) {
+                  queryParams.comment_state = joinFilterList(filters.commentState);
+                }
+                if (filters.exclusion.length) queryParams.exclusion = joinFilterList(filters.exclusion);
+                if (filters.cluster) queryParams.cluster = filters.cluster;
+                if (baselinesQuery) queryParams.baselines = baselinesQuery;
+                if (typeof win.navigatePage === "function") {
+                  win.navigatePage("labeling-summary", { queryParams });
+                } else {
+                  const qs = new URLSearchParams(queryParams).toString();
+                  window.location.assign(
+                    `${window.location.pathname.replace(/\/case-labeling\/?$/, "/labeling-summary")}${qs ? `?${qs}` : ""}`,
+                  );
+                }
               }}
             >
               {bilingual(lang, "标注汇总", "Labeling summary")}
@@ -1117,7 +1200,7 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         <IssueCardGrid
           id="caseLabelingList"
           workspace="labeling"
-          items={data.items || []}
+          items={casesQuery.isError ? [] : data.items || []}
           lang={lang}
           config={effectiveConfig}
           selectedIssueId={activeIssueId}
@@ -1129,13 +1212,13 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
           <Pagination
             page={data.page || filters.page}
             pageSize={filters.pageSize}
-            total={data.total || 0}
+            total={casesQuery.isError ? 0 : data.total || 0}
             lang={lang}
             loading={casesQuery.isFetching}
             showPageUnit
             disableJumpWhenSinglePage
             labelText={
-              data.total > 0
+              !casesQuery.isError && data.total > 0
                 ? `${data.page || filters.page} / ${Math.max(1, data.pages || Math.ceil(data.total / filters.pageSize))}`
                 : "— / —"
             }

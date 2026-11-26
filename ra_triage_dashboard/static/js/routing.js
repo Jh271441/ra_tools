@@ -1393,6 +1393,7 @@ function showPage(
     restoreRoute = false,
     loadPageData = true,
     preserveScroll = false,
+    queryParams = null,
     intentDatasetId = "",
     intentDatasetIds = [],
     intentCaseId = "",
@@ -1706,8 +1707,17 @@ function showPage(
   if (historyMode === "push") {
     if (targetOwnedByReact) {
       const nextUrl = new URL(withBase((PAGE_ROUTES[target] || PAGE_ROUTES.review).path), window.location.origin);
+      if (queryParams && typeof queryParams === "object") {
+        Object.entries(queryParams).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && String(value) !== "") {
+            nextUrl.searchParams.set(key, String(value));
+          }
+        });
+      }
       const baselineVal = typeof selectedBaselineQueryValue === "function" ? selectedBaselineQueryValue() : "";
-      if (baselineVal) nextUrl.searchParams.set("baselines", baselineVal);
+      if (!nextUrl.searchParams.has("baselines") && baselineVal) {
+        nextUrl.searchParams.set("baselines", baselineVal);
+      }
       history.pushState(historyState, "", `${nextUrl.pathname}${nextUrl.search}`);
     } else {
       history.pushState(historyState, "", pageUrl(target, routeOptions));

@@ -270,4 +270,38 @@ describe("ReviewAnalysisPage 1:1 parity", () => {
       expect(window.location.search).toContain("run=none");
     });
   });
+
+  it("shows '— / —' in pagination while initial review-reason-analysis fetch is pending", async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/api/review-reason-analysis")) {
+        return new Promise<Response>(() => {
+          // Intentionally unresolved to assert loading placeholder parity with 8785
+        });
+      }
+      if (url.includes("/api/dashboard-config")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ baselines: [{ id: "1113", label: "1113" }] }), { status: 200 }),
+        );
+      }
+      if (url.includes("/api/model-runs")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [{ id: "run-01", name: "Qwen3-VL-Base", is_default: true, baseline_prediction_count: 100 }],
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify({ items: [], reviewers: [] }), { status: 200 }));
+    });
+
+    const { container } = renderPage("zh");
+    await waitFor(() => {
+      expect(screen.getByText(/正在加载最新 Review/)).toBeInTheDocument();
+    });
+    const pageIndicator = container.querySelector(".ra-pagination-label");
+    expect(pageIndicator?.textContent?.trim()).toBe("— / —");
+  });
 });

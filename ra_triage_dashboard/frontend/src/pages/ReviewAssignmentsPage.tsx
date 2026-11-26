@@ -157,14 +157,35 @@ function hasExtraGalleryFilters(filters: Record<string, unknown>): boolean {
     "work_split_id",
     "missing_evidence",
   ];
+  const comp = String(filters.comparison || filters.comparison_status || "all").trim();
+  const hasCustomComparison = Boolean(comp && !["all", "mismatch", "match"].includes(comp));
   return (
     keys.some((k) => {
       const v = filters[k];
       return Array.isArray(v) ? v.length > 0 : Boolean(String(v || "").trim());
     }) ||
+    hasCustomComparison ||
     Boolean(filters.comment_state && filters.comment_state !== "all") ||
     Boolean(filters.exclusion && filters.exclusion !== "all")
   );
+}
+
+function formatComparisonScopeLabel(comp: string, lang: UiLanguage): string {
+  const clean = String(comp || "").trim();
+  if (clean === "none") return bilingual(lang, "仅未预测 (NONE)", "Model NONE only");
+  if (clean === "no_gt") return bilingual(lang, "仅无 GT (NO GT)", "NO GT only");
+  const tokenMap: Record<string, string> = {
+    mismatch: "MISMATCH",
+    match: "MATCH",
+    no_gt: "NO GT",
+    none: "NONE",
+  };
+  const labels = clean
+    .split(",")
+    .map((part) => tokenMap[part.trim().toLowerCase()] || part.trim())
+    .filter(Boolean);
+  const joined = labels.join(lang === "en" ? ", " : "、") || clean;
+  return bilingual(lang, `图库筛选 (${joined})`, `Gallery filter (${joined})`);
 }
 
 export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
@@ -199,7 +220,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
     "model_review_and_case_label",
   );
   const [composerRunId, setComposerRunId] = useState("");
-  const [composerComparison, setComposerComparison] = useState<"all" | "mismatch" | "match">("all");
+  const [composerComparison, setComposerComparison] = useState<string>("all");
   const [composerSeed, setComposerSeed] = useState("");
   const [composerFilters, setComposerFilters] = useState<Record<string, string>>({});
   const [composerTotal, setComposerTotal] = useState<number>(0);
@@ -468,23 +489,27 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
   const refreshScopeCount = useCallback(
     async (
       runId: string,
-      comparison: "all" | "mismatch" | "match",
+      comparison: string,
       baseFilters: Record<string, string>,
       keepGallery: boolean,
+      notifyEmpty = false,
     ) => {
+      const effectiveComparison = String(comparison || "all").trim() || "all";
+      const effectiveBaselines =
+        keepGallery && baseFilters.baselines ? baseFilters.baselines : baselineQuery;
       const nextFilters: Record<string, string> = keepGallery
         ? {
             ...baseFilters,
             model_run_id: runId,
-            baselines: baselineQuery,
-            comparison,
-            comparison_status: comparison,
+            baselines: effectiveBaselines,
+            comparison: effectiveComparison,
+            comparison_status: effectiveComparison,
           }
         : {
             model_run_id: runId,
             baselines: baselineQuery,
-            comparison,
-            comparison_status: comparison,
+            comparison: effectiveComparison,
+            comparison_status: effectiveComparison,
             comment_state: "all",
             exclusion: "all",
           };
@@ -502,7 +527,18 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
           include_thumbnail: "false",
         });
         const res = await apiRequest<{ total?: number }>(`/api/cases?${params.toString()}`);
-        setComposerTotal(Number(res.total || 0));
+        const count = Number(res.total || 0);
+        setComposerTotal(count);
+        if (notifyEmpty && !count) {
+          showWorkbenchToast(
+            bilingual(
+              lang,
+              "原筛选范围当前没有 Issue，请返回调整。",
+              "No Issues currently match the original filter scope. Go back to adjust.",
+            ),
+            true,
+          );
+        }
       } catch (error) {
         setComposerTotal(0);
         showWorkbenchToast((error as Error).message, true);
@@ -510,7 +546,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
         setComposerTotalLoading(false);
       }
     },
-    [baselineQuery],
+    [baselineQuery, lang],
   );
 
   // Restore draft from sessionStorage if navigated from Review Gallery's "按筛选分配"
@@ -524,17 +560,23 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
     }
     if (!saved?.filters?.model_run_id) return;
     restoredDraftRef.current = true;
-    const comp = saved.filters.comparison || saved.filters.comparison_status || "all";
-    const safeComp: "all" | "mismatch" | "match" =
-      comp === "mismatch" || comp === "match" ? comp : "all";
+    const preservedComp =
+      String(saved.filters.comparison || saved.filters.comparison_status || "all").trim() ||
+      "all";
     setComposerRunId(saved.filters.model_run_id);
-    setComposerComparison(safeComp);
+    setComposerComparison(preservedComp);
     setComposerFromReview(Boolean(saved.fromReview));
     setComposerReturnUrl(saved.returnUrl || "");
     setComposerDraft(saved.groupSetup || createInitialAllocationDraft());
     setComposerOpen(true);
     setComposerResetTick((n) => n + 1);
-    void refreshScopeCount(saved.filters.model_run_id, safeComp, saved.filters, true);
+    void refreshScopeCount(
+      saved.filters.model_run_id,
+      preservedComp,
+      saved.filters,
+      true,
+      true,
+    );
   }, [active, isAdmin, composerOpen, refreshScopeCount]);
 
   // Live preview for inline composer
@@ -916,11 +958,23 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
         },
       ];
 
-  const comparisonOptions: UiSelectOption[] = [
-    { value: "all", label: bilingual(lang, "全部 Case", "All Cases") },
-    { value: "mismatch", label: bilingual(lang, "仅模型判错 (MISMATCH)", "Model MISMATCH only") },
-    { value: "match", label: bilingual(lang, "仅模型判对 (MATCH)", "Model MATCH only") },
-  ];
+  const comparisonOptions: UiSelectOption[] = useMemo(() => {
+    const base: UiSelectOption[] = [
+      { value: "all", label: bilingual(lang, "全部 Case", "All Cases") },
+      { value: "mismatch", label: bilingual(lang, "仅模型判错 (MISMATCH)", "Model MISMATCH only") },
+      { value: "match", label: bilingual(lang, "仅模型判对 (MATCH)", "Model MATCH only") },
+    ];
+    if (
+      composerComparison &&
+      !base.some((option) => option.value === composerComparison)
+    ) {
+      base.push({
+        value: composerComparison,
+        label: formatComparisonScopeLabel(composerComparison, lang),
+      });
+    }
+    return base;
+  }, [composerComparison, lang]);
 
   const scopeCountText = useMemo(() => {
     if (!composerRunId) return bilingual(lang, "请先选择 Run", "Select a Run");
@@ -1126,8 +1180,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                     options={comparisonOptions}
                     ariaLabel={bilingual(lang, "筛选范围", "Case scope")}
                     onChange={(val) => {
-                      const nextComp =
-                        val === "mismatch" || val === "match" ? val : "all";
+                      const nextComp = String(val || "all").trim() || "all";
                       setComposerComparison(nextComp);
                       void refreshScopeCount(composerRunId, nextComp, composerFilters, composerFromReview);
                     }}

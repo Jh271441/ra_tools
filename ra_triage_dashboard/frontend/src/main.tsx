@@ -530,7 +530,7 @@ interface ReactWorkbenchHandle {
 }
 
 const handle: ReactWorkbenchHandle = {
-  version: "vite-react-ts-strangler-4.0",
+  version: "vite-react-ts-strangler-4.1",
   ownedPages: Array.from(OWNED_PAGES),
   ownsPage: (page: string) => OWNED_PAGES.has(page),
   refreshPage: (page: string) => {
@@ -558,21 +558,25 @@ const handle: ReactWorkbenchHandle = {
     } else if (page === "comparison") {
       void queryClient.invalidateQueries({ queryKey: ["comparison-model-runs"] });
       void queryClient.invalidateQueries({ queryKey: ["model-run-comparison"] });
+      void queryClient.invalidateQueries({ queryKey: ["comparison-case-inputs"] });
     } else if (page === "run-collections") {
       void queryClient.invalidateQueries({ queryKey: ["run-collections-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["run-collections-model-runs"] });
       void queryClient.invalidateQueries({ queryKey: ["run-collection-detail"] });
       void queryClient.invalidateQueries({ queryKey: ["run-collection-eval-history"] });
       void queryClient.invalidateQueries({ queryKey: ["run-collection-evaluation"] });
     } else if (page === "trail-history") {
-      void queryClient.invalidateQueries({ queryKey: ["trail-history"] });
+      void queryClient.invalidateQueries({ queryKey: ["trail-history-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["trail-history-detail"] });
     } else if (page === "rd-results") {
       void queryClient.invalidateQueries({ queryKey: ["human-publications"] });
-      void queryClient.invalidateQueries({ queryKey: ["rd-results"] });
+      void queryClient.invalidateQueries({ queryKey: ["human-publications-history"] });
+      void queryClient.invalidateQueries({ queryKey: ["rd-results-classic"] });
     } else if (page === "prediction") {
-      void queryClient.invalidateQueries({ queryKey: ["prediction-batches"] });
-      void queryClient.invalidateQueries({ queryKey: ["prediction-batch-config"] });
-      void queryClient.invalidateQueries({ queryKey: ["prediction-gateway-models"] });
-      void queryClient.invalidateQueries({ queryKey: ["prediction-batch-prompts"] });
+      void queryClient.invalidateQueries({ queryKey: ["batch-prediction-list"] });
+      void queryClient.invalidateQueries({ queryKey: ["batch-prediction-config"] });
+      void queryClient.invalidateQueries({ queryKey: ["batch-prediction-models"] });
+      void queryClient.invalidateQueries({ queryKey: ["batch-prediction-prompts"] });
     } else if (page === "intent-summary") {
       void queryClient.invalidateQueries({ queryKey: ["intent-datasets"] });
       void queryClient.invalidateQueries({ queryKey: ["intent-summary"] });
@@ -597,6 +601,8 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["labeling-tasks-history"] });
       void queryClient.invalidateQueries({ queryKey: ["labeling-combined-tasks"] });
       void queryClient.invalidateQueries({ queryKey: ["labeling-new-task-pool"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-assignments-runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["access-users"] });
     } else if (page === "review") {
       void queryClient.invalidateQueries({ queryKey: ["review-gallery-cases"] });
       void queryClient.invalidateQueries({ queryKey: ["review-gallery-runs"] });
@@ -604,9 +610,11 @@ const handle: ReactWorkbenchHandle = {
       void queryClient.invalidateQueries({ queryKey: ["review-gallery-work-assignees"] });
       void queryClient.invalidateQueries({ queryKey: ["review-gallery-task-options"] });
       void queryClient.invalidateQueries({ queryKey: ["review-gallery-task-context"] });
+      void queryClient.invalidateQueries({ queryKey: ["review-gallery-config"] });
     } else if (page === "labeling") {
       void queryClient.invalidateQueries({ queryKey: ["labeling-gallery-cases"] });
       void queryClient.invalidateQueries({ queryKey: ["labeling-gallery-tasks"] });
+      void queryClient.invalidateQueries({ queryKey: ["labeling-gallery-config"] });
     }
     window.dispatchEvent(new Event("ra:workbench-sync"));
   },

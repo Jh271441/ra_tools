@@ -292,7 +292,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
 
   const baselinesKey = selectedBaselines.join(",");
 
-  // Sync route state on popstate when active.
+  // Sync route state on re-entry and popstate when active.
   useEffect(() => {
     if (!active) return;
     const syncFromUrl = () => {
@@ -300,6 +300,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
       setRoute(next);
       setSearchDraft(next.search);
     };
+    syncFromUrl();
     window.addEventListener("popstate", syncFromUrl);
     return () => window.removeEventListener("popstate", syncFromUrl);
   }, [active]);

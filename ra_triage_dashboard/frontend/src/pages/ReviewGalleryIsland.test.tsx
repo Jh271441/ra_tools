@@ -143,4 +143,104 @@ describe("ReviewGalleryIsland", () => {
       "cn38048091",
     );
   });
+
+  it("writes search query ?q= into URL, renders group jump navigation for Issue tags, and shows explicit error state on HTTP 503", async () => {
+    (window as unknown as Record<string, unknown>).state = {
+      config: {
+        baselines: [{ id: "0508", label: "0508", count: 1071 }],
+        default_model_run_id: "run-1",
+        review_tag_catalog: [
+          { key: "night", label: "夜晚", group: "environment", section: "scene" },
+          { key: "queue", label: "排队", group: "false_trigger", section: "interaction_decision" },
+        ],
+        missing_evidence_catalog: [{ key: "bev_blur", label: "BEV 模糊" }],
+        batch_prediction: { enabled: true, max_issues: 50 },
+      },
+    };
+
+    const { container } = renderWithQuery(
+      <ReviewGalleryIsland
+        active
+        lang="zh"
+        selectedBaselines={["0508"]}
+        isAdmin
+        canWrite
+        identityPending={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("cn38048091")).toBeInTheDocument();
+    });
+
+    // 1. Typing search writes ?q= into window.location.search after debounce
+    const searchInput = container.querySelector<HTMLInputElement>("#searchInput");
+    expect(searchInput).not.toBeNull();
+    fireEvent.change(searchInput!, { target: { value: "cn38048091" } });
+    await waitFor(
+      () => {
+        expect(new URLSearchParams(window.location.search).get("q")).toBe("cn38048091");
+      },
+      { timeout: 1500 },
+    );
+
+    // 2. Opening Issue tag filter shows group jump navigation buttons matching 8785
+    const tagTrigger = container.querySelector<HTMLButtonElement>("#reviewIssueTagFilter");
+    expect(tagTrigger).not.toBeNull();
+    fireEvent.click(tagTrigger!);
+    const jumpButtons = container.querySelectorAll<HTMLButtonElement>(
+      "#reviewIssueTagFilter-panel [data-multi-group-jump]",
+    );
+    expect(jumpButtons.length).toBeGreaterThanOrEqual(2);
+    expect(
+      container.querySelector("#reviewIssueTagFilter-panel .multi-filter-group-nav"),
+    ).not.toBeNull();
+  });
+
+  it("renders explicit error state instead of zero-results when /api/cases returns HTTP 503", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/model-runs")) {
+          return new Response(
+            JSON.stringify({
+              default_model_run_id: "run-1",
+              items: [{ id: "run-1", name: "Run 1", is_default: true, baseline_prediction_count: 10 }],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (url.includes("/api/cases?")) {
+          return new Response(JSON.stringify({ detail: "后端暂不可用 (503)" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ items: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+
+    const { container } = renderWithQuery(
+      <ReviewGalleryIsland
+        active
+        lang="zh"
+        selectedBaselines={["0508"]}
+        isAdmin
+        canWrite
+        identityPending={false}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+    expect(screen.getAllByText("Issue 列表读取失败").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("当前没有匹配的 Issue")).not.toBeInTheDocument();
+    expect(container.querySelector("#caseCount")?.textContent).toBe("—");
+    expect(screen.getByRole("button", { name: "重试" })).toBeInTheDocument();
+  });
 });

@@ -374,20 +374,6 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     prevBaselinesKeyRef.current = key;
   }, [selectedBaselines]);
 
-  // Debounce search input -> filters.search
-  useEffect(() => {
-    if (searchDraft === filters.search) return;
-    const timer = window.setTimeout(() => {
-      setFilters((prev) => ({
-        ...prev,
-        search: searchDraft.trim(),
-        issueIds: searchDraft.trim() ? [] : prev.issueIds,
-        page: 1,
-      }));
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [searchDraft, filters.search]);
-
   // 1. Model Runs query
   const runsQuery = useQuery<ModelRunsResponse>({
     queryKey: ["review-gallery-runs", baselinesQuery],
@@ -720,39 +706,78 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     (next: ReviewFilterState, clearIssue = true) => {
       if (!active || typeof window === "undefined") return;
       const win = window as unknown as LegacyReviewBridgeWindow;
-      if (typeof win.pageUrl !== "function") return;
       const currentIssue = clearIssue
         ? ""
         : new URLSearchParams(window.location.search).get("issue") || "";
-      const nextUrl = win.pageUrl("review", {
-        issue: currentIssue,
-        runId: next.runId,
-        comparisonStatus: next.runId ? next.comparisonStatus : "all",
-        failureOnly: Boolean(next.runId && next.comparisonStatus === "mismatch"),
-        search: next.search,
-        issueIds: next.issueIds,
-        gtLabel: next.gtLabel,
-        modelLabel: next.modelLabel,
-        annotationAuthor: next.annotationAuthor,
-        reviewStatus: next.reviewStatus,
-        labelStates: next.labelStates,
-        gtRelations: next.gtRelations,
-        issueTags: next.issueTags,
-        targetGroup: next.targetGroup,
-        commentState:
-          next.commentState.length === 1 ? next.commentState[0] : "all",
-        workAssignee: next.workAssignee,
-        workSplitId: next.workSplitId,
-        taskView: next.workSplitId ? next.taskView : "",
-        taskProgress: next.workSplitId ? next.taskProgress : [],
-        baselines: activeTask?.baseline_ids || selectedBaselines,
-        forceBaselines: Boolean(activeTask),
-        workflowMode: next.workflowMode,
-        exclusion: next.exclusion.length === 1 ? next.exclusion[0] : "all",
-        clusterKey: next.clusterKey,
-        casePage: next.page,
-        casePageSize: next.pageSize,
-      });
+      let nextUrl = "";
+      if (typeof win.pageUrl === "function") {
+        nextUrl = win.pageUrl("review", {
+          issue: currentIssue,
+          runId: next.runId,
+          comparisonStatus: next.runId ? next.comparisonStatus : "all",
+          failureOnly: Boolean(next.runId && next.comparisonStatus === "mismatch"),
+          search: next.search,
+          issueIds: next.issueIds,
+          gtLabel: next.gtLabel,
+          modelLabel: next.modelLabel,
+          annotationAuthor: next.annotationAuthor,
+          reviewStatus: next.reviewStatus,
+          labelStates: next.labelStates,
+          gtRelations: next.gtRelations,
+          issueTags: next.issueTags,
+          targetGroup: next.targetGroup,
+          commentState:
+            next.commentState.length === 1 ? next.commentState[0] : "all",
+          workAssignee: next.workAssignee,
+          workSplitId: next.workSplitId,
+          taskView: next.workSplitId ? next.taskView : "",
+          taskProgress: next.workSplitId ? next.taskProgress : [],
+          baselines: activeTask?.baseline_ids || selectedBaselines,
+          forceBaselines: Boolean(activeTask),
+          workflowMode: next.workflowMode,
+          exclusion: next.exclusion.length === 1 ? next.exclusion[0] : "all",
+          clusterKey: next.clusterKey,
+          casePage: next.page,
+          casePageSize: next.pageSize,
+        });
+      } else {
+        const params = new URLSearchParams();
+        if (currentIssue) params.set("issue", currentIssue);
+        if (next.runId) {
+          params.set("run", next.runId);
+          if (next.comparisonStatus && next.comparisonStatus !== "all") {
+            params.set("comparison", next.comparisonStatus);
+          }
+        } else if (next.runExplicitNone) {
+          params.set("run", "none");
+        }
+        if (next.search) params.set("q", next.search);
+        if (next.issueIds.length) params.set("issue_ids", next.issueIds.join(","));
+        if (next.gtLabel.length) params.set("gt", joinFilterList(next.gtLabel));
+        if (next.modelLabel.length) params.set("model_label", joinFilterList(next.modelLabel));
+        if (next.annotationAuthor.length) params.set("reviewer", joinFilterList(next.annotationAuthor));
+        if (next.reviewStatus.length) params.set("status", joinFilterList(next.reviewStatus));
+        if (next.labelStates.length) params.set("label_state", joinFilterList(next.labelStates));
+        if (next.gtRelations.length) params.set("gt_relation", joinFilterList(next.gtRelations));
+        if (next.issueTags.length) params.set("issue_tags", joinFilterList(next.issueTags));
+        if (next.targetGroup) params.set("target_group", next.targetGroup);
+        if (next.commentState.length === 1) params.set("comment_state", next.commentState[0]);
+        if (next.exclusion.length === 1) params.set("exclusion", next.exclusion[0]);
+        if (next.workAssignee.length) params.set("work_assignee", joinFilterList(next.workAssignee));
+        if (next.workSplitId) {
+          params.set("work_split", next.workSplitId);
+          if (next.taskView) params.set("task_view", next.taskView);
+          if (next.taskProgress.length) params.set("task_progress", joinFilterList(next.taskProgress));
+        }
+        if (next.workflowMode === "model_review_only") params.set("workflow", "model_only");
+        if (next.clusterKey) params.set("evidence", next.clusterKey);
+        if (next.page > 1) params.set("page", String(next.page));
+        if (next.pageSize !== DEFAULT_CASE_PAGE_SIZE) params.set("page_size", String(next.pageSize));
+        const scopes = activeTask?.baseline_ids || selectedBaselines;
+        if (scopes.length) params.set("baselines", scopes.join(","));
+        const qs = params.toString();
+        nextUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+      }
       const currentUrl = `${window.location.pathname}${window.location.search}`;
       if (nextUrl && nextUrl !== currentUrl) {
         window.history.replaceState({ page: "review" }, "", nextUrl);
@@ -772,6 +797,21 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     },
     [persistRoute],
   );
+
+  // Debounce search input -> filters.search & sync URL ?q=
+  useEffect(() => {
+    const trimmed = searchDraft.trim();
+    if (trimmed === filters.search) return;
+    const timer = window.setTimeout(() => {
+      updateFilters((prev) => ({
+        ...prev,
+        search: trimmed,
+        issueIds: trimmed ? [] : prev.issueIds,
+        page: 1,
+      }));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, filters.search, updateFilters]);
 
   // Sync classic bridge state for #reviewDetailView, topbar active Run/overview, and prev/next navigation
   useEffect(() => {
@@ -1251,6 +1291,22 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     });
   };
 
+  const casesErrorMessage = casesQuery.isError
+    ? casesQuery.error instanceof Error
+      ? casesQuery.error.message
+      : bilingual(lang, "读取 Issue 列表失败，请重试。", "Failed to load Issues. Please retry.")
+    : "";
+
+  const lastCasesErrorRef = useRef<string>("");
+  useEffect(() => {
+    if (casesQuery.isError && casesErrorMessage && lastCasesErrorRef.current !== casesErrorMessage) {
+      lastCasesErrorRef.current = casesErrorMessage;
+      showToast(casesErrorMessage, true);
+    } else if (!casesQuery.isError) {
+      lastCasesErrorRef.current = "";
+    }
+  }, [casesQuery.isError, casesErrorMessage]);
+
   // Gallery range summary matching classic renderCasePagination()
   const gallerySummaryText = useMemo(() => {
     if (filters.workSplitId && taskContextQuery.isLoading) {
@@ -1258,6 +1314,9 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     }
     if (taskContextError) {
       return bilingual(lang, "任务范围加载失败", "Failed to load task scope");
+    }
+    if (casesQuery.isError) {
+      return bilingual(lang, "Issue 列表读取失败", "Failed to load Issues");
     }
     if (!readyToLoadCases || (casesQuery.isLoading && !casesQuery.data)) {
       return bilingual(lang, "正在加载 Issue…", "Loading Issues…");
@@ -1278,6 +1337,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     filters.pageSize,
     taskContextQuery.isLoading,
     taskContextError,
+    casesQuery.isError,
     readyToLoadCases,
     casesQuery.isLoading,
     casesQuery.data,
@@ -1311,6 +1371,21 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       );
     }
     if (taskContextError) return null;
+    if (casesQuery.isError) {
+      return (
+        <div className="empty-state issue-grid-empty review-gallery-error-state" role="alert">
+          <h2>{bilingual(lang, "Issue 列表读取失败", "Failed to load Issues")}</h2>
+          <p>{casesErrorMessage}</p>
+          <button
+            className="button button-quiet"
+            type="button"
+            onClick={() => void casesQuery.refetch()}
+          >
+            {bilingual(lang, "重试", "Retry")}
+          </button>
+        </div>
+      );
+    }
     if (!readyToLoadCases || casesQuery.isLoading) {
       return (
         <div className="no-asset issue-grid-empty">
@@ -1336,6 +1411,9 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     filters.workSplitId,
     taskContextQuery.isLoading,
     taskContextError,
+    casesQuery.isError,
+    casesErrorMessage,
+    casesQuery.refetch,
     readyToLoadCases,
     casesQuery.isLoading,
     effectiveComparison,
@@ -1587,6 +1665,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
               lang={lang}
               searchable
               summaryCount
+              groupNavigation
               placeholder={bilingual(lang, "全部 Issue 标签", "All Issue tags")}
               ariaLabel={bilingual(lang, "Issue 标签筛选", "Issue tag filter")}
               title={bilingual(
@@ -1865,7 +1944,12 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 className="button button-quiet"
                 id="exportFilteredIssuesButton"
                 type="button"
-                disabled={totalCount === 0 || Boolean(taskContextError) || taskContextQuery.isLoading}
+                disabled={
+                  totalCount === 0 ||
+                  casesQuery.isError ||
+                  Boolean(taskContextError) ||
+                  taskContextQuery.isLoading
+                }
                 title={
                   totalCount > 0
                     ? bilingual(
@@ -1877,7 +1961,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 }
                 onClick={handleExportSelection}
               >
-                {totalCount > 0
+                {totalCount > 0 && !casesQuery.isError
                   ? bilingual(lang, `导出当前筛选 · ${totalCount}`, `Export selection · ${totalCount}`)
                   : bilingual(lang, "导出当前筛选", "Export selection")}
               </button>
@@ -1888,6 +1972,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                   type="button"
                   disabled={
                     totalCount === 0 ||
+                    casesQuery.isError ||
                     !effectiveRunId ||
                     Boolean(taskContextError) ||
                     taskContextQuery.isLoading
@@ -1899,7 +1984,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                           "请先选择 Model Run；若只做 Case 标签，请前往 问题标注 > 实验分配。",
                           "Select a Model Run first. For Case labels only, use Case labeling > Experiment assignment.",
                         )
-                      : totalCount > 0
+                      : totalCount > 0 && !casesQuery.isError
                         ? bilingual(
                             lang,
                             `管理员：把当前 ${totalCount} 个筛选 Issue 写入任务负责人；可指定数量，剩余均分。`,
@@ -1909,7 +1994,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                   }
                   onClick={handleCreateAllocation}
                 >
-                  {totalCount > 0
+                  {totalCount > 0 && !casesQuery.isError
                     ? bilingual(lang, `新建分配 · ${totalCount}`, `New allocation · ${totalCount}`)
                     : bilingual(lang, "新建分配", "New allocation")}
                 </button>
@@ -1919,7 +2004,10 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 id="predictFilteredButton"
                 type="button"
                 disabled={
-                  predictionDisabled || Boolean(taskContextError) || taskContextQuery.isLoading
+                  predictionDisabled ||
+                  casesQuery.isError ||
+                  Boolean(taskContextError) ||
+                  taskContextQuery.isLoading
                 }
                 title={
                   totalCount > predictionBatchLimit
@@ -1936,7 +2024,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 }
                 onClick={handlePredictSelection}
               >
-                {totalCount > 0
+                {totalCount > 0 && !casesQuery.isError
                   ? bilingual(
                       lang,
                       `预测当前筛选 · ${totalCount}`,
@@ -1951,7 +2039,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 id="reviewNextPendingTaskButton"
                 type="button"
                 hidden={!showNextPendingBtn}
-                disabled={pendingJumpBusy}
+                disabled={pendingJumpBusy || casesQuery.isError}
                 title={bilingual(
                   lang,
                   "保留筛选和每页条数，首次定位首个待完成任务；再次点击继续向后查找",
@@ -1965,7 +2053,9 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
               </button>
               <span id="galleryResultSummary">{gallerySummaryText}</span>
               <span className="count-pill" id="caseCount">
-                {!readyToLoadCases || (casesQuery.isLoading && !casesQuery.data)
+                {!readyToLoadCases ||
+                casesQuery.isError ||
+                (casesQuery.isLoading && !casesQuery.data)
                   ? "—"
                   : String(totalCount)}
               </span>
@@ -1976,7 +2066,13 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
         <IssueCardGrid
           id="issueList"
           workspace="review"
-          items={taskContextError || (filters.workSplitId && taskContextQuery.isLoading) ? [] : casesData.items || []}
+          items={
+            taskContextError ||
+            casesQuery.isError ||
+            (filters.workSplitId && taskContextQuery.isLoading)
+              ? []
+              : casesData.items || []
+          }
           lang={lang}
           config={effectiveConfig}
           selectedRunId={effectiveRunId}
@@ -1989,13 +2085,15 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
         <Pagination
           page={filters.page}
           pageSize={filters.pageSize}
-          total={totalCount}
+          total={casesQuery.isError ? 0 : totalCount}
           lang={lang}
           loading={casesQuery.isFetching}
           showPageUnit
           disableJumpWhenSinglePage
           labelText={
-            readyToLoadCases && (!casesQuery.isLoading || casesQuery.data)
+            readyToLoadCases &&
+            !casesQuery.isError &&
+            (!casesQuery.isLoading || casesQuery.data)
               ? `${filters.page} / ${totalPages}`
               : "— / —"
           }

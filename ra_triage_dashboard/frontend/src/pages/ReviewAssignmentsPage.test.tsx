@@ -175,4 +175,122 @@ describe("ReviewAssignmentsPage", () => {
       expect(screen.getByText("本次变动")).toBeInTheDocument();
     });
   });
+
+  it("preserves comparison=none (and non-standard gallery comparison filters) across recount and preview without expanding to all", async () => {
+    window.sessionStorage.setItem(
+      "manual-review-allocation-draft-v1",
+      JSON.stringify({
+        created_at: new Date().toISOString(),
+        total: 866,
+        fromReview: true,
+        filters: {
+          model_run_id: "0821-review-backfill-20261019",
+          comparison: "none",
+          baselines: "0821-odd2",
+        },
+        groupSetup: {
+          groups: [
+            {
+              group_id: "group-1",
+              coverage_percent: 100,
+              coverage_strategy: "overlap",
+              members: [{ name: "alice", review_percent: 100 }],
+            },
+          ],
+          cross_groups: [],
+          pairing_mode: "orthogonal",
+          inputUnit: "percent",
+          ruleScopes: [],
+        },
+      }),
+    );
+
+    const caseUrls: string[] = [];
+    const splitPayloads: Array<Record<string, unknown>> = [];
+
+    mockApi.mockImplementation(async (path: string, init?: { method?: string; body?: unknown }) => {
+      if (path.startsWith("/api/cases/work-splits?")) {
+        return {
+          items: [],
+          metrics: { assignment_count: 0, completed_count: 0, pending_count: 0 },
+        };
+      }
+      if (path.startsWith("/api/model-runs")) {
+        return {
+          items: [
+            {
+              id: "0821-review-backfill-20261019",
+              name: "0821 Backfill",
+              baseline_prediction_count: 160,
+            },
+          ],
+        };
+      }
+      if (path === "/api/access-users") {
+        return {
+          items: [
+            { username: "alice", role: "writer" },
+            { username: "bob", role: "writer" },
+          ],
+        };
+      }
+      if (path.startsWith("/api/cases?")) {
+        caseUrls.push(path);
+        const params = new URLSearchParams(path.split("?")[1] || "");
+        const comp = params.get("comparison") || "";
+        return {
+          total: comp === "none" ? 866 : 1026,
+          items: [],
+        };
+      }
+      if (path === "/api/cases/work-split" && init?.method === "POST") {
+        const body = (init.body || {}) as Record<string, unknown>;
+        splitPayloads.push(body);
+        const filters = (body.filters || {}) as Record<string, string>;
+        const count = filters.comparison === "none" ? 866 : 1026;
+        return {
+          preview: {
+            total: count,
+            assignment_count: count,
+            group_coverage: {
+              case_count: count,
+              active_slots: count,
+              groups: [{ group_id: "group-1", members: [{ name: "alice", total: count, completed: 0 }] }],
+              combinations: [{ owners: ["alice"], count }],
+            },
+            members: [{ name: "alice", total: count, before: 0, total_after: count, completed: 0 }],
+          },
+        };
+      }
+      return {};
+    });
+
+    window.history.replaceState({}, "", "/manual-s6/review-assignments?new=1&baselines=0821-odd2");
+    const { container } = renderPage({ selectedBaselines: ["0821-odd2"] });
+
+    await waitFor(() => {
+      expect(caseUrls.length).toBeGreaterThan(0);
+    });
+    expect(
+      caseUrls.every((u) => new URLSearchParams(u.split("?")[1] || "").get("comparison") === "none"),
+    ).toBe(true);
+    expect(screen.getByText(/仅未预测 \(NONE\)/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.querySelector(".work-split-scope-count")?.textContent || "").toContain("866");
+    });
+
+    await waitFor(
+      () => {
+        expect(splitPayloads.length).toBeGreaterThan(0);
+      },
+      { timeout: 1500 },
+    );
+    const lastBody = splitPayloads.at(-1) || {};
+    const lastFilters = (lastBody.filters || {}) as Record<string, string>;
+    expect(lastBody.preview_only).toBe(true);
+    expect(lastFilters.comparison).toBe("none");
+    expect(lastFilters.comparison_status).toBe("none");
+    expect(lastFilters.baselines).toBe("0821-odd2");
+    window.sessionStorage.removeItem("manual-review-allocation-draft-v1");
+  });
 });

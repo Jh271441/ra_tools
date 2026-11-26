@@ -2022,7 +2022,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
           total={Number(data?.total || 0)}
           lang={lang}
           loading={analysisQuery.isFetching}
-          labelText={`${page} / ${pageCount}`}
+          labelText={!data && analysisQuery.isFetching ? "— / —" : `${page} / ${pageCount}`}
           ariaLabel={bilingual(lang, "原因明细分页", "Reason detail pagination")}
           onPageChange={(nextPage) => {
             setRoute((prev) => ({ ...prev, page: nextPage }));

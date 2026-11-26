@@ -21,6 +21,7 @@ export interface MultiSelectProps {
   disabled?: boolean;
   searchable?: boolean;
   summaryCount?: boolean;
+  groupNavigation?: boolean;
   showOnlyThis?: boolean;
   className?: string;
 }
@@ -43,6 +44,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   disabled = false,
   searchable,
   summaryCount = false,
+  groupNavigation = false,
   showOnlyThis = true,
   className = "",
 }) => {
@@ -53,6 +55,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const optionsRef = useRef<HTMLDivElement | null>(null);
   const reactId = useId();
   const panelId = id ? `${id}-panel` : `multi-select-panel-${reactId}`;
 
@@ -162,10 +165,33 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
     onChange([]);
   };
 
+  const hasGroupNav = Boolean(
+    groupNavigation && groupedOptions.filter(([name]) => Boolean(name)).length > 1,
+  );
+
+  const jumpToGroup = (groupIdx: number) => {
+    const container = optionsRef.current;
+    if (!container) return;
+    const groupEl = container.querySelector<HTMLElement>(`[data-multi-group="${groupIdx}"]`);
+    if (!groupEl) return;
+    const paddingTop = Number.parseFloat(window.getComputedStyle(container).paddingTop || "0") || 0;
+    container.scrollTop +=
+      groupEl.getBoundingClientRect().top - container.getBoundingClientRect().top - paddingTop;
+    groupEl
+      .querySelector<HTMLInputElement>('input[type="checkbox"]:not(:disabled)')
+      ?.focus({ preventScroll: true });
+  };
+
+  useEffect(() => {
+    if (open && optionsRef.current) {
+      optionsRef.current.scrollTop = 0;
+    }
+  }, [open, query]);
+
   return (
     <div
       ref={rootRef}
-      className={`multi-filter ra-react-multiselect${open ? " is-open" : ""}${disabled ? " is-disabled" : ""}${className ? ` ${className}` : ""}`}
+      className={`multi-filter ra-react-multiselect${open ? " is-open" : ""}${disabled ? " is-disabled" : ""}${hasGroupNav ? " has-group-navigation" : ""}${className ? ` ${className}` : ""}`}
       data-open={open ? "true" : "false"}
     >
       <button
@@ -231,14 +257,47 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
             />
           )}
 
-          <div className="multi-filter-options" role="listbox" aria-multiselectable="true">
+          <div
+            ref={optionsRef}
+            className="multi-filter-options"
+            role="listbox"
+            aria-multiselectable="true"
+          >
+            {hasGroupNav && filteredOptions.length > 0 && (
+              <div
+                className="multi-filter-group-nav"
+                role="group"
+                aria-label={bilingual(lang, "按分组跳转", "Jump to group")}
+              >
+                {groupedOptions.map(([groupName], idx) =>
+                  groupName ? (
+                    <button
+                      key={`jump-${groupName}-${idx}`}
+                      type="button"
+                      className="multi-filter-action multi-filter-group-jump"
+                      data-multi-group-jump={String(idx)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        jumpToGroup(idx);
+                      }}
+                    >
+                      {groupName}
+                    </button>
+                  ) : null,
+                )}
+              </div>
+            )}
             {filteredOptions.length === 0 ? (
               <div className="ra-multiselect-empty">
                 {bilingual(lang, "无匹配选项", "No matching options")}
               </div>
             ) : (
-              groupedOptions.map(([groupName, groupItems]) => (
-                <div key={groupName || "__default"} className="multi-filter-group">
+              groupedOptions.map(([groupName, groupItems], idx) => (
+                <div
+                  key={groupName || "__default"}
+                  className="multi-filter-group"
+                  data-multi-group={String(idx)}
+                >
                   {groupName && <div className="multi-filter-group-label">{groupName}</div>}
                   {groupItems.map((option) => {
                     const checked = selectedSet.has(option.value);
