@@ -40,26 +40,46 @@ function vmCoverageCell(row,lane){
   return `<span class="vm-cell-stack" title="${escapeHtml(known)}">${vmCountRate(coverage.filled,coverage.total)}</span>`;
 }
 function vmReportEmpty(message,columns){return `<tr><td colspan="${columns}" class="vm-table-empty">${escapeHtml(message)}</td></tr>`;}
+function vmWorkloadRow(label, point, byThreshold) {
+  const selected = byThreshold && point?.threshold === versionMetrics.threshold;
+  const header = `<th scope="row">${escapeHtml(label)}</th>`;
+  if (!point) {
+    return `<tr>${header}<td colspan="3" class="vm-table-empty">${uiText('暂无阈值数据','No threshold data')}</td></tr>`;
+  }
+  const baseline = point.full_low + point.reduction;
+  const reductionRate = baseline ? vmPct(point.reduction / baseline, 1) : '—';
+  const sample = byThreshold ? `<td>${vmCountRate(point.human_count, point.total)}</td>` : '';
+  const share = byThreshold && point.full_total ? `<small>${vmPct(point.full_low / point.full_total)}</small>` : '';
+  return `<tr${selected ? ' class="is-selected" aria-current="true"' : ''}>${header}
+    <td><strong>${point.full_low} / ${point.full_total}</strong>${share}</td>
+    <td><strong>${point.reduction}</strong><small>${reductionRate}</small></td>${sample}
+    <td><strong>${vmPct(point.accuracy)}</strong><small>${point.correct}/${point.total}</small></td></tr>`;
+}
 function vmRenderWorkload(rows, empty) {
-  const threshold = versionMetrics.threshold;
+  const s = versionMetrics, byThreshold = s.thresholdExpanded;
   $('#vmWorkloadThreshold').textContent = vmThresholdText();
+  $('#vmWorkloadDimension').textContent = byThreshold ? 'conf' : uiText('版本','Release');
+  $('#vmWorkloadReleasePicker').hidden = !byThreshold;
+  $('#vmWorkloadSampleHead').hidden = !byThreshold;
+  $('#versionMetricsPage').querySelectorAll('[name="vmWorkloadMode"]').forEach(input => {
+    input.checked = input.value === (byThreshold ? 'threshold' : 'release');
+  });
   const body = $('#vmWorkloadRows');
-  if (!rows.length) {
-    body.innerHTML = vmReportEmpty(empty, 4);
+  if (!byThreshold) {
+    body.innerHTML = rows.map(row => vmWorkloadRow(row.family,
+      row.status === 'ready' && row.thresholds?.find(t => t.threshold === s.threshold), false)
+    ).join('') || vmReportEmpty(empty, 4);
     return;
   }
-  body.innerHTML = rows.map(row => {
-    const release = `<th scope="row">${escapeHtml(row.family)}</th>`;
-    const point = row.status === 'ready' && row.thresholds?.find(t => t.threshold === threshold);
-    if (!point) {
-      return `<tr>${release}<td colspan="3" class="vm-table-empty">${uiText('暂无阈值数据','No threshold data')}</td></tr>`;
-    }
-    const baseline = point.full_low + point.reduction;
-    const reductionRate = baseline ? vmPct(point.reduction / baseline, 1) : '—';
-    return `<tr>${release}<td><strong>${point.full_low} / ${point.full_total}</strong></td>
-      <td><strong>${point.reduction}</strong><small>${reductionRate}</small></td>
-      <td><strong>${vmPct(point.accuracy)}</strong><small>${point.correct}/${point.total}</small></td></tr>`;
-  }).join('');
+  const row = rows.find(item => item.family === s.thresholdFamily);
+  $('#vmThresholdFamily').disabled = !rows.length;
+  vmSelect('vmThresholdFamily', rows.map(row => [row.family, row.family]), s.thresholdFamily);
+  $('#vmThresholdScope').textContent = row?.status === 'ready' ? uiText(
+    `已发布 ${row.published_total} · 有效抽样 ${row.valid_total}`,
+    `Published ${row.published_total} · Valid samples ${row.valid_total}`) : '';
+  const points = row?.status === 'ready' ? row.thresholds : [];
+  body.innerHTML = points?.map(t => vmWorkloadRow(t.threshold.toFixed(2), t, true)).join('')
+    || vmReportEmpty(rows.length ? uiText('当前版本暂无阈值数据','No threshold data for this release') : empty, 5);
 }
 function vmFreshnessSummary(rows){
   const times=rows.filter(row=>row.status==='ready').map(row=>new Date(row.observed_at)).filter(date=>Number.isFinite(date.getTime())).sort((a,b)=>a-b);
@@ -88,19 +108,12 @@ function vmRenderReports(){
     if(row.status!=='ready')return `<tr>${date}<td><strong>—/${row.current_sample_total ?? '—'}</strong></td><td colspan="8" class="vm-table-empty">${row.reason==='human_fields_required'?uiText('请更新指标以补齐人工 GT 字段','Update metrics to collect the missing human GT fields'):row.status==='error'?uiText('Trail 快照不可用，请更新指标','Trail snapshot unavailable. Update metrics.'):uiText('暂无 Trail 快照，请更新指标','No Trail snapshot. Update metrics.')}</td></tr>`;
     return `<tr>${date}<td><strong>${row.valid_total}/${row.sample_total}</strong>${change?`<small>${escapeHtml(change)}</small>`:''}</td><td>${escapeHtml(vmReferenceCounts(row))}</td><td>${vmCoverageCell(row,'te')}</td><td>${vmCoverageCell(row,'rd')}</td>`+VM_SCHEMES.map(key=>`<td>${vmScoreCell(row,key)}</td>`).join('')+'</tr>';
   }).join('');
-  vmRenderThresholdReport();
-}
-function vmRenderThresholdReport(){
-  const s=versionMetrics,rows=[...(s.data?.items||[])].sort((a,b)=>b.family.localeCompare(a.family)),panel=$('#vmThresholdAnalysis');
-  panel.open=s.thresholdExpanded;$('#vmThresholdFamily').disabled=s.loading||Boolean(s.error)||!rows.length;
-  vmSelect('vmThresholdFamily',rows.map(row=>[row.family,row.family.slice(0,4)+' / '+vmFamilyLabel(row.family)]),s.thresholdFamily);
-  const row=rows.find(item=>item.family===s.thresholdFamily),available=row?.status==='ready';
-  $('#vmThresholdScope').textContent=available?uiText(`已回刷全量 ${row.published_total} · 有效抽样 ${row.valid_total}`,`Published population ${row.published_total} · Valid samples ${row.valid_total}`):'';
-  if(!s.thresholdExpanded)return;
-  const error=s.error?uiText('指标读取失败，请重试','Metrics unavailable. Please retry.'):s.loading?uiText('正在读取指标…','Loading metrics…'):uiText('当前版本暂无有效快照','No valid snapshot for this release');
-  $('#vmThresholdRows').innerHTML=!available||s.loading||s.error?vmReportEmpty(error,5):(row.thresholds||[]).map(t=>`<tr${t.threshold===s.threshold?' class="is-selected" aria-current="true"':''}><th scope="row">${t.threshold.toFixed(2)}</th><td>${vmCountRate(t.full_low,t.full_total)}</td><td>${t.reduction}</td><td>${vmCountRate(t.human_count,t.total)}</td><td><strong>${vmPct(t.accuracy)}</strong><small>${t.correct}/${t.total}</small></td></tr>`).join('');
 }
 function vmBindReports(){
   $('#vmThresholdFamily').addEventListener('change',event=>vmChange({thresholdFamily:event.target.value},{local:true}));
-  $('#vmThresholdAnalysis').addEventListener('toggle',event=>{if(versionMetrics.active&&event.target.open!==versionMetrics.thresholdExpanded)vmChange({thresholdExpanded:event.target.open},{local:true});});
+  $('#versionMetricsPage').addEventListener('change', event => {
+    if (event.target.name === 'vmWorkloadMode') {
+      vmChange({thresholdExpanded:event.target.value === 'threshold'}, {local:true});
+    }
+  });
 }
