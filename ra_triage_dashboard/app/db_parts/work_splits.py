@@ -108,7 +108,7 @@ class DatabaseWorkSplitsMixin:
 
         safe_limit = max(1, min(int(limit or 50), 100))
         run_id = str(model_run_id or "").strip()
-        lifecycle_clause, parameters = task_lifecycle_where(lifecycle)
+        lifecycle_clause, parameters = task_lifecycle_where(lifecycle, include_archived=bool(split_id))
         where = "WHERE split.task_kind != 'labeling' AND " + lifecycle_clause
         if split_id:
             where += " AND split.id = ?"
