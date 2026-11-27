@@ -14,7 +14,7 @@ fixture = runpy.run_path(str(ROOT / 'tests/combined_review_hydration_browser.py'
 setup, count = re.subn(r'  api = async path => \{[\s\S]+?\n  \};', '  api = originalApi;', fixture['SETUP'])
 assert count == 1
 setup = setup.replace('  state.selectedCase = fixtureData;', '''
-  fixtureData.label_state.sources=[{label_case_id:'labels',source_revision_ids:[201],revision_summaries:[revision]}];
+  fixtureData.label_state.sources=[{label_case_id:'labels',source_revision_ids:[201],state:'resolved',expected_output:revision.expected_output,revision_summaries:[revision]}];
   fixtureData.label_cases=[{id:'labels',revisions:[revision],resolution:{state:'resolved',heads:[revision]}}];
   fixtureData.label_state.human_publication={
     lanes:{rd:{state:'pending'},te:{state:'resolved',label:'正确触发'},arbitrated:{state:'none'}},
@@ -105,6 +105,10 @@ def run():
             assert page.evaluate('openedAt-clickedAt') < 500
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
 
+        def dialog_fits(page):
+            return page.locator('#caseDecisionEvidence').evaluate(
+                'n => n.scrollWidth <= n.clientWidth && document.documentElement.scrollWidth <= innerWidth')
+
         def finish(page, backend):
             data = page.evaluate('fixtureData')
             backend['held'].pop().fulfill(json=copy.deepcopy(data))
@@ -113,8 +117,13 @@ def run():
             assert summary.locator('strong').count() == 3
             assert all(text not in summary.inner_text() for text in ('待结论', 'Awaiting result', '已完成', 'Completed'))
             basis = page.locator('#caseDecisionEvidence .case-decision-basis')
-            assert not basis.evaluate('n=>n.open')
-            assert not basis.locator('[data-decision-trail]').is_visible()
+            assert basis.is_visible()
+            assert '#201' in basis.inner_text()
+            assert 'alice' in basis.inner_text()
+            assert data['label_cases'][0]['revisions'][0]['rationale'] in basis.inner_text()
+            assert page.locator('.case-decision-conclusion h3').inner_text() == page.evaluate(
+                'expectedOutputDisplayText(fixtureData.label_state.expected_output)')
+            assert dialog_fits(page)
             assert ('已同步' if page.evaluate("state.uiLanguage === 'zh'") else 'Synced') in summary.inner_text()
             assert page.locator('#caseDecisionRelabel').is_enabled()
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
@@ -133,9 +142,7 @@ def run():
                     dialog = page.locator('#caseLabelDecisionDialog')
                     if (width, language, theme) in [(320, 'en', 'light'), (1440, 'zh', 'dark')]:
                         dialog.screenshot(path=str(OUTPUT / f'summary-{width}-{language}-{theme}.png'))
-                    details = dialog.locator('.case-decision-basis')
-                    details.locator('summary').click()
-                    assert details.locator('[data-decision-trail]').is_visible()
+                    assert dialog.locator('[data-decision-trail]').is_visible()
                     page.locator('#caseLabelDecisionDialog [data-close-decision]').first.click()
                     page.wait_for_function('mediaResumes===1')
                     assert page.evaluate('document.querySelector("#annotationForm")===originalForm&&detailHeroMediaEl()===originalMedia')
@@ -146,6 +153,60 @@ def run():
                     page.close()
 
         if not os.environ.get('REVIEW_SUMMARY_SINGLE'):
+            page, backend = scenario(320, 'zh', 'dark')
+            page.evaluate("""()=>{
+              fixtureData.label_cases = [];
+              fixtureData.label_state = {state:'none', sources:[], human_publication:{
+                lanes:{rd:{state:'pending',submitted:0,required:1}, te:{state:'pending',submitted:0,required:1},
+                       arbitrated:{state:'none'}}, sync:{}}};
+              fixtureData.exclusion_summary = null;
+              fixtureData.trail_metadata_status = 'ready';
+              fixtureData.dashboard_should_exclude = false;
+            }""")
+            open_held(page, backend)
+            payload = page.evaluate('fixtureData')
+            del payload['trail_metadata_status'], payload['dashboard_should_exclude']
+            backend['held'].pop().fulfill(json=payload)
+            headline = page.locator('.case-decision-conclusion h3')
+            headline.wait_for()
+            evidence = page.locator('#caseDecisionEvidence')
+            assert headline.inner_text() == '等待人工标注'
+            assert evidence.inner_text().count('0/1 人已提交') == 2
+            assert '未裁决' in evidence.inner_text() and '暂无排除意见' in evidence.inner_text()
+            assert '分歧' not in evidence.inner_text()
+            assert 'RD、TE′ 尚待提交有效标注' in evidence.inner_text()
+            assert evidence.locator('[data-decision-trail]').inner_text() == '不排除'
+            page.locator('#caseLabelDecisionDialog').screenshot(path=str(OUTPUT / 'pending-roles-320-zh-dark.png'))
+            page.evaluate("applyUiLanguage('en',{persist:false})")
+            assert headline.inner_text() == 'Awaiting human labels'
+            assert evidence.inner_text().count('0/1 reviewers submitted') == 2
+            assert page.locator('#caseDecisionRelabel').is_disabled() and dialog_fits(page)
+            results.append({'scenario': 'assigned roles without Case records, preserved Trail status and locale switch', 'passed': True})
+            page.close()
+
+            page, backend = scenario(390, 'en', 'light')
+            open_held(page, backend)
+            payload = page.evaluate('fixtureData')
+            source = payload['label_state']['sources'][0]
+            peer = dict(source['revision_summaries'][0], id=202, author='bob', expected_output='正确触发',
+                        is_excluded=True, rationale='Evidence from the second reviewer')
+            source.update(state='conflict', expected_output='', source_revision_ids=[201, 202])
+            source['revision_summaries'].append(peer)
+            payload['label_cases'][0]['resolution'].update(state='conflict', heads=source['revision_summaries'])
+            payload['label_state'].update(state='conflict', expected_output='')
+            payload['exclusion_summary']['is_excluded'] = True
+            backend['held'].pop().fulfill(json=payload)
+            headline = page.locator('.case-decision-conclusion h3')
+            headline.wait_for()
+            assert 'disputed' in headline.inner_text()
+            basis = page.locator('.case-decision-basis')
+            assert 'alice' in basis.inner_text() and 'bob' in basis.inner_text()
+            assert peer['rationale'] in basis.inner_text()
+            assert '1 for exclusion, 1 for inclusion' in page.locator('.case-decision-exclusion').inner_text()
+            assert dialog_fits(page)
+            results.append({'scenario': 'conflicting opinions with attributed evidence and exclusion counts', 'passed': True})
+            page.close()
+
             page, backend = scenario(320, 'en', 'light')
             page.evaluate("state.session.access_role='viewer'; bindReviewDetailActionShortcuts(); document.activeElement.blur()")
             page.keyboard.press('l')

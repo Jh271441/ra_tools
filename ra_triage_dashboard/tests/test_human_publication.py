@@ -38,6 +38,19 @@ def choose(db,cohort='low'):
     return row['issue_id'], row['binding']
 
 
+def test_assigned_roles_visible_before_first_case_label(db):
+    iid, _ = choose(db, 'sampling')
+    scope = db.human_label_context(iid)['scope']['baseline_scope']
+    assert not db.label_cases_for_issue(iid)
+    for detailed in (True, False):
+        result = db.project_issue_label_states(scope, [iid], include_sources=detailed)[iid]
+        assert result['state'] == 'none' and not result['decision']
+        lanes = result['human_publication']['lanes']
+        for role in ('rd', 'te'):
+            assert (lanes[role]['state'], lanes[role]['submitted'], lanes[role]['required']) == ('pending', 0, 1)
+        assert lanes['arbitrated']['state'] == 'none'
+
+
 def context(db,iid,actor):
     human=db.human_label_context(iid)
     return db.combined_review_context(issue_id=iid,campaign_id=human['scope']['campaign_id'],reviewer=actor)

@@ -638,7 +638,13 @@ class LabelingProjectionMixin:
             human_by_issue=self.human_label_contexts(sorted(managed),connection=conn)
         for issue_id in cleaned:
             cases = cases_by_issue.get(issue_id, [])
-            if not cases or issue_id not in gt_by_issue:
+            if issue_id not in gt_by_issue:
+                continue
+            human = human_by_issue.get(issue_id)
+            if not cases:
+                # Role assignments exist before the first Case revision is created.
+                if human and human["scope"]["baseline_scope"] == scope:
+                    projected[issue_id]["human_publication"] = human
                 continue
             cases = sorted(
                 cases,
@@ -813,7 +819,6 @@ class LabelingProjectionMixin:
 
             source_payload = _issue_decision_source_payload(sources)
             source_fingerprint = _sha256_json(source_payload) if source_payload else ""
-            human=human_by_issue.get(issue_id)
             if human:
                 source_fingerprint=human['source_fingerprint']
             decision_row = decision_by_issue.get(issue_id)

@@ -30,7 +30,7 @@ function hpMetricsMarkup(data, disabled) {
     [decision?'stale':'conflict',decision?'stale':'conflict','需复核','Needs review','m12 3 10 18H2L12 3zm0 6v5m0 3v1'],
   ]});
 }
-function humanRoleSummary(human) {
+function humanRoleSummary(human, {showProgress = false} = {}) {
   if (!human) return '';
   const names = {rd: 'RD', te: 'TE′', arbitrated: uiText('裁决', 'Decision')};
   const lanes = ['rd', 'te', 'arbitrated'].map(lane => {
@@ -38,6 +38,9 @@ function humanRoleSummary(human) {
     const parts = [];
     if (result.state !== 'resolved' || !result.label) parts.push(humanStatus(result.state));
     if (result.label) parts.push(rdLabel(result.label));
+    if (showProgress && result.required > 0 && Number.isInteger(result.submitted)) {
+      parts.push(uiText(`${result.submitted}/${result.required} 人已提交`, `${result.submitted}/${result.required} reviewers submitted`));
+    }
     const sync = human.sync[lane];
     if (sync) {
       const status = human.scope?.publication_armed === 0 ? 'awaiting_activation' : sync.sync_state;

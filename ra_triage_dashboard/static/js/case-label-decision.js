@@ -29,28 +29,66 @@ function caseDecisionRecordMarkup(vote, sourceName, kind = "", adopt = false) {
   return historyRecordMarkup({author:vote.author || vote.created_by || uiText("未记录作者", "Unknown author"),createdAt:vote.created_at,badges,meta,body,actions});
 }
 
+function caseDecisionSourceBasis(data, source, index) {
+  const revisions = source.revision_summaries || [];
+  const effective = source.state === "resolved" && source.method === "adjudication"
+    ? revisions.filter(r => r.id === source.result_revision_id) : revisions;
+  const progress = source.task_id && source.assigned_count > 0
+    ? uiText(`${source.submitted_count}/${source.assigned_count} 人已提交`, `${source.submitted_count}/${source.assigned_count} reviewers submitted`) : "";
+  const outcome = source.state === "resolved" && source.expected_output
+    ? expectedOutputDisplayText(source.expected_output) : caseDecisionStateText(source.state);
+  return `<li><strong>${escapeHtml(caseDecisionSourceName(data, source, index))}</strong> · ${escapeHtml([outcome, progress].filter(Boolean).join(" · "))}
+    ${effective.map(r => {
+      const label = r.expected_output ? expectedOutputDisplayText(r.expected_output) : uiText("缺少分类", "Classification missing");
+      const note = r.rationale || uiText("未填写标注说明", "No rationale recorded");
+      return `<p>${escapeHtml([r.author, `#${r.id}`, label].filter(Boolean).join(" · "))} — ${escapeHtml(note)}</p>`;
+    }).join("")}</li>`;
+}
+
 function caseDecisionFlowMarkup(data) {
-  const explanation = caseLabelExplanation(data), result = data.label_state || {}, decision = result.decision;
+  const explanation = caseLabelExplanation(data), result = data.label_state || {};
+  const {status, sources, output} = explanation;
+  const decision = result.decision, human = result.human_publication;
+  const pendingRoles = ["rd", "te"].filter(role => human?.lanes?.[role]?.state === "pending");
+  const waitingForRole = !sources.length && pendingRoles.length > 0;
+  const headline = output ? expectedOutputDisplayText(output) : ({
+    conflict: uiText("分类有分歧，待裁决", "Classification disputed · decision needed"),
+    stale: uiText("分类结论待复核", "Classification needs rechecking"),
+    pending: uiText("分类待补齐", "Classification incomplete"),
+  })[status] || (waitingForRole ? uiText("等待人工标注", "Awaiting human labels") : uiText("尚无分类结论", "No classification yet"));
   const excluded = data.exclusion_summary?.is_excluded;
-  const exclusionState = decision?.stale && decision.full_result ? "stale" : caseExclusionNeedsDecision(data) ? "conflict" : typeof excluded === "boolean" ? "resolved" : "pending";
-  const missing = (result.sources || []).flatMap(s => (s.revision_summaries || []).filter(r => !r.expected_output).map(r => r.author));
-  const labelMissing = missing.length ? uiText(`缺少分类：${[...new Set(missing)].join("、")}`, `Classification missing: ${[...new Set(missing)].join(", ")}`) : "";
-  const statusText = state => state === "resolved" ? "" : `<span>${escapeHtml(caseDecisionStateText(state))}</span>`;
-  const exclusionReason = decision?.full_result && !decision.stale
-    ? uiText("完整 Issue 裁决生效", "Complete Issue decision applies")
-    : exclusionState === "conflict" ? uiText("排除意见有分歧，裁决前暂按排除处理", "Exclusion votes disagree. The Issue is provisionally excluded.")
-    : typeof excluded === "boolean" ? uiText("按当前有效排除意见汇总", "Based on current exclusion votes")
-    : uiText("暂无排除意见", "No exclusion votes yet");
+  const votes = caseExclusionVotes(data);
+  const exclusionConflict = caseExclusionNeedsDecision(data);
+  let exclusionBasis = uiText("暂无排除意见", "No exclusion opinion recorded");
+  if (decision?.full_result && !decision.stale) {
+    exclusionBasis = uiText(`采用 Issue 裁决 #${decision.id}`, `Issue decision #${decision.id} applies`);
+  } else if (votes.length) {
+    const yes = votes.filter(v => v.is_excluded === true).length;
+    const no = votes.filter(v => v.is_excluded === false).length;
+    exclusionBasis = uiText(`排除 ${yes} 票，不排除 ${no} 票`, `${yes} for exclusion, ${no} for inclusion`);
+    if (exclusionConflict) exclusionBasis += uiText("，有分歧，暂按排除处理", " · disputed, provisionally excluded");
+  }
+  let reason = explanation.reason;
+  if (!sources.length && status === "none") {
+    const roles = pendingRoles.map(role => role === "rd" ? "RD" : "TE′");
+    reason = waitingForRole
+      ? uiText(`${roles.join("、")} 尚待提交有效标注，当前没有可用于判定分类的人工记录。`,
+        `Awaiting valid labels from ${roles.join(" and ")}. No Case labels are available to establish a classification.`)
+      : uiText("尚无 Case 标注记录。", "No Case labels have been recorded.");
+  }
+  const decisionNote = decision?.rationale || decision?.label_rationale;
   return `<section class="case-decision-result">
-    <p class="case-decision-fact-heading"><span>${uiText("分类", "Classification")}</span><strong>${escapeHtml(explanation.output ? expectedOutputDisplayText(explanation.output) : "—")}</strong>${statusText(explanation.status)}</p>
-    <p class="case-decision-fact-heading"><span>${uiText("排除意见", "Exclusion")}</span><strong>${exclusionState === "conflict" ? uiText("暂按排除", "Provisionally excluded") : escapeHtml(caseExclusionText(excluded))}</strong>${statusText(exclusionState)}</p>
-    ${explanation.status === "pending" && exclusionState !== "conflict" ? `<p class="quiet-meta">${escapeHtml(uiText("可直接关闭，待标注人补齐分类。", "You can close this dialog while the reviewers complete their labels."))}</p>` : ""}
-    ${humanRoleSummary(result.human_publication)}
-    <details class="case-decision-history case-decision-basis"><summary>${uiText("判定依据", "Decision details")}</summary>
-      <p class="quiet-meta">${escapeHtml(explanation.reason)}${labelMissing ? ` · ${escapeHtml(labelMissing)}` : ""}</p>
-      <p class="quiet-meta">${exclusionReason} · Trail · <span data-decision-trail>${escapeHtml(caseExclusionTrailText(data))}</span></p>
-      ${decision ? `<p class="quiet-meta">${escapeHtml(decision.created_by)} · ${escapeHtml(formatTime(decision.created_at))}</p>` : ""}
-    </details></section>`;
+    <div class="case-decision-conclusion"><span>${uiText("Issue 分类结论", "Issue classification")}</span><h3>${escapeHtml(headline)}</h3></div>
+    ${humanRoleSummary(human, {showProgress:true})}
+    <section class="case-decision-basis"><h4>${uiText("判定依据", "Decision basis")}</h4>
+      <p>${escapeHtml(reason)}</p>
+      ${decision ? `<p>${escapeHtml([uiText(`裁决 #${decision.id}`, `Decision #${decision.id}`), decision.created_by, formatTime(decision.created_at), decisionNote || uiText("未填写裁决说明", "No decision rationale recorded")].filter(Boolean).join(" · "))}</p>` : ""}
+      ${sources.length ? `<ul>${sources.map((source, i) => caseDecisionSourceBasis(data, source, i)).join("")}</ul>` : ""}
+      ${status === "pending" && !exclusionConflict ? `<p class="quiet-meta">${uiText("可直接关闭，待标注人补齐分类。", "You can close this dialog while the reviewers complete their labels.")}</p>` : ""}
+    </section>
+    <div class="case-decision-exclusion"><p><strong>${uiText("排除意见", "Exclusion")}</strong> ${typeof excluded === "boolean" ? (exclusionConflict ? uiText("暂按排除", "Provisionally excluded") : escapeHtml(caseExclusionText(excluded))) + " · " : ""}${escapeHtml(exclusionBasis)}</p>
+      <p class="quiet-meta">${uiText("Trail 排除状态", "Trail exclusion status")} · <span data-decision-trail>${escapeHtml(caseExclusionTrailText(data))}</span></p></div>
+  </section>`;
 }
 function caseDecisionRevisions(data) {
   const heads = new Set((data.label_state?.sources || []).flatMap(s => s.source_revision_ids || []));
@@ -336,6 +374,11 @@ async function refreshUnifiedCaseDecisionSources() {
     });
     if(!current())return;
     if(fresh.issue_id!==c.caseData.issue_id)throw apiResponseError("返回的 Issue 不一致，请重试。","The returned Issue does not match. Retry loading.");
+    // Trail facts arrive independently of the labeling detail.
+    if (c.caseData.trail_metadata_status && !fresh.trail_metadata_status) {
+      fresh.trail_metadata_status = c.caseData.trail_metadata_status;
+      fresh.dashboard_should_exclude = c.caseData.dashboard_should_exclude;
+    }
     c.caseData=fresh;c.sourcesStatus="ready";renderCaseLabelDecisionDialog();
   }catch(e){
     if(!current())return;

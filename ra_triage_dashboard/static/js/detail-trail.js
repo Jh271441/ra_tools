@@ -328,6 +328,8 @@ function applyTrailDetailMetadata(result, issueId, requestSeq) {
   }
   state.selectedCase.external_links = result?.external_links || {};
   state.selectedCase.trail_metadata_status = result?.status || "unavailable";
+  state.selectedCase.dashboard_should_exclude = result?.dashboard_should_exclude;
+  if ($("#caseLabelDecisionDialog")?.open) refreshCaseExclusionSummary();
   const trailShouldExclude = result?.dashboard_should_exclude === true;
   state.selectedCase.trail_should_exclude = trailShouldExclude;
   const excludeInput = $("#reviewExcludeInput");
