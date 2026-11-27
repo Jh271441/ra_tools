@@ -235,6 +235,47 @@ describe("ReviewAssignmentsPage", () => {
     expect(mockApi.mock.calls.filter(([path]) => path.endsWith("/allocation/preview"))).toHaveLength(1);
   });
 
+  it.each(["zh", "en"] as const)("shows ordinary combined-review actions on a manual draft in %s", async (lang) => {
+    const item = {
+      model_run_id: "run-a", workflow_mode: "model_review_and_case_label", baseline_ids: ["0821-odd2"],
+      assigned_to_me: true, members: [], is_current: false,
+    };
+    mockApi.mockImplementation(async (path) => path.startsWith("/api/cases/work-splits?")
+      ? { items: [
+          { ...item, split_id: "preview", campaign_name: "Preview", lifecycle: "draft" },
+          { ...item, split_id: "live", campaign_name: "Live", lifecycle: "active", is_current: true,
+            filter_snapshot: { baselines: item.baseline_ids } },
+          { ...item, split_id: "closed", campaign_name: "Closed batch", lifecycle: "closed" },
+        ] }
+      : { items: [] });
+
+    const { container } = renderPage({ lang });
+    await screen.findByText(/^Preview ·/);
+    const footer = (id: string) =>
+      container.querySelector<HTMLElement>(`[data-review-assignment-batch="${id}"] .review-assignment-batch-actions`)!;
+    const labels = (id: string) => Array.from(footer(id).children, (control) => control.textContent);
+    const draft = footer("preview");
+    expect(labels("preview")).toHaveLength(6);
+    expect(labels("preview")).toEqual(labels("live"));
+    expect(labels("closed")).toHaveLength(3);
+    const controls = Array.from(draft.children);
+    expect(controls[1]).toBeDisabled();
+    expect(controls[3]).toBeDisabled();
+    expect(controls[3]).toHaveAttribute("title", lang === "zh" ? "激活草稿后可用" : "Available after draft activation");
+    expect(controls[4]).toBeEnabled();
+    expect(controls[5]).toBeEnabled();
+    for (const index of [0, 2]) {
+      const params = new URL((controls[index] as HTMLAnchorElement).href).searchParams;
+      expect(params.get("work_split")).toBe("preview");
+      expect(params.get("baselines")).toBe("0821-odd2");
+      expect(params.get("run")).toBe("run-a");
+      expect(params.has("work_assignee")).toBe(false);
+      expect(params.has("task_progress")).toBe(false);
+    }
+    const audit = within(draft.closest("article")!).getByRole("link", { name: lang === "zh" ? "草稿" : "Draft" });
+    expect(new URL((audit as HTMLAnchorElement).href).searchParams.get("campaign")).toBe("preview");
+  });
+
   it("opens each merged dataset as a standard combined review task", async () => {
     const campaign = (splitId: string, baseline: string, name: string) => ({
       split_id: splitId, model_run_id: "merged-run", campaign_name: name, created_at: "2026-11-26",

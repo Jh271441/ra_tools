@@ -63,10 +63,11 @@ interface ManualBatchCardProps {
   title: string;
   metadata: string;
   conflictBadge?: React.ReactNode;
+  draft: boolean;
   actions: React.ReactNode;
 }
 
-function ManualBatchCard({ item, lang, title, metadata, conflictBadge, actions }: ManualBatchCardProps) {
+function ManualBatchCard({ item, lang, title, metadata, conflictBadge, draft, actions }: ManualBatchCardProps) {
   const percent = reviewAssignmentPercent(item.completion_ratio);
   const isCurrent = reviewAssignmentCanReview(item);
   const status = reviewAssignmentLifecycleLabel({ ...item, is_current: isCurrent }, lang);
@@ -83,7 +84,13 @@ function ManualBatchCard({ item, lang, title, metadata, conflictBadge, actions }
           <span className="review-assignment-batch-meta">{metadata}</span>
           <span className="review-assignment-batch-meta">{reviewAssignmentFilterLabel(item, lang)}</span>
         </div>
-        <span className={`review-assignment-status ${statusClass}`}>{status}</span>
+        {draft ? (
+          <a
+            className={`review-assignment-status ${statusClass}`}
+            href={campaignsHistoryHref({ campaignId: item.split_id, lifecycle: "draft" })}
+            title={bilingual(lang, "查看审计与复核", "View audit and reviews")}
+          >{status}</a>
+        ) : <span className={`review-assignment-status ${statusClass}`}>{status}</span>}
       </header>
       <div className="review-assignment-progress">
         <div className="review-assignment-progress-heading">
@@ -124,6 +131,8 @@ export const BatchCard: React.FC<BatchCardProps> = ({
   onEditAllocation,
   onShareLink,
 }) => {
+  const draft = item.lifecycle === "draft" && !item.appendable && !item.legacy_read_only;
+  const activationHint = bilingual(lang, "激活草稿后可用", "Available after draft activation");
   const canEdit =
     Boolean(item.split_id) &&
     isAdmin &&
@@ -133,10 +142,12 @@ export const BatchCard: React.FC<BatchCardProps> = ({
 
   const renderDetailAndEditActions = () => (
     <>
-      {canEdit && onEditAllocation && (
+      {(canEdit || (draft && isAdmin)) && onEditAllocation && (
         <button
           type="button"
           className="button button-quiet"
+          disabled={!canEdit}
+          title={draft ? activationHint : undefined}
           data-edit-task-allocation={item.split_id}
           onClick={() => onEditAllocation(item.split_id)}
         >
@@ -161,7 +172,7 @@ export const BatchCard: React.FC<BatchCardProps> = ({
   );
 
   const renderTaskLinks = (active: boolean) => {
-    if (!active) {
+    if (!active && !draft) {
       return (
         <a
           className="button button-quiet"
@@ -172,16 +183,18 @@ export const BatchCard: React.FC<BatchCardProps> = ({
       );
     }
     const combined = item.workflow_mode === "model_review_and_case_label";
+    const reviewLabel = combined
+      ? bilingual(lang, "开始联合复核", "Start combined review")
+      : bilingual(lang, "去判错复核", "Open Review");
     return (
       <>
-        <a
-          className="button button-quiet"
-          href={reviewAssignmentBatchHref(item, "review", username, verified)}
-        >
-          {combined
-            ? bilingual(lang, "开始联合复核", "Start combined review")
-            : bilingual(lang, "去判错复核", "Open Review")}
-        </a>
+        {draft ? (
+          <button type="button" className="button button-quiet" disabled title={activationHint}>{reviewLabel}</button>
+        ) : (
+          <a className="button button-quiet" href={reviewAssignmentBatchHref(item, "review", username, verified)}>
+            {reviewLabel}
+          </a>
+        )}
         <a
           className="button button-quiet"
           href={reviewAssignmentBatchHref(item, "analysis", username, verified)}
@@ -299,7 +312,6 @@ export const BatchCard: React.FC<BatchCardProps> = ({
   const isCurrent = reviewAssignmentCanReview(normalized);
   const filterSnap = normalized.filter_snapshot || {};
   const hasSourceFilter =
-    isCurrent &&
     Object.keys(filterSnap).some((k) =>
       ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(k),
     );
@@ -307,19 +319,20 @@ export const BatchCard: React.FC<BatchCardProps> = ({
   return (
     <ManualBatchCard
       item={normalized}
+      draft={draft}
       lang={lang}
       title={`${roleVersionTaskName(normalized, lang, runNameLookup)} · ${formatClassicTime(normalized.created_at)}`}
       metadata={`${normalized.split_id} · ${normalized.created_by || bilingual(lang, "未记录", "Unknown")} · ${reviewAssignmentModeLabel(normalized, lang)}`}
       conflictBadge={renderConflictBadge(normalized)}
       actions={(
         <>
-          {hasSourceFilter && (
+          {(draft || (isCurrent && hasSourceFilter)) && (
             <a
               className="button button-quiet"
-              href={reviewAssignmentSourceHref({
+              href={hasSourceFilter ? reviewAssignmentSourceHref({
                 ...filterSnap,
                 model_run_id: normalized.model_run_id || filterSnap.model_run_id,
-              })}
+              }) : reviewAssignmentBatchHref(normalized, "review", "", false, { taskProgress: [], workAssignee: [] })}
             >
               {bilingual(lang, "查看原筛选", "View source filter")}
             </a>

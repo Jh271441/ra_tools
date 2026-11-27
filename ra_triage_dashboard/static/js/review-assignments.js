@@ -159,9 +159,13 @@ function reviewAssignmentBatchHref(item, page) {
   return pageUrl(page, reviewAssignmentRouteOptions(item, page));
 }
 
-function reviewAssignmentActionLinks(item) {
+function reviewAssignmentActionLinks(item, draft = false) {
   const combined = item.workflow_mode === 'model_review_and_case_label';
-  return `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, 'review'))}">${escapeHtml(combined ? uiText('开始联合复核', 'Start combined review') : uiText("去判错复核", "Open Review"))}</a><a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, 'analysis'))}">${escapeHtml(uiText("去原因聚类", "Open analysis"))}</a>`;
+  const label = escapeHtml(combined ? uiText('开始联合复核', 'Start combined review') : uiText("去判错复核", "Open Review"));
+  const review = draft
+    ? `<button class="button button-quiet" type="button" disabled title="${escapeHtml(uiText("激活草稿后可用", "Available after draft activation"))}">${label}</button>`
+    : `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, 'review'))}">${label}</a>`;
+  return `${review}<a class="button button-quiet" href="${escapeHtml(reviewAssignmentBatchHref(item, 'analysis'))}">${escapeHtml(uiText("去原因聚类", "Open analysis"))}</a>`;
 }
 
 function reviewAssignmentFilterValues(value) {
@@ -249,9 +253,9 @@ function reviewAssignmentShareAction(item) {
   return `<button class="button button-quiet" type="button" data-share-review-assignment="${escapeHtml(item.split_id)}">${escapeHtml(uiText("复制链接", "Copy link"))}</button>`;
 }
 
-function reviewAssignmentDetailAction(item, { detailHref = '' } = {}) {
+function reviewAssignmentDetailAction(item, { detailHref = '' } = {}, draft = false) {
   const label = escapeHtml(uiText('查看任务明细', 'View task detail'));
-  return taskAllocationEditAction(item) + (detailHref
+  return taskAllocationEditAction(item, draft) + (detailHref
     ? `<a class="button button-quiet" href="${escapeHtml(detailHref)}">${label}</a>`
     : `<button class="button button-quiet" type="button" data-open-review-assignment="${escapeHtml(item.split_id)}">${label}</button>`);
 }
@@ -283,17 +287,22 @@ function renderReviewAssignmentBatch(item, options = {}) {
   const changeNote = Number(item.change_count || 0)
     ? uiText(`已转派 ${item.change_count} 次`, `${item.change_count} transfers`)
     : uiText("尚未转派", "No transfers");
-  const taskLinks = item.is_current
-    ? reviewAssignmentActionLinks(item)
+  const draft = item.lifecycle === "draft" && !item.legacy_read_only;
+  const hasFilter = Object.keys(item.filter_snapshot || {}).some(key => ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(key));
+  const sourceUrl = (item.is_current || draft) && hasFilter
+    ? reviewAssignmentSourceHref({ ...item.filter_snapshot, model_run_id: item.model_run_id || item.filter_snapshot.model_run_id })
+    : draft ? pageUrl("review", { ...reviewAssignmentRouteOptions(item, "review"), workAssignee: [], taskProgress: [] }) : "";
+  const taskLinks = item.is_current || draft
+    ? reviewAssignmentActionLinks(item, draft)
     : `<a class="button button-quiet" href="${escapeHtml(pageUrl("campaigns", { campaignId: item.split_id, lifecycle: "history" }))}">${escapeHtml(uiText("查看审计与复核", "View audit and reviews"))}</a>`;
   return `<article class="review-assignment-batch" data-review-assignment-batch="${escapeHtml(item.split_id)}">
     <header class="review-assignment-batch-header">
       <div><strong class="review-assignment-batch-title">${escapeHtml(roleVersionTaskName(item))} · ${escapeHtml(formatTime(item.created_at))}</strong><span class="review-assignment-batch-meta">${escapeHtml(item.split_id)} · ${escapeHtml(item.created_by || uiText("未记录", "Unknown"))} · ${escapeHtml(reviewAssignmentModeLabel(item))}</span><span class="review-assignment-batch-meta">${escapeHtml(filterLabel)}</span></div>
-      <span class="review-assignment-status ${statusClass}">${escapeHtml(status)}</span>
+      ${draft ? `<a class="review-assignment-status ${statusClass}" href="${escapeHtml(pageUrl("campaigns", { campaignId: item.split_id, lifecycle: "draft" }))}" title="${escapeHtml(uiText("查看审计与复核", "View audit and reviews"))}">${escapeHtml(status)}</a>` : `<span class="review-assignment-status ${statusClass}">${escapeHtml(status)}</span>`}
     </header>
     <div class="review-assignment-progress"><div class="review-assignment-progress-heading"><span class="review-assignment-progress-label">${escapeHtml(uiText("整体进度", "Overall progress"))}${reviewAssignmentConflictBadge(item)}</span><strong>${escapeHtml(`${item.completed_count || 0} / ${item.assignment_count || 0} · ${percent}%`)}</strong></div><div class="review-assignment-progress-track"><span style="width:${percent}%"></span></div></div>
     <div class="review-assignment-member-grid">${(item.members || []).map(reviewAssignmentMemberMarkup).join("") || `<span class="quiet-meta">${escapeHtml(uiText("没有成员记录", "No member data"))}</span>`}</div>
-    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${item.is_current && Object.keys(item.filter_snapshot || {}).some((key) => ["baselines", "baseline_scopes", "comparison_status", "search", "issue_ids"].includes(key)) ? `<a class="button button-quiet" href="${escapeHtml(reviewAssignmentSourceHref({ ...item.filter_snapshot, model_run_id: item.model_run_id || item.filter_snapshot.model_run_id }))}">${escapeHtml(uiText("查看原筛选", "View source filter"))}</a>` : ""}${taskLinks}${reviewAssignmentDetailAction(item, options)}${reviewAssignmentShareAction(item)}</div></footer>
+    <footer class="review-assignment-batch-footer"><span>${escapeHtml(`${item.total_count || 0} ${uiText("个 Issue", "Issues")} · ${changeNote}`)}</span><div class="review-assignment-batch-actions">${sourceUrl ? `<a class="button button-quiet" href="${escapeHtml(sourceUrl)}">${escapeHtml(uiText("查看原筛选", "View source filter"))}</a>` : ""}${taskLinks}${reviewAssignmentDetailAction(item, options, draft)}${reviewAssignmentShareAction(item)}</div></footer>
   </article>`;
 }
 

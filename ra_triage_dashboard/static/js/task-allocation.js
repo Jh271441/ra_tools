@@ -162,10 +162,13 @@ function exportTaskAllocationChanges() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function taskAllocationEditAction(item) {
+function taskAllocationEditAction(item, showDraftAction = false) {
   const id = item?.split_id || item?.id;
-  if (!id || !state.session?.is_admin || item.legacy_read_only ||
-      (item.lifecycle && item.lifecycle !== "active") || item.is_current === false) return "";
+  if (!id || !state.session?.is_admin || item.legacy_read_only) return "";
+  if (showDraftAction && item.lifecycle === "draft") {
+    return `<button type="button" class="button button-quiet" disabled title="${escapeHtml(uiText("激活草稿后可用", "Available after draft activation"))}">${escapeHtml(uiText("修改分配", "Edit allocation"))}</button>`;
+  }
+  if ((item.lifecycle && item.lifecycle !== "active") || item.is_current === false) return "";
   return `<button type="button" class="button button-quiet" data-edit-task-allocation="${escapeHtml(id)}">${escapeHtml(uiText("修改分配", "Edit allocation"))}</button>`;
 }
 

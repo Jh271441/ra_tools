@@ -978,7 +978,9 @@ export function campaignsHistoryHref(params: Record<string, string>): string {
   if (typeof win.pageUrl === "function") {
     return win.pageUrl("campaigns", params);
   }
-  const sp = new URLSearchParams(params);
+  const { campaignId, ...filters } = params;
+  const sp = new URLSearchParams(filters);
+  if (campaignId) sp.set("campaign", campaignId);
   return `${withWorkbenchBase("/campaigns")}?${sp.toString()}`;
 }
 
