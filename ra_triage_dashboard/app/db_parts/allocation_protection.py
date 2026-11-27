@@ -126,6 +126,8 @@ class AllocationProtectionMixin:
         ).fetchone()
         source = (expected_source["selection_source_run_id"] if expected_source else "") or split["selection_source_run_id"] or ""
         for row in labels:
+            if row["revision_kind"] == "adjudication":
+                continue  # The decision author need not have worked on their own assignment.
             pair = (row["issue_id"], row["author"].lower())
             history.add(pair)
             if row["task_id"] == cid and source and row["source_run_id"] != source:
@@ -159,8 +161,15 @@ class AllocationProtectionMixin:
         completed.intersection_update(pairs)
         if problems:
             raise ValueError("已有标注的任务、Run 或参考关联不明确，请先核对 / Saved evidence has ambiguous task, Run or reference links")
+        outputs = defaultdict(set)
+        case_outputs = {}
+        for pair, row in latest_labels.items():
+            if pair in pairs and row["expected_output"] in LABELS:
+                outputs[pair[0]].add(row["expected_output"])
+                case_outputs[pair] = row["expected_output"]
+        disagreements = {iid for iid, values in outputs.items() if len(values) > 1}
         adjudicated_cases = {r["issue_id"] for r in [*resolutions, *decisions]}
-        frozen_cases = {r["issue_id"] for r in resolutions}
+        check_state = adjudicated_cases & disagreements
         filters = _json_load(split["filter_json"], {})
         sources = {
             (source["legacy_split_id"], source["run_id"])
@@ -178,39 +187,19 @@ class AllocationProtectionMixin:
                 JOIN campaign_issue_members m ON m.issue_id=lc.issue_id AND m.baseline_scope=lc.baseline_scope
                 WHERE m.campaign_id=? AND ({predicates})
             """, (cid, *(value for source in sorted(sources) for value in source))).fetchall()
-            by_scope = defaultdict(set)
-            for r in original:
-                by_scope[r["baseline_scope"]].add(r["issue_id"])
-            for r in decisions:
-                by_scope[r["baseline_scope"]].add(r["issue_id"])
-            for scope, ids in by_scope.items():
-                states = self.project_issue_label_states(scope, sorted(ids), include_sources=False, connection=conn)
-                adjudicated_cases.difference_update(ids)
-                adjudicated_cases.update(iid for iid in ids if states.get(iid, {}).get("state") == "resolved")
-            frozen_cases.update(r["issue_id"] for r in original)
-        if decisions:
-            # Issue decisions can come entirely from another labeling context.
-            # Keep unknown provenance and decisions using any task evidence locked.
-            external_sources = defaultdict(set)
-            for row in conn.execute(
-                "SELECT c.issue_id,c.id FROM label_cases c JOIN campaign_issue_members m "
-                "ON m.issue_id=c.issue_id AND m.baseline_scope=c.baseline_scope "
-                "WHERE m.campaign_id=? AND COALESCE(c.task_id,'')<>?", (cid, cid),
-            ).fetchall():
-                external_sources[row["issue_id"]].add(row["id"])
-            linked_cases = {r["label_case_id"] for r in labels}
-            for decision in decisions:
-                iid = decision["issue_id"]
-                sources = set(_json_load(decision["source_case_ids_json"], []))
-                if not sources or not sources <= external_sources[iid] or sources & linked_cases:
-                    frozen_cases.add(iid)
-        outputs = defaultdict(set)
-        case_outputs = {}
-        for pair, row in latest_labels.items():
-            if pair in pairs and row["expected_output"] in LABELS:
-                outputs[pair[0]].add(row["expected_output"])
-                case_outputs[pair] = row["expected_output"]
-        frozen_cases.update(i for i, values in outputs.items() if len(values) > 1)
+            check_state.update(r["issue_id"] for r in original)
+            check_state.update(r["issue_id"] for r in decisions)
+        by_scope = defaultdict(set)
+        for member in members:
+            if member["issue_id"] in check_state:
+                by_scope[member["baseline_scope"]].add(member["issue_id"])
+        for scope, ids in by_scope.items():
+            states = self.project_issue_label_states(scope, sorted(ids), include_sources=False, connection=conn)
+            adjudicated_cases.difference_update(ids)
+            adjudicated_cases.update(iid for iid in ids if states[iid]["state"] == "resolved")
+        # A resolved label does not reserve untouched slots. Keep the existing
+        # Case-level protection for votes that still disagree without a resolution.
+        frozen_cases = disagreements - adjudicated_cases
         protected.update(pair for pair in pairs if pair[0] in frozen_cases)
         snapshot = None
         if include_snapshot:
@@ -235,7 +224,7 @@ class AllocationProtectionMixin:
                     coverage_locked={iid for iid, _ in history} | frozen_cases, frozen_cases=frozen_cases,
                     adjudicated_cases=adjudicated_cases, case_outputs=case_outputs,
                     captured_roles=role_map, snapshot=snapshot, members=members,
-                    has_evidence=bool(models or progress or labels or resolutions or decisions))
+                    has_evidence=bool(history))
 
     @staticmethod
     def _allocation_progress_summary(assignments, evidence, *, role_required=False):

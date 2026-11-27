@@ -64,8 +64,6 @@ class AllocationPreviewMixin(AllocationProtectionMixin):
             gid = next((g for g, user in history.get(iid, {}).items() if user == owner), None)
             if pair in evidence["model_submitted"]:
                 reason = "label_pending"
-            elif iid in evidence["adjudicated_cases"] and iid in evidence["frozen_cases"]:
-                reason = "adjudicated"
             elif pair in evidence["protected"]:
                 reason = "saved"
             elif owner == recipient:

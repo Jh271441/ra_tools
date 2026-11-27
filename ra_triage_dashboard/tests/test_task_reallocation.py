@@ -445,7 +445,10 @@ def test_formal_task_can_save_and_append_role_neutral_groups(role_db):
     assert db.human_label_context(iid)["lanes"]["te"]["fingerprint"] == original["lanes"]["te"]["fingerprint"]
     assert {row["username"] for row in db.human_label_context(iid)["members"]} >= {rd, te, "observer"}
     updated_frozen = db.human_label_context(frozen_iid)
-    assert updated_frozen["members"] == frozen_context["members"]
+    saved_owner = frozen["binding"]["assignee"]
+    assert next(m for m in updated_frozen["members"] if m["username"] == saved_owner) == next(
+        m for m in frozen_context["members"] if m["username"] == saved_owner
+    )
     assert updated_frozen["lanes"]["arbitrated"] == frozen_context["lanes"]["arbitrated"]
     assert snapshot(db, tables) == saved
 
@@ -672,7 +675,7 @@ def test_paired_mode_matches_members_sequentially_and_persists(role_db):
     assert db.get_campaign_allocation(cid)["pairing_mode"] == "orthogonal"
 
 @pytest.mark.parametrize("basis", ["remaining", "total"])
-def test_unrelated_issue_decision_retains_evidence_and_moves_only_untouched_work(fixture, basis):
+def test_issue_decisions_do_not_pin_untouched_work(fixture, basis):
     db = fixture.db
     cid, ids = make_task(fixture, count=4, completed=1, purpose="model_review")
     # Bob's pending Case has a personal decision. The other two have
@@ -690,17 +693,18 @@ def test_unrelated_issue_decision_retains_evidence_and_moves_only_untouched_work
                          "VALUES('scope',?,'误触发',?,'test',CURRENT_TIMESTAMP)", (iid, json.dumps(sources)))
     evidence = snapshot(db, ["issue_label_decisions", "combined_review_progress", "model_review_revisions"])
     current = db.get_campaign_allocation(cid)
-    assert current["movable_slots"] == 1
+    assert current["movable_slots"] == 3
     body = request(db, cid, basis=basis)
-    shares = [0, 0, 0, 0, 100] if basis == "remaining" else [25, 0, 25, 25, 25]
+    shares = [0, 0, 0, 0, 100] if basis == "remaining" else [25, 0, 0, 0, 75]
     body["groups"] = [{**current["groups"][0], "members": [
         dict(name=name, review_percent=share) for name, share in zip(("alice", "bob", "c", "d", "e"), shares)
     ]}]
     preview = db.preview_campaign_allocation(**body)
-    assert preview["changes"] == [dict(issue_id=ids[1], before=["bob"], after=["e"])]
+    assert preview["changes"] == [dict(issue_id=iid, before=[owner], after=["e"])
+                                  for iid, owner in zip(ids[1:], ("bob", "c", "d"))]
     apply(db, body, preview)
     after = db.get_campaign_allocation(cid)
-    assert after["assignment_counts"] == {"alice": 1, "c": 1, "d": 1, "e": 1}
+    assert after["assignment_counts"] == {"alice": 1, "e": 3}
     assert after["group_coverage"] == preview["group_coverage"]
     assert after["active_assignment_counts"] == after["assignment_counts"]
     assert snapshot(db, list(evidence)) == evidence
@@ -727,13 +731,73 @@ def test_takeover_moves_only_untouched_slots_and_keeps_saved_evidence(fixture):
     assert preview["remaining_assignments"] == [
         dict(issue_id=ids[1], owner="bob", reason="transfer"),
         dict(issue_id=ids[2], owner="c", reason="saved"),
-        dict(issue_id=ids[3], owner="d", reason="adjudicated"),
+        dict(issue_id=ids[3], owner="d", reason="transfer"),
     ]
-    assert preview["moved_slots"] == 1
+    assert preview["moved_slots"] == 2
     options = dict(**body, preview_token=preview["preview_token"], idempotency_key="transfer", takeover_pending=True)
     with pytest.raises(CampaignConflictError):
         db.update_campaign_allocation(**options, actor="bob")
     assert db.update_campaign_allocation(**options, actor="alice")["changed"]
     assert db.update_campaign_allocation(**options, actor="alice")["replayed"]
-    assert db.get_campaign_allocation(cid)["assignment_counts"] == {"alice": 2, "c": 1, "d": 1}
+    assert db.get_campaign_allocation(cid)["assignment_counts"] == {"alice": 3, "c": 1}
     assert snapshot(db, tables) == before
+
+
+def test_takeover_of_adjudicated_cross_review_cannot_duplicate_recipient(fixture):
+    db = fixture.db
+    task = fixture.campaign(0, assignees=["alice", "bob"])
+    cid = task["id"]
+    context = db.combined_review_context(issue_id="cn1", campaign_id=cid, reviewer="alice")
+    fixture.submit(task, context)
+    with db.connect() as conn:
+        case = conn.execute("SELECT label_case_id FROM combined_review_submissions WHERE campaign_id=?", (cid,)).fetchone()
+        conn.execute("INSERT INTO issue_label_decisions(baseline_scope,issue_id,expected_output,"
+                     "source_case_ids_json,source_fingerprint,created_at) "
+                     "VALUES('scope','cn1','误触发',?,'test',CURRENT_TIMESTAMP)", (json.dumps([case["label_case_id"]]),))
+    tables = ["issue_label_decisions", "combined_review_progress", "model_review_revisions", "label_revisions"]
+    saved = snapshot(db, tables)
+    config = db.get_campaign_allocation(cid)
+    assert (config["completed_slots"], config["movable_slots"]) == (1, 1)
+    body = dict(campaign_id=cid, assignees=None, reviewers_per_issue=None, overlap_ratio=None,
+                expected_revision=config["expected_revision"])
+    blocked = db.preview_campaign_allocation(**body, takeover_by="alice")
+    assert blocked["remaining_assignments"] == [dict(issue_id="cn1", owner="bob", reason="other_slot")]
+    eligible = db.preview_campaign_allocation(**body, takeover_by="viewer")
+    assert eligible["remaining_assignments"] == [dict(issue_id="cn1", owner="bob", reason="transfer")]
+    db.update_campaign_allocation(**body, actor="viewer", takeover_pending=True,
+                                  preview_token=eligible["preview_token"], idempotency_key="take-cross")
+    assert db.get_campaign_allocation(cid)["assignment_counts"] == {"alice": 1, "viewer": 1}
+    assert snapshot(db, tables) == saved
+
+
+def test_case_adjudicator_can_transfer_their_untouched_slot(fixture):
+    db = fixture.db
+    db.set_access_user(username="new_owner", role="writer", actor="test")
+    cid = db.create_campaign(spec=dict(purpose="labeling", workset_id=fixture.workset["id"],
+        members=[dict(issue_id="cn1", assignees=["alice", "bob", "viewer"])]), actor="alice")["campaign"]["id"]
+    db.create_label_revision(issue_id="cn1", task_id=cid, author="alice", expected_output="误触发",
+                             author_source="test", author_verified=True, tags=[], evidence_gaps=[],
+                             rationale="original vote", is_excluded=True)
+    bob = save_label(db, cid, "cn1", author="bob", output="正确触发")
+    case = bob["label_case"]
+    assert db.get_campaign_allocation(cid)["movable_slots"] == 0  # The original votes still conflict.
+    db.adjudicate_label_case(label_case_id=case["id"], source_revision_ids=[r["id"] for r in case["resolution"]["heads"]],
+        expected_output="误触发", tags=[], evidence_gaps=[], rationale="keep the Case", is_excluded=False,
+        actor="viewer", actor_source="test", actor_verified=True, adjudication_scope="exclusion", confirm_full_label=True)
+    tables = ["label_resolutions", "label_revisions"]
+    saved = snapshot(db, tables)
+    config = db.get_campaign_allocation(cid)
+    assert (config["completed_slots"], config["movable_slots"]) == (2, 1)
+    db.update_campaign_assignment(campaign_id=cid, issue_id="cn1", action="reassign", from_assignee="viewer",
+                                  assignee="new_owner", actor="alice", expected_revision=config["expected_revision"],
+                                  idempotency_key="move-untouched")
+    assert db.get_campaign_allocation(cid)["assignment_counts"] == {"alice": 1, "bob": 1, "new_owner": 1}
+    assert db.get_label_case(case["id"])["resolution"]["state"] == "resolved"
+    assert snapshot(db, tables) == saved
+
+    # A later conflicting submission makes that decision stale.
+    db.create_label_revision(issue_id="cn1", task_id=cid, author="bob", expected_output="无需协助",
+                             author_source="test", author_verified=True, tags=[], evidence_gaps=[],
+                             rationale="revised vote", is_excluded=False, expected_previous_revision_id=bob["id"])
+    assert db.get_label_case(case["id"])["resolution"]["state"] == "stale"
+    assert db.get_campaign_allocation(cid)["movable_slots"] == 0

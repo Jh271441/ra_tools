@@ -547,7 +547,7 @@ def plan_groups(issue_ids, groups, rules, *, seed, old_groups=(), history=None,
         unmatched_prot[iid] = [a for a in authors if a not in bound.values()]
 
     # Step 1b: Set-Union satisfaction when shrinking to single-group (or when an
-    # adjudicated/frozen Case cannot accept new reviewers beyond its saved ones).
+    # frozen Case cannot accept new reviewers beyond its saved ones).
     union_covered = defaultdict(dict)
     if len(groups) == 1:
         gid0 = groups[0]["group_id"]
@@ -597,7 +597,7 @@ def plan_groups(issue_ids, groups, rules, *, seed, old_groups=(), history=None,
         if deficit > 0:
             targets[groups[0]["group_id"]] += deficit
 
-    # Cap targets if frozen adjudicated Cases have fewer seats than requested groups.
+    # Cap targets if frozen Cases have fewer seats than requested groups.
     for group in groups:
         gid = group["group_id"]
         max_possible = len(covered[gid]) + sum(1 for iid in ranks if iid not in covered[gid] and iid not in locked)
