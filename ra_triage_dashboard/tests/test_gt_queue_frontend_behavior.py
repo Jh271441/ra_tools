@@ -80,7 +80,8 @@ const readyUrl=new URL(pageUrl('labeling-summary',labelSummaryRouteOptions()),'h
 assert.equal(readyUrl.searchParams.has('gt_update'),false);assert.equal(readyUrl.searchParams.get('page'),'2');assert.equal(readyUrl.searchParams.get('baselines'),'version-20261009');
 const data={gt_update_counts:{all:7,ready:3,blocked:3},total:8,annotated:7,page:1,page_size:20,
   pairs:[{gt:'误触发',label:'误触发',count:1},{gt:'正确触发',label:'误触发',count:2}],
-  matrix_exclusions:{missing_gt:1,no_final_label:4},
+  matrix_exclusions:{missing_gt:1,unsupported_gt:1,no_final_label:3},
+  matrix_gt_exclusions:[{label:null,count:1},{label:'out_of_scope',count:1}],
   items:[{issue_id:'cn101',label_state:'resolved',gt_label:'正确触发',expected_output:'误触发',rationales:['evidence']}]};
 assert.deepEqual(labelSummaryGtChartItems(data).map(item=>item.count),[3,3,1]);
 assert.deepEqual(labelSummaryGtChartItems(data).map(item=>item.color),['var(--chart-blue)','var(--chart-indigo)','var(--chart-teal)']);
@@ -125,12 +126,18 @@ assert.match($('#labelSummaryContent').innerHTML,/id="labelSummaryCaseList"/);
 assert.match($('#labelSummaryContent').innerHTML,/analysis-cluster-grid/);
 assert.match($('#labelSummaryContent').innerHTML,/GT × 标注结果/);
 assert.ok($('#labelSummaryContent').innerHTML.includes('可比较 3 / 8 · 一致 1'));
+assert.match($('#labelSummaryContent').innerHTML,/<span class="label-summary-matrix-counts">/);
 assert.match($('#labelSummaryContent').innerHTML,/aria-expanded="false" aria-controls="labelSummaryMatrixInfo"/);
-assert.match($('#labelSummaryContent').innerHTML.split('id="labelSummaryMatrixInfo"')[1],/未纳入矩阵 · GT 未设置 1 · 暂无最终三分类标注 4/);
+const matrixPopover=$('#labelSummaryContent').innerHTML.split('id="labelSummaryMatrixInfo"')[1];
+assert.match(matrixPopover,/未纳入 5/);
+for(const [label,count] of [['Null',1],['Out of scope',1],['无最终标注',3]]) {
+  assert.ok(matrixPopover.includes('<span>'+label+'</span><b>'+count+'</b>'));
+}
 state.uiLanguage='en';
-assert.match(labelSummaryMatrixCardMarkup(data),/Outside the matrix · GT unset 1/);
+assert.match(labelSummaryMatrixCardMarkup(data),/Excluded 5/);
+assert.match(labelSummaryMatrixCardMarkup(data),/No final label/);
 assert.ok(labelSummaryMatrixCardMarkup({total:0}).includes('Comparable 0 / 0 · Matches 0'));
-assert.doesNotMatch(labelSummaryMatrixCardMarkup({total:0}),/Outside the matrix/);
+assert.doesNotMatch(labelSummaryMatrixCardMarkup({total:0}),/labelSummaryMatrixInfo/);
 state.uiLanguage='zh';
 assert.doesNotMatch($('#labelSummaryContent').innerHTML,/data-gt-update-view/);
 assert.equal($('#labelSummaryPageSize').enhanced,true);

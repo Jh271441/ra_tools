@@ -42,6 +42,11 @@ class CaseLabelingQueueResponse(DashboardBaseModel):
     summary: Dict[str, Any] = Field(default_factory=dict)
 
 
+class LabelingMatrixGtExclusion(DashboardBaseModel):
+    label: Optional[str] = None
+    count: int
+
+
 class LabelingSummaryResponse(DashboardBaseModel):
     items: List[Dict[str, Any]] = Field(default_factory=list)
     total: int = 0
@@ -49,6 +54,7 @@ class LabelingSummaryResponse(DashboardBaseModel):
     page_size: int = 20
     summary: Dict[str, Any] = Field(default_factory=dict)
     matrix_exclusions: Dict[str, int] = Field(default_factory=dict)
+    matrix_gt_exclusions: List[LabelingMatrixGtExclusion] = Field(default_factory=list)
 
 
 class RdResultsResponse(DashboardBaseModel):

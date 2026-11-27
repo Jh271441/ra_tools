@@ -102,6 +102,28 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
         self.assertEqual([row["issue_id"] for row in task_detail["items"]], ["cn104"])
         self.assertEqual(task_detail["items"][0]["label_state"], "resolved")
 
+    async def test_summary_distinguishes_raw_gt_from_empty_gt_before_paging(self):
+        self.db.upsert_issues([{"issue_id": "cn109"}], source="fixture", replace_gt=True, baseline_scope="scope")
+        self.submit("cn109", "alice", "误触发")
+        issue_ids = [f"cn10{index}" for index in range(1, 10)]
+        self.db.apply_gt_sync_snapshot(
+            scope="scope",
+            rows=[{"issue_id": issue_id, "gt_label": "正确触发"} for issue_id in issue_ids
+                  if issue_id not in {"cn102", "cn109"}],
+            raw_labels={"cn102": "out_of_scope"},
+            source_name="fixture", source_view_id=1, source_field="ra_merge_result",
+            trigger="test", requested_by="tester", requested_by_source="test", requested_by_verified=True,
+            expected_issue_ids=issue_ids, allow_sparse=True,
+        )
+        summary = await queries.labeling_summary(self.request(), issue_ids="cn101,cn102,cn109", page_size=1)
+
+        self.assertEqual(summary["total"], 3)
+        self.assertEqual(len(summary["items"]), 1)
+        self.assertEqual(summary["matrix_gt_exclusions"], [
+            {"label": None, "count": 1},
+            {"label": "out_of_scope", "count": 1},
+        ])
+
 
     async def test_incomplete_filter_excludes_untouched_cases_across_gallery_summary_and_queue(self):
         # A Case without an assignment and an untouched assignment both belong
