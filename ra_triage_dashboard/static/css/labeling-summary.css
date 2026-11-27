@@ -4,6 +4,8 @@
 #labelSummaryContent { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; min-width: 0; }
 #labelSummaryContent .analysis-confusion-table tfoot th,
 #labelSummaryContent .analysis-confusion-table tfoot td { border-top: 1px solid var(--line); color: var(--muted); font-weight: 750; }
+.label-summary-case-row .analysis-case-reason { overflow-wrap: anywhere; }
+.label-summary-case-row .analysis-chip { max-width: 100%; overflow-wrap: anywhere; }
 .label-summary-case-row .analysis-case-labels { align-content: start; }
 .label-summary-case-row .analysis-case-meta { align-content: start; }
 .label-summary-pagination { margin-top: 12px; }

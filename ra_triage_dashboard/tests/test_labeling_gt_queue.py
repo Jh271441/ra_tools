@@ -96,6 +96,8 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
             detail = await queries.labeling_summary(self.request(), chart_gt=bucket)
             self.assertEqual({row["issue_id"] for row in detail["items"]}, ids)
             self.assertEqual(detail["gt_update_counts"]["all"], len(ids))
+            gallery = await queries.list_labeling_cases(self.request(), chart_gt=bucket, page_size=1)
+            self.assertEqual(set(gallery["queue_issue_ids"]), ids)
         task_detail = await queries.labeling_summary(self.request(), task_id=self.task_a, chart_gt="blocked")
         self.assertEqual([row["issue_id"] for row in task_detail["items"]], ["cn104"])
         self.assertEqual(task_detail["items"][0]["label_state"], "resolved")
@@ -164,6 +166,8 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
                 detail = await queries.labeling_summary(self.request(), chart_label=bucket, **filters)
                 self.assertEqual(detail["annotated"], summary["submitted_states"].get(bucket, 0))
                 self.assertTrue(all(item["label_state"] == bucket for item in detail["items"]))
+                gallery = await queries.list_labeling_cases(self.request(), chart_label=bucket, **filters)
+                self.assertEqual(set(gallery["queue_issue_ids"]), {item["issue_id"] for item in detail["items"]})
 
     async def test_task_local_resolution_cannot_hide_global_conflict(self):
         local, _ = self.db._project_labeling_cases(baseline_scopes=["scope"], task_id=self.task_a)
@@ -234,6 +238,11 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
                 detail = query(chart_gt=bucket, chart_review="completed", page_size=1)
                 self.assertEqual((detail["total"], len(detail["items"])), (expected, 1))
                 self.assertEqual(query(chart_gt=bucket, unbounded=True)["total"], expected)
+            from ra_triage_dashboard.app.support.review_chart_scope import chart_issue_ids
+            from urllib.parse import urlencode
+            scope = urlencode({"model_run_id": run["id"], "chart_review": "completed", "chart_gt": "blocked"})
+            self.assertEqual(set(chart_issue_ids(scope, ["scope"], ["cn104", "cn105", "cn101"])), {"cn104", "cn105"})
+            self.assertEqual(chart_issue_ids(scope, ["scope"], ["cn101"]), ("__empty_chart_scope__",))
             self.assertEqual(query(chart_review="in_progress")["total"], 0)
             alice = query(annotation_author="alice")
             self.assertEqual(alice["gt_update_counts"], {"all": 3, "ready": 2, "blocked": 0})

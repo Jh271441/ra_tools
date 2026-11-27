@@ -5066,6 +5066,16 @@
           },
           {
             "in": "query",
+            "name": "analysis_scope",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Analysis Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "gt_label",
             "required": false,
             "schema": {
@@ -5315,6 +5325,16 @@
             "schema": {
               "default": "",
               "title": "Search",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "analysis_scope",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Analysis Scope",
               "type": "string"
             }
           },
@@ -9578,6 +9598,26 @@
           },
           {
             "in": "query",
+            "name": "chart_gt",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Gt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_label",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "status",
             "required": false,
             "schema": {
@@ -10059,6 +10099,26 @@
             "schema": {
               "default": "",
               "title": "Issue Tags",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_gt",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Gt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_label",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Label",
               "type": "string"
             }
           },
@@ -13722,6 +13782,16 @@
           },
           {
             "in": "query",
+            "name": "analysis_scope",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Analysis Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "work_assignee",
             "required": false,
             "schema": {
@@ -16138,6 +16208,16 @@
             "schema": {
               "default": "",
               "title": "Search",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "analysis_scope",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Analysis Scope",
               "type": "string"
             }
           },

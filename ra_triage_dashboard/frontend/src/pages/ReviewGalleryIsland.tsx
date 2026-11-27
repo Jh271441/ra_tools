@@ -1,3 +1,4 @@
+import { ChartQueueFilter } from "../components/gallery/ChartQueueFilter";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
@@ -115,6 +116,7 @@ interface ReviewFilterState {
   comparisonStatus: string;
   search: string;
   issueIds: string[];
+  analysisScope: string;
   gtLabel: string[];
   modelLabel: string[];
   annotationAuthor: string[];
@@ -203,6 +205,7 @@ function readReviewFiltersFromUrl(): ReviewFilterState {
     runInitialized: Boolean(runId || runExplicitNone),
     comparisonStatus: comparisonStatus || (runId ? "mismatch" : "all"),
     search: params.get("q") || "",
+    analysisScope: params.get("analysis_scope") || "",
     issueIds: parseFilterList(params.get("issue_ids")).filter((v) =>
       ISSUE_QUERY_ID_RE.test(v),
     ),
@@ -548,6 +551,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       const payload: Record<string, string> = {
         baselines: baselinesQuery,
       };
+      if (filters.analysisScope) payload.analysis_scope = filters.analysisScope;
       if (filters.search) payload.search = filters.search;
       const gt = joinFilterList(filters.gtLabel);
       if (gt) payload.gt_label = gt;
@@ -727,6 +731,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
           comparisonStatus: next.runId ? next.comparisonStatus : "all",
           failureOnly: Boolean(next.runId && next.comparisonStatus === "mismatch"),
           search: next.search,
+          analysisScope: next.analysisScope,
           issueIds: next.issueIds,
           gtLabel: next.gtLabel,
           modelLabel: next.modelLabel,
@@ -752,6 +757,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
         });
       } else {
         const params = new URLSearchParams();
+        if (next.analysisScope) params.set("analysis_scope", next.analysisScope);
         if (currentIssue) params.set("issue", currentIssue);
         if (next.runId) {
           params.set("run", next.runId);
@@ -834,6 +840,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       reviewComparisonStatus: effectiveComparison,
       failureOnly: effectiveComparison === "mismatch",
       search: filters.search,
+      analysisScope: filters.analysisScope,
       reviewIssueIds: filters.issueIds,
       gtLabel: filters.gtLabel,
       modelLabel: filters.modelLabel,
@@ -1056,6 +1063,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
         : filters.comparisonStatus || "mismatch";
     updateFilters((prev) => ({
       ...prev,
+      analysisScope: nextRunId !== prevRunId ? "" : prev.analysisScope,
       runId: nextRunId,
       runExplicitNone: !nextRunId,
       runInitialized: true,
@@ -1121,6 +1129,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       ...prev,
       search: "",
       issueIds: [],
+      analysisScope: "",
       gtLabel: [],
       modelLabel: [],
       annotationAuthor: [],
@@ -1476,12 +1485,15 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       : bilingual(lang, "当前 Model Run 由任务锁定", "Current Model Run is locked by the task")
     : undefined;
 
+  const chartFilters = new URLSearchParams(filters.analysisScope);
   return (
     <div className="ra-review-gallery-root" data-react-island="review">
       <section
         className="review-commandbar"
         aria-label={bilingual(lang, "Review 筛选", "Review filters")}
       >
+        <ChartQueueFilter lang={lang} gt={chartFilters.get("chart_gt")} review={chartFilters.get("chart_review")}
+          onClear={() => updateFilters(prev => ({ ...prev, analysisScope: "", page: 1 }))} />
         <div className="mobile-filter-bar">
           <button
             className="button button-quiet mobile-filter-toggle"

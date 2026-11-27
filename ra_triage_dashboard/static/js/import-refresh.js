@@ -314,6 +314,7 @@ async function reloadReviewGallery({
 }
 
 async function resetReviewFilters() {
+  state.reviewAnalysisScope = "";
   state.reviewIssueIds = [];
   state.clusterKey = "";
   state.casePage = 1;

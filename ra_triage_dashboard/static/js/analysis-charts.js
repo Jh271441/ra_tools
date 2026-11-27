@@ -298,11 +298,21 @@ let chartDetailTarget = typeof window !== "undefined" ? window.location?.hash?.s
 function chartDetailLink(prefix, item, param, value) {
   const analysis = prefix === "analysis";
   const page = analysis ? "analysis" : "labeling-summary";
-  const listId = analysis ? "analysisCaseList" : "labelSummaryCaseList";
   const url = new URL(pageUrl(page, { page: 1 }), window.location.origin);
   const current = url.searchParams.get(param) === value;
-  url.searchParams.set(param, value);
-  url.hash = listId;
+  if (analysis) {
+    const scope = buildAnalysisQueryParams({ includePagination: false });
+    scope.set(param, value);
+    const dest = new URLSearchParams({ run: url.searchParams.get("run") || "none", comparison: "all", analysis_scope: scope.toString() });
+    for (const key of ["baselines", "work_split", "task_view"]) {
+      if (url.searchParams.has(key)) dest.set(key, url.searchParams.get(key));
+    }
+    url.search = dest;
+    url.pathname = withBase("/review");
+  } else {
+    url.pathname = withBase("/case-labeling");
+    url.searchParams.set(param, value);
+  }
   const label = uiText(`查看「${item.label}」的 ${item.count} 条明细`, `View ${item.count} ${item.count === 1 ? "record" : "records"} for ${item.label}`);
   return `<a class="chart-detail-link"${current ? ' aria-current="true"' : ""} href="${escapeHtml(url.pathname + url.search + url.hash)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><span aria-hidden="true">→</span></a>`;
 }

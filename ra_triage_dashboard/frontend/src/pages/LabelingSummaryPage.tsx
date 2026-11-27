@@ -441,7 +441,9 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
   }, [active, data, summaryQuery.isPlaceholderData]);
 
   const chartHref = (filters: Partial<typeof route>) =>
-    buildLabelingSummaryUrl({ ...route, ...filters, page: 1 }, selectedBaselines) + "#labelSummaryCaseList";
+    buildLabelingSummaryUrl({ ...route, ...filters, page: 1 }, selectedBaselines);
+  const labelingHref = (filters: Partial<typeof route>) =>
+    chartHref(filters).replace("/labeling-summary?", "/case-labeling?");
 
 
   // Debounced search handler matching classic 280ms behavior.
@@ -1210,7 +1212,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
             >
               <AnalysisGtCard
                 counts={data.gt_update_counts}
-                detailHref={chartGt => chartHref({ chartGt })}
+                detailHref={chartGt => labelingHref({ chartGt })}
                 prefix="labelSummary"
                 lang={lang}
                 onOpenRules={() => setRulesModalMode("gt")}
@@ -1240,7 +1242,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
                   <AnalysisStatusBar
                     statuses={statusItems}
                     lang={lang}
-                    detailHref={chartLabel => chartHref({ chartLabel })}
+                    detailHref={chartLabel => labelingHref({ chartLabel })}
                     emptyText={bilingual(lang, "暂无标注提交", "No annotations yet")}
                   />
                 </div>

@@ -443,6 +443,7 @@ function normalizedReviewRouteFilters(params) {
     ),
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus,
+    analysisScope: params.get("analysis_scope") || "",
     labelStates,
     gtRelations: normalizedGtRelationFilters(params.get("gt_relation")),
     issueTags: parseFilterList(params.get("issue_tags")),
@@ -577,7 +578,7 @@ function normalizedCaseLabelingRouteFilters(params) {
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE), 10
   );
-  const status = normalizedLabelingStatusFilters(params.get("status"));
+  const status = normalizedLabelingStatusFilters(params.get("status"), { submittedOnly: params.has("chart_gt") || params.has("chart_label") });
   const label = parseFilterList(params.get("label")).filter((value) =>
     LABELS.includes(value)
   );
@@ -596,7 +597,9 @@ function normalizedCaseLabelingRouteFilters(params) {
     ["with", "without"].includes(value)
   );
   return {
-    taskId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("task") || "")
+    chartGt: params.get("chart_gt") || "",
+    chartLabel: params.get("chart_label") || "",
+    taskId: /^(?:split|campaign)-[A-Za-z0-9-]{1,120}$/.test(params.get("task") || "")
       ? params.get("task")
       : "",
     targetGroup: params.get('target_group') || '',
@@ -832,6 +835,7 @@ function persistCurrentReviewRoute(overrides = {}) {
 
 function applyReviewRouteControls(route) {
   if (!route) return;
+  state.reviewAnalysisScope = route.analysisScope || "";
   if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") || window.__RA_REACT_OWNED_PAGES__?.includes?.("review"))) {
     state.reviewIssueIds = Array.isArray(route.reviewIssueIds)
       ? [...new Set(route.reviewIssueIds.filter((value) => /^[A-Za-z0-9_-]{3,128}$/.test(String(value))))]
@@ -1037,6 +1041,8 @@ function pageUrl(page, options = {}) {
     const labeling = typeof caseLabelingRouteOptions === "function"
       ? caseLabelingRouteOptions(options)
       : options;
+    if (labeling.chartGt) url.searchParams.set("chart_gt", labeling.chartGt);
+    if (labeling.chartLabel) url.searchParams.set("chart_label", labeling.chartLabel);
     if (labeling.issue) url.searchParams.set("issue", labeling.issue);
     if (labeling.taskId) url.searchParams.set("task", labeling.taskId);
     if (labeling.search) url.searchParams.set("q", labeling.search);
@@ -1124,6 +1130,8 @@ function pageUrl(page, options = {}) {
   }
   if (page === "review") {
     const review = currentReviewRouteOptions(options);
+    const scope = options.analysisScope ?? state.reviewAnalysisScope;
+    if (scope) url.searchParams.set("analysis_scope", scope);
     const issueId = review.issue;
     const runId = review.runId;
     const comparisonStatus = comparisonStatusParam(

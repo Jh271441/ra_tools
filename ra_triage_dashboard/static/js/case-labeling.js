@@ -11,7 +11,7 @@ function syncCaseLabelingGalleryState(snapshot = {}) {
   if (!snapshot || typeof snapshot !== "object" || !state.caseLabeling) return;
   const keys = [
     "taskId", "targetGroup", "issueTags", "search", "issueIds",
-    "status", "author", "assignee", "cluster", "label", "gt",
+    "chartGt", "chartLabel", "status", "author", "assignee", "cluster", "label", "gt",
     "gtRelations", "commentState", "exclusion", "page", "pageSize",
     "tasks", "data", "labelers", "assignees",
   ];
@@ -28,6 +28,8 @@ function caseLabelingRouteOptions(overrides = {}) {
   const labeling = state.caseLabeling || {};
   return {
     issue: overrides.issue ?? labeling.issueId ?? "",
+    chartGt: overrides.chartGt ?? labeling.chartGt ?? "",
+    chartLabel: overrides.chartLabel ?? labeling.chartLabel ?? "",
     taskId: overrides.taskId ?? labeling.taskId ?? "",
     targetGroup: overrides.targetGroup ?? labeling.targetGroup ?? '',
     issueTags: overrides.issueTags ?? labeling.issueTags ?? [],
@@ -52,12 +54,14 @@ function caseLabelingRouteOptions(overrides = {}) {
 function restoreCaseLabelingRouteState(route = null) {
   const filters = route?.labelingFilters || parsePageRoute().labelingFilters || {};
   if (route?.issue) state.caseLabeling.issueId = route.issue;
+  state.caseLabeling.chartGt = filters.chartGt || "";
+  state.caseLabeling.chartLabel = filters.chartLabel || "";
   state.caseLabeling.taskId = filters.taskId ?? state.caseLabeling.taskId;
   state.caseLabeling.targetGroup = filters.targetGroup ?? '';
   state.caseLabeling.issueTags = parseFilterList(filters.issueTags || []);
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
   state.caseLabeling.issueIds = filters.issueIds ?? state.caseLabeling.issueIds;
-  state.caseLabeling.status = normalizedLabelingStatusFilters(filters.status ?? state.caseLabeling.status);
+  state.caseLabeling.status = normalizedLabelingStatusFilters(filters.status ?? state.caseLabeling.status, { submittedOnly: Boolean(filters.chartGt || filters.chartLabel) });
   state.caseLabeling.author = parseFilterList(filters.author ?? state.caseLabeling.author);
   state.caseLabeling.assignee = parseFilterList(filters.assignee ?? state.caseLabeling.assignee);
   state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
@@ -211,6 +215,8 @@ async function loadCaseLabelingClusters() {
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
     target_group: state.caseLabeling.targetGroup || '',
     issue_tags: joinFilterList(state.caseLabeling.issueTags),
+    ...(state.caseLabeling.chartGt && { chart_gt: state.caseLabeling.chartGt }),
+    ...(state.caseLabeling.chartLabel && { chart_label: state.caseLabeling.chartLabel }),
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -445,6 +451,8 @@ function labelingTaskFilterPayload() {
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
     target_group: state.caseLabeling.targetGroup || '',
     issue_tags: joinFilterList(state.caseLabeling.issueTags),
+    ...(state.caseLabeling.chartGt && { chart_gt: state.caseLabeling.chartGt }),
+    ...(state.caseLabeling.chartLabel && { chart_label: state.caseLabeling.chartLabel }),
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -811,6 +819,8 @@ function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSiz
     issue_ids: (state.caseLabeling.issueIds || []).join(","),
     target_group: state.caseLabeling.targetGroup || '',
     issue_tags: joinFilterList(state.caseLabeling.issueTags),
+    ...(state.caseLabeling.chartGt && { chart_gt: state.caseLabeling.chartGt }),
+    ...(state.caseLabeling.chartLabel && { chart_label: state.caseLabeling.chartLabel }),
     status: joinFilterList(state.caseLabeling.status),
     author: joinFilterList(state.caseLabeling.author),
     assignee: joinFilterList(state.caseLabeling.assignee),
@@ -2221,6 +2231,8 @@ function bindCaseLabelingEvents() {
     }, 250);
   });
   $("#caseLabelingReset")?.addEventListener("click", () => {
+    state.caseLabeling.chartGt = "";
+    state.caseLabeling.chartLabel = "";
     state.caseLabeling.taskId = "";
     state.caseLabeling.targetGroup = '';
     state.caseLabeling.issueTags = [];

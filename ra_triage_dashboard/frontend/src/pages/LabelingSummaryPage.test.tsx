@@ -126,7 +126,8 @@ describe("LabelingSummaryPage 1:1 parity", () => {
     expect(links).toHaveLength(6);
     expect(links.map(link => {
       const url = new URL(link.href);
-      expect(url.hash).toBe("#labelSummaryCaseList");
+      expect(url.pathname).toMatch(/\/case-labeling$/);
+      expect(url.hash).toBe("");
       return url.searchParams.get("chart_gt") || url.searchParams.get("chart_label");
     }).sort()).toEqual(["aligned", "blocked", "conflict", "pending", "ready", "resolved"]);
 

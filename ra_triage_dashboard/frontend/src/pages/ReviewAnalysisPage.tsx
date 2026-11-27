@@ -710,7 +710,15 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
   }, [active, data, analysisQuery.isPlaceholderData]);
 
   const chartHref = (filters: Partial<typeof route>) =>
-    buildAnalysisUrl({ ...route, ...filters, page: 1 }, selectedBaselines) + "#analysisCaseList";
+    buildAnalysisUrl({ ...route, ...filters, page: 1 }, selectedBaselines);
+  const reviewHref = (bucket: Partial<typeof route>) => {
+    const scope = buildAnalysisApiParams({ ...route, ...bucket }, selectedBaselines, { includePagination: false });
+    const params = new URLSearchParams({ run: route.runId || "none", comparison: "all", analysis_scope: scope.toString() });
+    if (baselinesKey) params.set("baselines", baselinesKey);
+    if (route.workSplitId) params.set("work_split", route.workSplitId);
+    if (route.taskView) params.set("task_view", route.taskView);
+    return `${withWorkbenchBase("/review")}?${params}`;
+  };
 
 
   // Debounced text inputs (Issue IDs, Comment content, Search reasons)
@@ -1663,7 +1671,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
               <AnalysisStatusBar
                 statuses={statusItems}
                 lang={lang}
-                detailHref={chartReview => chartHref({ chartReview })}
+                detailHref={chartReview => reviewHref({ chartReview })}
                 emptyText={bilingual(lang, "暂无 Review", "No reviews")}
               />
             ) : (
@@ -1678,7 +1686,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
           {data && (
             <AnalysisGtCard
               counts={data.gt_update_counts}
-              detailHref={chartGt => chartHref({ chartGt })}
+              detailHref={chartGt => reviewHref({ chartGt })}
               prefix="analysis"
               lang={lang}
               onOpenRules={() => setRulesModalMode("gt")}

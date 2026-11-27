@@ -55,6 +55,7 @@ def _review_reason_analysis_payload(
     page: int = 1,
     page_size: int = 20,
     unbounded: bool = False,
+    issue_ids_only: bool = False,
     baselines: str = "",
     baseline_scopes: list[str] | None = None,
     work_agreement: str = "all",
@@ -566,7 +567,10 @@ def _review_reason_analysis_payload(
         page_size=max(len(rows), 1) if unbounded else page_size,
         page_size_limit=None if unbounded else 200,
         include_scope_issue_ids=not unbounded,
+        issue_ids_only=issue_ids_only,
     )
+    if issue_ids_only:
+        return result
     if not unbounded:
         # The chart shares the final review filters, but GT eligibility comes
         # from all Case-label sources for those Issues, before pagination.
