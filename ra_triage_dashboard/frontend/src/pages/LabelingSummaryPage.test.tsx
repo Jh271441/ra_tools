@@ -16,6 +16,12 @@ const MOCK_SUMMARY: LabelingSummaryResponse = {
   assignees: ["jasperchen"],
   submitted_states: { resolved: 40, pending: 5, conflict: 3 },
   gt_update_counts: { all: 48, ready: 12, blocked: 3 },
+  matrix_gt_exclusions: [
+    { label: "out_of_scope", count: 2 },
+    { label: "未接起", count: 1 },
+    { label: null, count: 1 },
+  ],
+  matrix_exclusions: { no_final_label: 76 },
   pairs: [
     { gt: "误触发", label: "误触发", count: 20 },
     { gt: "误触发", label: "正确触发", count: 2 },
@@ -165,6 +171,16 @@ describe("LabelingSummaryPage 1:1 parity", () => {
 
     // Export button disabled for non-admin
     expect(screen.getByRole("button", { name: "Export GT updates" })).toBeDisabled();
+
+    const comparisonDetails = screen.getByRole("button", { name: "Comparison details" });
+    fireEvent.click(comparisonDetails);
+    const gtBreakdown = screen.getByRole("dialog", { name: "Comparison details" });
+    expect(gtBreakdown).toHaveTextContent("Excluded 80");
+    expect(gtBreakdown).toHaveTextContent("Out of scope2");
+    expect(gtBreakdown).toHaveTextContent("Unanswered1");
+    expect(gtBreakdown).toHaveTextContent("Null1");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(comparisonDetails).toHaveAttribute("aria-expanded", "false");
 
     // Open Multi-Issue modal and apply IDs
     fireEvent.click(screen.getByRole("button", { name: "Issue list" }));

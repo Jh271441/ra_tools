@@ -223,6 +223,7 @@ async def labeling_summary(
             gt_relation=normalized_gt_relation,
             comment_state=normalized_comment_state,
             cluster=_as_text(cluster),
+            include_raw_gt=True,
         )
         items, gt_update_counts = await asyncio.to_thread(
             database.labeling_gt_update_cases,
