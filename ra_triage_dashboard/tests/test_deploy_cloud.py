@@ -3,6 +3,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -1538,5 +1539,74 @@ COMMIT;
         ) as sleep_mock:
             d.wait_nginx_workers_drained([301], timeout=10)
         sleep_mock.assert_called()
+
+    def test_verify_port_free_allows_time_wait_and_rejects_active_listeners(self):
+        # 1. Active LISTEN on 127.0.0.1 (with SO_REUSEADDR, like uvicorn) must be rejected.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            with self.assertRaisesRegex(d.DeployError, f"Gray port {port} is occupied"):
+                d.verify_port_free(port, "Gray")
+
+        # 2. Active LISTEN on 0.0.0.0 (wildcard with SO_REUSEADDR) must also be rejected.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as wildcard:
+            wildcard.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            wildcard.bind(("0.0.0.0", 0))
+            wildcard.listen(1)
+            port = wildcard.getsockname()[1]
+            with self.assertRaisesRegex(d.DeployError, f"Gray port {port} is occupied"):
+                d.verify_port_free(port, "Gray")
+
+        # 3. Real server-closed loopback connection leaves TIME_WAIT with no listener:
+        #    bare bind without SO_REUSEADDR fails, while verify_port_free succeeds immediately.
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        listener.listen(1)
+        client = socket.create_connection(("127.0.0.1", port))
+        server_conn, _ = listener.accept()
+        try:
+            server_conn.close()  # Active close on server side places 127.0.0.1:port in TIME_WAIT.
+            client.recv(1)
+        finally:
+            client.close()
+            listener.close()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as bare:
+            with self.assertRaises(OSError):
+                bare.bind(("127.0.0.1", port))
+        d.verify_port_free(port, "Gray")
+
+    def test_promote_release_does_not_probe_gray_port(self):
+        # --prepare probes gray port once, while --promote does not start gray
+        # and passes check_gray_port=False so a busy or TIME_WAIT gray port
+        # cannot block production cutover.
+        preflight_calls = []
+        port_probes = []
+        orig_preflight = d.preflight
+        orig_verify_port_free = d.verify_port_free
+
+        def spy_preflight(*args, **kwargs):
+            preflight_calls.append(kwargs.get("check_gray_port", True))
+            return orig_preflight(*args, **kwargs)
+
+        def spy_verify_port_free(port, label):
+            port_probes.append((label, port))
+            if label == "Gray" and len(preflight_calls) >= 2:
+                raise d.DeployError(f"Gray port {port} is occupied; preserve its existing service")
+            return orig_verify_port_free(port, label)
+
+        with patch.object(d, "preflight", side_effect=spy_preflight), patch.object(
+            d, "verify_port_free", side_effect=spy_verify_port_free
+        ):
+            _, record, _, _ = self.simulate_bluegreen_release()
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(preflight_calls, [True, False])
+        self.assertEqual(
+            port_probes,
+            [("Gray", d.DEFAULT_GRAY_PORT), ("Blue-green target slot (green)", 18792)],
+        )
 
 if __name__ == "__main__": unittest.main()

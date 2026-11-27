@@ -1222,6 +1222,7 @@ def preflight(
     allow_additive_migrations=False,
     allow_schema_migrations=False,
     isolated_ref="", expected_live_sha="",
+    *, check_gray_port=True,
 ):
     require(sys.platform == "linux" and REPO.is_dir() and PYTHON.is_file(), "Run on the configured cloud_server")
     require(re.fullmatch(r"[0-9a-f]{40}", sha), "Supply a full 40-character pushed commit SHA")
@@ -1269,11 +1270,8 @@ def preflight(
         applied_set = set(applied_migrations_before)
         pending_migrations = [path for path in migrations if Path(path).name not in applied_set]
     gray_port = configured_gray_port()
-    with socket.socket() as sock:
-        try:
-            sock.bind(("127.0.0.1", gray_port))
-        except OSError:
-            raise DeployError(f"Gray port {gray_port} is occupied; preserve its existing service") from None
+    if check_gray_port:
+        verify_port_free(gray_port, "Gray")
     return {
         "gray_port": gray_port,
         "pid": pid,
@@ -1472,11 +1470,17 @@ def validate_prepared_worktree(path, sha):
 
 
 def verify_port_free(port, label):
-    with socket.socket() as sock:
-        try:
-            sock.bind(("127.0.0.1", port))
-        except OSError:
-            raise DeployError(f"{label} port {port} is occupied; preserve its existing service") from None
+    # Enable SO_REUSEADDR so residual kernel TIME_WAIT sockets from a recently
+    # stopped gray or standby uvicorn do not trigger a ~60s false busy error.
+    # Probing both wildcard 0.0.0.0 and loopback 127.0.0.1 still rejects any
+    # active LISTEN socket bound to loopback, wildcard, or dual-stack ::.
+    for host in ("0.0.0.0", "127.0.0.1"):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind((host, port))
+            except OSError:
+                raise DeployError(f"{label} port {port} is occupied; preserve its existing service") from None
 
 
 def check_metrics_blocked_via_proxy(port=PUBLIC_PORT):
@@ -1991,6 +1995,7 @@ def promote_release(
             allow_additive_migrations,
             allow_schema_migrations,
             isolated_ref, expected_live_sha,
+            check_gray_port=False,
         )
         pid = state["pid"]
         env = state["env"]
