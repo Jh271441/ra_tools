@@ -12,6 +12,8 @@ function labelingCombinedTaskActor() {
 function renderLabelingCombinedTasks() {
   const list = $('#labelingCombinedTaskList');
   if (!list) return;
+  const historyLink = $('#labelingCombinedHistory');
+  if (historyLink) historyLink.href = withBase('/review-assignments') + '?lifecycle=history';
   const data = labelingCombinedTasks;
   const count = $('#labelingCombinedTaskCount');
   if (count) count.textContent = data.loaded ? String(data.items.length) : '—';

@@ -70,6 +70,52 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=key, is_excluded=excluded, attachments=attachments,
         )
 
+    def test_overlap_queue_distinguishes_missing_classification_from_exclusion_conflict(self):
+        from ra_triage_dashboard.app.db_parts.labeling_shared import matches_issue_label_states
+        from ra_triage_dashboard.app.labeling_summary import summarize_labeling_cases
+
+        campaign = self.campaign(0, assignees=["alice", "bob"])
+        cid = campaign["id"]
+        for name in ("alice", "bob"):
+            ctx = self.db.combined_review_context(issue_id="cn1", campaign_id=cid, reviewer=name)
+            self.submit(campaign, ctx, reviewer=name, excluded=True, key=name)
+
+        def verify(classification, conflict, excluded, bucket):
+            state = self.db.project_issue_label_states("scope", ["cn1"], include_sources=False)["cn1"]
+            self.assertEqual((state["state"], state["exclusion_conflict"]), (classification, conflict))
+            self.assertEqual(matches_issue_label_states(state, ["conflict"]), conflict)
+            expected = ["cn1"] if conflict else []
+            with self.db.connect() as conn:
+                for assigned_only in (True, False):
+                    self.assertEqual(self.db._review_overlap_conflicts(conn, [cid], assigned_only=assigned_only)[cid], expected)
+            rows, _ = self.db._project_labeling_cases(baseline_scopes=["scope"], status=bucket)
+            self.assertEqual([r["issue_id"] for r in rows], ["cn1"])
+            summary = summarize_labeling_cases(rows)
+            self.assertEqual(summary["items"][0]["is_excluded"], excluded)
+            self.assertEqual(summary["submitted_states"], {"pending" if bucket == "incomplete" else bucket: 1})
+            self.assertEqual(self.db.labeling_case_issue_ids(baseline_scopes=["scope"], status="conflict"), expected)
+            return state
+
+        # Model a migrated, acknowledged submission whose classification was blank.
+        with self.db.connect() as conn:
+            conn.execute("UPDATE label_revisions SET expected_output='' WHERE author='bob'")
+        verify("pending", False, True, "incomplete")
+        with self.db.connect() as conn:
+            conn.execute("UPDATE label_revisions SET is_excluded=false WHERE author='bob'")
+        verify("pending", True, True, "conflict")
+        self.assertEqual(self.db.labeling_case_issue_ids(baseline_scopes=["scope"], status="incomplete"), [])
+        with self.db.connect() as conn:
+            conn.execute("UPDATE label_revisions SET expected_output='误触发' WHERE author='bob'")
+        state = verify("resolved", True, True, "conflict")
+        args = dict(baseline_scope="scope", issue_id="cn1", expected_output="误触发", actor="alice",
+                    actor_source="test", actor_verified=True, rationale="checked the labels",
+                    expected_source_fingerprint=state["source_fingerprint"])
+        legacy = self.db.adjudicate_issue_label(**args)["decision"]
+        verify("resolved", True, True, "conflict")
+        self.db.adjudicate_issue_label(**args, expected_previous_decision_id=legacy["id"],
+                                       full_result={"is_excluded": False})
+        verify("resolved", False, False, "resolved")
+
     def test_cross_page_combined_filters_and_fresh_exclusion_preview(self):
         from unittest.mock import patch
         from ra_triage_dashboard.app.routers import cases as gallery, analysis as exports

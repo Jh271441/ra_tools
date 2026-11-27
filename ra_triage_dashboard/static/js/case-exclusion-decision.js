@@ -16,7 +16,8 @@ function caseExclusionVotes(data) {
 }
 function caseExclusionNeedsDecision(data) {
   if (data.label_state?.decision?.full_result && !data.label_state.decision.stale) return false;
-  return new Set(caseExclusionVotes(data).map(v => Boolean(v.is_excluded))).size > 1;
+  if (typeof data.exclusion_summary?.conflict === "boolean") return data.exclusion_summary.conflict;
+  return new Set(caseExclusionVotes(data).map(v => v.is_excluded).filter(v => typeof v === "boolean")).size > 1;
 }
 function caseExclusionText(value) {
   return value === true ? uiText("排除", "Excluded") : value === false ? uiText("不排除", "Included") : uiText("暂无意见", "No opinion");

@@ -321,13 +321,16 @@ class LabelingQueriesMixin:
             relation = resolved_label_gt_relation(aggregate_state, expected_output_value, row["gt_label"] or row["gt_raw_label"])
             if relations and relation not in relations:
                 continue
+            exclusion_projection = task_exclusions.get(str(row["issue_id"])) if task else case_exclusion_projection(cases, (shared_state or {}).get("decision"))
             filter_state = labeling_filter_state({
+                "exclusion_summary": exclusion_projection,
                 "label_state": aggregate_state, "label_cases": cases,
                 "decision": (shared_state or {}).get("decision"),
             })
             # Legacy pending URLs/API clients retain the union. New controls
             # distinguish untouched assignments from real incomplete submissions.
-            if normalized_statuses and not normalized_statuses.intersection({aggregate_state, filter_state}):
+            if (normalized_statuses and filter_state not in normalized_statuses
+                    and not ("pending" in normalized_statuses and filter_state in {"incomplete", "unannotated"})):
                 continue
             if normalized_authors:
                 result_authors = {
@@ -366,7 +369,6 @@ class LabelingQueriesMixin:
                         continue
                 elif str(row["scenario"] or "") != normalized_cluster[1]:
                     continue
-            exclusion_projection = task_exclusions.get(str(row["issue_id"])) if task else case_exclusion_projection(cases, (shared_state or {}).get("decision"))
             if len(normalized_exclusions) == 1:
                 resolved_excluded = bool((exclusion_projection or {}).get("is_excluded"))
                 if "excluded" in normalized_exclusions and not resolved_excluded:

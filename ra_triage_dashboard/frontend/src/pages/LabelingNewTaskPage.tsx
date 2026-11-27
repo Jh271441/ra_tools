@@ -651,7 +651,10 @@ export const LabelingNewTaskPage: React.FC<LabelingNewTaskPageProps> = ({
           </button>
         </div>
         <p className="quiet-meta">
-          {bilingual(lang, "全部当前联合任务 · 与判错复核共用", "All current combined tasks · Shared with Review")}
+          {bilingual(lang, "全部当前联合任务 · 与判错复核共用", "All current combined tasks · Shared with Review")} ·{" "}
+          <a href={withWorkbenchBase("/review-assignments") + "?lifecycle=history"}>
+            {bilingual(lang, "联合复核历史", "Combined review history")}
+          </a>
         </p>
         <p className="quiet-meta" id="labelingCombinedTaskStatus" role="status">
           {combinedQuery.isError

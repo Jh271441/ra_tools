@@ -54,6 +54,7 @@ function changeReviewAssignmentListFilters() {
   store.detailLoading = false;
   store.detailRequestSeq += 1;
   store.splits = [];
+  store.labelHistory = [];
   store.metrics = null;
   history.replaceState({ page: "review-assignments" }, "", reviewAssignmentDetailUrl());
   loadReviewAssignments({ force: true }).catch((error) => showToast(error.message, true));
@@ -315,6 +316,29 @@ function reviewAssignmentMatchesSearch(item, terms) {
   return terms.every(term => text.includes(term));
 }
 
+function renderLabelHistoryCard(collection) {
+  const link = (group, title) => {
+    const params = new URLSearchParams({ baselines: collection.version, issue_ids: group.issue_ids.join(",") });
+    if (group.run_id) {
+      params.set("run", group.run_id);
+      params.set("comparison", "all");
+    }
+    const href = withBase(group.run_id ? "/review-analysis" : "/case-labeling") + "?" + params;
+    return `<a class="button button-quiet" href="${escapeHtml(href)}">${escapeHtml(title)} (${group.issue_ids.length})</a>`;
+  };
+  const titles = {
+    original: uiText("原 Run", "Original Run"),
+    comparison: uiText("其他 Run 可对照", "Compare another Run"),
+    label_only: uiText("仅标注", "Label only"),
+  };
+  const links = [link(collection, uiText("全部标注", "All annotations"))];
+  for (const group of collection.groups) {
+    links.push(link(group, [titles[group.kind], group.run_name].filter(Boolean).join(" · ")));
+  }
+  return `<article class="review-assignment-batch label-history-card"><strong class="review-assignment-batch-title">${escapeHtml(collection.version)} · ${uiText("历史联合复核", "Historical combined review")}</strong>
+    <div class="review-assignment-batch-actions">${links.join("")}</div></article>`;
+}
+
 function renderReviewAssignmentList() {
   const store = state.reviewAssignments;
   const root = $("#reviewAssignmentList");
@@ -325,7 +349,8 @@ function renderReviewAssignmentList() {
     if (status) status.textContent = "";
     return;
   }
-  if (!store.splits.length && store.lifecycle === "history") {
+  const collections = store.labelHistory || [];
+  if (!collections.length && !store.splits.length && store.lifecycle === "history") {
     root.innerHTML = `<div class="review-assignment-empty">${escapeHtml(uiText("暂无已替代或已取消的历史任务。", "No superseded or cancelled tasks."))}</div>`;
     if (status) status.textContent = "";
     return;
@@ -340,19 +365,24 @@ function renderReviewAssignmentList() {
     if (status) status.textContent = "";
     return;
   }
-  if (!store.splits.length) {
+  if (!collections.length && !store.splits.length) {
     root.innerHTML = `<div class="review-assignment-empty"><strong>${escapeHtml(uiText("暂无进行中的任务分配", "No active assignments yet"))}</strong><span>${escapeHtml(uiText("点击上方“+ 新建分配”或从图库筛选后创建任务。", 'Click "+ New allocation" above or filter cases in the gallery.'))}</span></div>`;
     if (status) status.textContent = "";
     return;
   }
   const terms = (store.batchSearch || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
   const items = terms.length ? store.splits.filter(item => reviewAssignmentMatchesSearch(item, terms)) : store.splits;
-  root.innerHTML = items.length ? items.map(renderReviewAssignmentBatch).join("")
+  const historyCards = collections.filter(c => terms.every(term =>
+    [c.version, "历史联合复核 historical combined review", ...c.groups.map(g => g.run_name)].join(" ").toLowerCase().includes(term)));
+  const markup = [...historyCards.map(renderLabelHistoryCard), ...items.map(renderReviewAssignmentBatch)].join("");
+  root.innerHTML = markup ? markup
     : `<div class="review-assignment-empty">${uiText("未找到匹配的批次，请更换关键词或调整任务范围。", "No matching batches. Try another search or change the task scope.")}</div>`;
   if (status) {
     status.textContent = terms.length
       ? uiText(`匹配 ${items.length} / ${store.splits.length} 个任务`, `${items.length} of ${store.splits.length} tasks`)
       : uiText(`${items.length} 个任务`, `${items.length} ${items.length === 1 ? "task" : "tasks"}`);
+    if (historyCards.length) status.textContent += uiText(
+      ` · ${historyCards.length} 个历史标注集`, ` · ${historyCards.length} annotation archives`);
   }
 }
 
@@ -657,6 +687,7 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
   store.batchSearch = (route.get("batch_search") || "").slice(0, 128);
   if (splitId && route.get("split") === splitId) restoreReviewAssignmentDetailRoute(route);
   const listKey = `${store.lifecycle}:${store.assignedToMe}`;
+  if (store.loadedKey !== listKey) store.labelHistory = [];
   const cached = !force && store.splits.length && store.loadedKey === listKey;
   const requestSeq = ++store.requestSeq;
   const needsUsers = !state.accessUsers?.length && state.session?.is_admin && typeof loadAccessUsers === "function";
@@ -683,6 +714,7 @@ async function loadReviewAssignments({ force = false, splitId = "", reloadDetail
       const result = await api(`/api/cases/work-splits?${params}`);
       if (requestSeq !== store.requestSeq) return;
       store.splits = result.items || [];
+      store.labelHistory = result.label_history || [];
       store.metrics = result.metrics || null;
       store.loadedKey = listKey;
       store.loading = false;

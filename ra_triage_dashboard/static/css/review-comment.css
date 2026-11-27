@@ -1511,3 +1511,15 @@ body[data-active-page="review-assignments"] .gt-sync-control { margin-left: auto
 .comment-edit-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .comment-thread-actions { flex-wrap: wrap; }
 .comment-thread-actions .analysis-discussion-link { min-height: 28px; font-size: 12px; }
+
+.label-history-card .review-assignment-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.label-history-card .button {
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

@@ -4,6 +4,7 @@ import { apiRequest } from "../api/client";
 import { bilingual, UiLanguage, withWorkbenchBase } from "../bridge/useWorkbenchBridge";
 import { AllocationGroupSetup } from "../components/allocation/AllocationGroupSetup";
 import { AllocationLivePreview } from "../components/allocation/AllocationLivePreview";
+import { LabelHistoryCard, LabelHistoryCollection } from "../components/allocation/LabelHistoryCard";
 import { BatchCard } from "../components/allocation/BatchCard";
 import { TaskAllocationDialog } from "../components/allocation/TaskAllocationDialog";
 import { useAssignmentNaming } from "../components/allocation/useAssignmentNaming";
@@ -48,6 +49,7 @@ interface ModelRunSummary {
 }
 
 interface WorkSplitsResponse {
+  label_history?: LabelHistoryCollection[];
   items: WorkSplitItem[];
   metrics?: {
     assignment_count?: number;
@@ -1427,6 +1429,9 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
             const haystack = fields.filter(Boolean).join(" ").toLowerCase();
             return batchSearchTerms.every((term) => haystack.includes(term));
           };
+          const archives = splitsQuery.data?.label_history || [];
+          const filteredArchives = archives.filter(c => batchSearchTerms.every(term =>
+            [c.version, "历史联合复核 historical combined review", ...c.groups.map(g => g.run_name)].join(" ").toLowerCase().includes(term)));
           const filteredSplits = splits.filter(matches);
           const listStatusText = !splits.length
             ? ""
@@ -1508,16 +1513,18 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                   </button>
                   <small id="reviewAssignmentListStatus" aria-live="polite">
                     {listStatusText}
+                    {filteredArchives.length > 0 && bilingual(lang, ` · ${filteredArchives.length} 个历史标注集`, ` · ${filteredArchives.length} annotation archives`)}
                   </small>
                 </div>
               </header>
 
               <div className="review-assignment-list" id="reviewAssignmentList">
+                {filteredArchives.map(collection => <LabelHistoryCard key={collection.version} collection={collection} lang={lang} />)}
                 {splitsQuery.isLoading && !splits.length ? (
                   <div className="review-assignment-empty">
                     {bilingual(lang, "正在加载任务分配。", "Loading assignments.")}
                   </div>
-                ) : !splits.length ? (
+                ) : !splits.length && !archives.length ? (
                   lifecycle === "history" ? (
                     <div className="review-assignment-empty">
                       {bilingual(lang, "暂无已替代或已取消的历史任务。", "No superseded or cancelled tasks.")}
@@ -1556,7 +1563,7 @@ export const ReviewAssignmentsPage: React.FC<ReviewAssignmentsPageProps> = ({
                       </span>
                     </div>
                   )
-                ) : !filteredSplits.length ? (
+                ) : !filteredSplits.length && !filteredArchives.length ? (
                   <div className="review-assignment-empty">
                     {bilingual(
                       lang,

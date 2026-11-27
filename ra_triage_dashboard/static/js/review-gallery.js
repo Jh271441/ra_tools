@@ -85,6 +85,9 @@ function issueCardReviewFlag(annotation, comparisonStatus = "") {
 }
 
 function issueCardLabelingFlag(item) {
+  if (item.exclusion_summary?.conflict) {
+    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="conflict">${uiText("排除有分歧", "Exclusion disagreement")}</span>`;
+  }
   if (item.is_excluded ?? item.annotation?.is_excluded) {
     return issueCardReviewFlag({ ...item.annotation, is_excluded: true });
   }
@@ -241,6 +244,7 @@ function caseGallerySignature(items) {
         : null,
       label_state: item.label_state
         ? {
+            exclusion_conflict: Boolean(item.label_state.exclusion_conflict),
             state: item.label_state.state || "none",
             expected_output: item.label_state.expected_output || "",
             gt_relation: item.label_state.gt_relation || "unknown",

@@ -38,10 +38,13 @@ function caseDecisionFlowMarkup(data) {
   const statusText = state => state === "resolved" ? "" : `<span>${escapeHtml(caseDecisionStateText(state))}</span>`;
   const exclusionReason = decision?.full_result && !decision.stale
     ? uiText("完整 Issue 裁决生效", "Complete Issue decision applies")
-    : uiText("来源意见有分歧时暂按排除处理", "Conflicting source opinions provisionally exclude the Issue");
+    : exclusionState === "conflict" ? uiText("排除意见有分歧，裁决前暂按排除处理", "Exclusion votes disagree. The Issue is provisionally excluded.")
+    : typeof excluded === "boolean" ? uiText("按当前有效排除意见汇总", "Based on current exclusion votes")
+    : uiText("暂无排除意见", "No exclusion votes yet");
   return `<section class="case-decision-result">
     <p class="case-decision-fact-heading"><span>${uiText("分类", "Classification")}</span><strong>${escapeHtml(explanation.output ? expectedOutputDisplayText(explanation.output) : "—")}</strong>${statusText(explanation.status)}</p>
-    <p class="case-decision-fact-heading"><span>${uiText("排除意见", "Exclusion")}</span><strong>${escapeHtml(caseExclusionText(excluded))}</strong>${statusText(exclusionState)}</p>
+    <p class="case-decision-fact-heading"><span>${uiText("排除意见", "Exclusion")}</span><strong>${exclusionState === "conflict" ? uiText("暂按排除", "Provisionally excluded") : escapeHtml(caseExclusionText(excluded))}</strong>${statusText(exclusionState)}</p>
+    ${explanation.status === "pending" && exclusionState !== "conflict" ? `<p class="quiet-meta">${escapeHtml(uiText("可直接关闭，待标注人补齐分类。", "You can close this dialog while the reviewers complete their labels."))}</p>` : ""}
     ${humanRoleSummary(result.human_publication)}
     <details class="case-decision-history case-decision-basis"><summary>${uiText("判定依据", "Decision details")}</summary>
       <p class="quiet-meta">${escapeHtml(explanation.reason)}${labelMissing ? ` · ${escapeHtml(labelMissing)}` : ""}</p>
@@ -72,7 +75,8 @@ function renderCaseLabelDecisionDialog() {
     ? `<p class="comment-thread-empty" role="status" aria-live="polite">${uiText("正在加载标注来源…", "Loading label sources…")}</p>`
     : failed ? `<div class="case-label-decision-error" role="alert"><p>${uiText("标注来源加载失败，请重试。", "Could not load label sources. Try again.")}</p><small>${escapeHtml(error)}</small></div>`
     : caseLabelDecisionMarkup(c.caseData);
-  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2 id="caseLabelDecisionTitle">${uiText("标注与裁决", "Labels and decisions")}</h2><small>${escapeHtml(c.caseData.issue_id)}</small></div><button type="button" class="icon-button" id="caseDecisionCloseIcon" data-close-decision aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body" id="caseDecisionEvidence" aria-busy="${loading}">${body}</div><div class="dialog-actions"><button type="button" class="button button-quiet" id="caseDecisionRefresh" ${loading ? "disabled" : ""}>${failed ? uiText("重试加载", "Retry loading") : uiText("刷新来源", "Refresh sources")}</button><button type="button" class="button button-primary" id="caseDecisionRelabel" ${!ready || !hasDashboardWriteRole() || !caseDecisionRevisions(c.caseData).length ? "disabled" : ""}>${uiText("重新标注并裁决", "Relabel and decide")}</button><button type="button" class="button button-quiet" id="caseDecisionClose" data-close-decision>${uiText("关闭", "Close")}</button></div></div>`;
+  const decisionNeeded = ["conflict", "stale"].includes(c.caseData.label_state?.state) || caseExclusionNeedsDecision(c.caseData);
+  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2 id="caseLabelDecisionTitle">${uiText("标注与裁决", "Labels and decisions")}</h2><small>${escapeHtml(c.caseData.issue_id)}</small></div><button type="button" class="icon-button" id="caseDecisionCloseIcon" data-close-decision aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body" id="caseDecisionEvidence" aria-busy="${loading}">${body}</div><div class="dialog-actions"><button type="button" class="button button-quiet" id="caseDecisionRefresh" ${loading ? "disabled" : ""}>${failed ? uiText("重试加载", "Retry loading") : uiText("刷新来源", "Refresh sources")}</button><button type="button" class="button ${decisionNeeded ? "button-primary" : "button-quiet"}" id="caseDecisionRelabel" ${!ready || !hasDashboardWriteRole() || !caseDecisionRevisions(c.caseData).length ? "disabled" : ""}>${decisionNeeded ? uiText("重新标注并裁决", "Relabel and decide") : uiText("裁决（可选）", "Optional decision")}</button><button type="button" class="button ${decisionNeeded ? "button-quiet" : "button-primary"}" id="caseDecisionClose" data-close-decision>${uiText("关闭", "Close")}</button></div></div>`;
   dialog.querySelectorAll("[data-close-decision]").forEach(b => b.addEventListener("click", () => dialog.close()));
   dialog.querySelectorAll("[data-adopt-decision]").forEach(b => b.addEventListener("click", () => startCaseDecisionEditor(c.caseData, Number(b.dataset.adoptDecision))));
   $("#caseDecisionRelabel").addEventListener("click", () => startCaseDecisionEditor(c.caseData));

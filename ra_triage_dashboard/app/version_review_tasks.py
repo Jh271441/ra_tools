@@ -314,27 +314,8 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
                             extra_completed_count=max(0, sum(done_by_person.values()) - active_completed),
                             completion_ratio=active_completed / active_total if active_total else 0,
                         )
-                try:
-                    conflict_row = conn.execute(
-                        """
-                        SELECT COUNT(*) AS cnt FROM (
-                            SELECT p.issue_id
-                            FROM combined_review_progress p
-                            JOIN label_revisions r ON r.id = p.case_label_revision_id
-                            LEFT JOIN campaign_issue_members m ON m.campaign_id = p.campaign_id AND m.issue_id = p.issue_id
-                            LEFT JOIN issue_label_decisions d ON d.issue_id = p.issue_id AND d.baseline_scope = m.baseline_scope
-                            WHERE p.campaign_id = ? AND p.model_review_submitted = true AND p.case_label_acknowledged = true
-                              AND d.id IS NULL
-                            GROUP BY p.issue_id
-                            HAVING COUNT(DISTINCT r.expected_output) > 1
-                        ) sub
-                        """,
-                        (canonical,),
-                    ).fetchone()
-                    if conflict_row is not None:
-                        result["conflict_count"] = int(conflict_row["cnt"] or 0)
-                except Exception:
-                    pass
+                conflicts = db._review_overlap_conflicts(conn, [canonical], assigned_only=False)[canonical]
+                result.update(conflict_count=len(conflicts), conflict_issue_ids=conflicts)
     if detail:
         items=[]
         for row in rows:

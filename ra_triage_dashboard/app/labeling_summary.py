@@ -84,7 +84,8 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
             if item.get("scenario"):
                 scenarios[item["scenario"]] += 1
             continue
-        submitted_states[status] += 1
+        exclusion = item.get("exclusion_summary") or case_exclusion_projection(item.get("label_cases") or [], decision) or {}
+        submitted_states["conflict" if exclusion.get("conflict") else status] += 1
         if primary_result:
             adjudicated_count += 1
         if rationales:
@@ -115,7 +116,8 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 "original_votes": original_votes,
                 "tags": sorted(case_tags),
                 "evidence_gaps": sorted(case_evidence),
-                "is_excluded": bool((item.get("exclusion_summary") or case_exclusion_projection(item.get("label_cases") or [], item.get("decision")) or {}).get("is_excluded")),
+                "is_excluded": bool(exclusion.get("is_excluded")),
+                "exclusion_conflict": bool(exclusion.get("conflict")),
                 "created_at": created_at,
                 "source_count": int(item.get("source_count") or 0),
                 "decision": (

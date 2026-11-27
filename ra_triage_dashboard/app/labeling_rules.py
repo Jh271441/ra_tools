@@ -19,6 +19,8 @@ def has_label_submission(item):
 def labeling_filter_state(item):
     """Split the pending query bucket without changing stored resolution states."""
     status = item.get("label_state", "pending")
+    if (item.get("exclusion_summary") or {}).get("conflict"):
+        return "conflict"
     if status == "pending":
         return "incomplete" if has_label_submission(item) else "unannotated"
     return status
@@ -95,7 +97,7 @@ def case_exclusion_projection(cases, decision=None):
     legacy Run exclusions. None means no Case evidence, allowing legacy fallback.
     """
     if decision and not decision.get("stale") and decision.get("full_result"):
-        return {"is_excluded": decision["is_excluded"], "decision_id": decision["id"],
+        return {"is_excluded": decision["is_excluded"], "conflict": False, "decision_id": decision["id"],
                 "revision_ids": decision.get("source_revision_ids", []),
                 "revision": {"id": None, "decision_id": decision["id"],
                     "author": decision.get("created_by", ""), "created_at": decision.get("created_at", ""),
@@ -113,5 +115,6 @@ def case_exclusion_projection(cases, decision=None):
         return None
     excluded = [item for item in revisions if item.get("is_excluded")]
     source = max(excluded or revisions, key=lambda item: int(item["id"]))
-    return {"is_excluded": bool(excluded), "revision": source,
+    return {"is_excluded": bool(excluded), "conflict": bool(excluded) and any(item.get("is_excluded") is False for item in revisions),
+            "revision": source,
             "revision_ids": sorted({int(item["id"]) for item in revisions})}

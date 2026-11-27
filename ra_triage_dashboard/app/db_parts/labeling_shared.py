@@ -44,11 +44,12 @@ def matches_issue_label_states(projection, selected_states):
     if not selected_states:
         return True
     state = str(projection.get("state") or "none")
+    workflow_state = "conflict" if projection.get("exclusion_conflict") else state
     relation = str(projection.get("gt_relation") or "unknown")
     return any(
         (
-            selected == state
-            or (selected == "conflict" and state == "stale")
+            selected == workflow_state
+            or (state == "stale" and selected in {"stale", "conflict"})
             or (
                 selected == "needs_gt_review"
                 and (

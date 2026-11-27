@@ -2230,6 +2230,78 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "LabelHistoryCollection": {
+        "additionalProperties": true,
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/LabelHistoryGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issue Ids",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "baseline",
+          "issue_ids",
+          "groups"
+        ],
+        "title": "LabelHistoryCollection",
+        "type": "object"
+      },
+      "LabelHistoryGroup": {
+        "additionalProperties": true,
+        "properties": {
+          "issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issue Ids",
+            "type": "array"
+          },
+          "kind": {
+            "enum": [
+              "original",
+              "comparison",
+              "label_only"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_name": {
+            "title": "Run Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "run_id",
+          "run_name",
+          "issue_ids"
+        ],
+        "title": "LabelHistoryGroup",
+        "type": "object"
+      },
       "OverallStatus": {
         "additionalProperties": true,
         "properties": {
@@ -3171,6 +3243,13 @@
               "$ref": "#/components/schemas/WorkSplitItem"
             },
             "title": "Items",
+            "type": "array"
+          },
+          "label_history": {
+            "items": {
+              "$ref": "#/components/schemas/LabelHistoryCollection"
+            },
+            "title": "Label History",
             "type": "array"
           },
           "lifecycle": {

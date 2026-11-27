@@ -1,5 +1,5 @@
 """Campaigns, Review Assignments, and Allocation Editor API schemas."""
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field
 
@@ -54,7 +54,22 @@ class WorkSplitMetrics(DashboardBaseModel):
     pending_assignments: int = 0
 
 
+class LabelHistoryGroup(DashboardBaseModel):
+    kind: Literal["original", "comparison", "label_only"]
+    run_id: str
+    run_name: str
+    issue_ids: List[str]
+
+
+class LabelHistoryCollection(DashboardBaseModel):
+    version: str
+    baseline: str
+    issue_ids: List[str]
+    groups: List[LabelHistoryGroup]
+
+
 class WorkSplitListResponse(DashboardBaseModel):
+    label_history: List[LabelHistoryCollection] = Field(default_factory=list)
     items: List[WorkSplitItem] = Field(default_factory=list)
     metrics: Dict[str, Any] = Field(default_factory=dict)
     lifecycle: str = "current"

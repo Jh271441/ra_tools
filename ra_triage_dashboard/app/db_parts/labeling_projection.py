@@ -4,6 +4,7 @@ from collections import defaultdict
 from contextlib import nullcontext
 from typing import Any, Sequence
 from .shared import LABELS, _json_load
+from ..labeling_rules import case_exclusion_projection
 from .snapshots import _sha256_json
 from .combined_labeling import combined_label_cases, is_combined_task
 from .labeling_shared import ISSUE_LABEL_GT_RELATIONS, ISSUE_LABEL_STATES, _clean_values, _issue_decision_source_payload, _issue_label_gt_relation
@@ -17,7 +18,6 @@ class LabelingProjectionMixin:
         Scope/Run select membership only; they must not hide a conflicting vote.
         No historical-only reconciliation or legacy Run fallback authorizes false.
         """
-        from ..labeling_rules import case_exclusion_projection
 
         if not issue_ids or not baseline_scopes:
             return []
@@ -66,7 +66,6 @@ class LabelingProjectionMixin:
         return result
 
     def project_issue_exclusions(self, issue_ids):
-        from ..labeling_rules import case_exclusion_projection
         cases_by_issue = self._batch_label_cases(issue_ids)
         decisions = self._current_full_issue_decisions(cases_by_issue)
         return {issue_id: projection for issue_id, cases in cases_by_issue.items()
@@ -844,8 +843,11 @@ class LabelingProjectionMixin:
                 else "unknown"
             )
             gt_review_pending = bool(imported_state.get("gt_review_pending"))
+            exclusion = case_exclusion_projection(cases, decision)
+            exclusion_conflict = bool(exclusion and exclusion["conflict"])
             if not include_sources:
                 projected[issue_id] = {
+                    "exclusion_conflict": exclusion_conflict,
                     "state": aggregate_state,
                     "expected_output": expected_output,
                     "gt_relation": relation,
@@ -860,6 +862,7 @@ class LabelingProjectionMixin:
                 }
                 continue
             projected[issue_id] = {
+                "exclusion_conflict": exclusion_conflict,
                 "state": aggregate_state,
                 "expected_output": expected_output,
                 "gt_relation": relation,

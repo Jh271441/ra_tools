@@ -57,6 +57,30 @@ class TaskLifecycleTest(unittest.TestCase):
         self.assertEqual({x["id"] for x in self.db.list_labeling_tasks(["scope"], lifecycle="history")}, {old["id"], cancelled["id"]})
         with self.assertRaises(ValueError): self.db.list_review_work_splits(lifecycle="garbage")
 
+    def test_imported_history_keeps_label_only_even_with_comparison_predictions(self):
+        from ra_triage_dashboard.app.routers import cases
+        scope = "release0626_300_spotcheck"
+        with self.db.connect() as conn:
+            for i, run_id in enumerate((self.runs[0]["id"], "", "orphan")):
+                cid = f"legacy-case-{i}"
+                conn.execute("INSERT INTO label_cases (id, baseline_scope, issue_id, source_run_id, created_at) VALUES (?,?,?,?,?)",
+                             (cid, scope, "cn1", run_id, "2026-01-01"))
+                conn.execute("INSERT INTO label_revisions (label_case_id, author, revision_kind, created_at) VALUES (?,?,?,?)",
+                             (cid, "alice", "legacy", "2026-01-01"))
+        with patch.object(cases, "database", self.db), patch.object(cases, "_writer_identity", return_value=SimpleNamespace(username="alice")):
+            fetch = lambda **kw: asyncio.run(cases.list_case_work_splits(None, **kw))
+            history = fetch(lifecycle="history")
+            self.assertEqual(history["items"], [])
+            self.assertEqual(history["metrics"]["assignment_count"], 0)
+            collection, = history["label_history"]
+            self.assertEqual(collection["issue_ids"], ["cn1"])
+            pairs = {(g["kind"], g["run_id"]) for g in collection["groups"]}
+            self.assertEqual(pairs, {("label_only", ""), ("original", self.runs[0]["id"]),
+                                     ("comparison", self.runs[0]["id"]), ("comparison", self.runs[1]["id"])})
+            for filters in ({}, {"lifecycle": "history", "assigned_to_me": True},
+                            {"lifecycle": "all", "model_run_id": self.runs[0]["id"]}):
+                self.assertEqual(fetch(**filters)["label_history"], [])
+
     def test_archived_task_visible_by_id_only(self):
         active, old, cancelled, _ = self.fixture()
         with self.db.connect() as conn:

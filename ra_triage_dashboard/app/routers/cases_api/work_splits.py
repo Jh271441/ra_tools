@@ -12,6 +12,7 @@ from ... import auth as _auth_module
 from ...auth import normalise_username
 from ...contracts import ISSUE_ID_RE
 from ...core.deps import get_baseline_registry, get_db, get_settings, resolve_dep
+from ...db_parts.review_label_history import historical_label_collections
 from ...db_parts.task_lifecycle import normalize_task_lifecycle, task_list_metrics
 from ...runtime import baseline_registry, database, settings
 from ...schemas import WorkSplitListResponse
@@ -94,7 +95,11 @@ async def list_case_work_splits(
             item.get("baseline_scopes") or item.get("baseline_ids") or [],
             item["split_id"],
         ))
+    include_history = lifecycle in {"history", "all"} and not (
+        assigned_to_me or model_run_id or version_only or manual_only
+    )
     return {
+        "label_history": await asyncio.to_thread(historical_label_collections, db) if include_history else [],
         "items": items,
         "metrics": task_list_metrics(items, assignee),
         "lifecycle": lifecycle,

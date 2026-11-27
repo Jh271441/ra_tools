@@ -1,6 +1,7 @@
 /* Shared Issue-label projection for the Review gallery and detail view. */
 function sharedLabelStateVisual(labelState = {}) {
   const state = String(labelState.state || "none");
+  if (labelState.exclusion_conflict) return { kind: "conflict", zh: "排除有分歧", en: "Exclusion disagreement" };
   const relation = String(labelState.gt_relation || "unknown");
   if (state === "resolved") {
     if (labelState.gt_review_pending) {

@@ -6198,8 +6198,39 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** LabelHistoryCollection */
+        LabelHistoryCollection: {
+            /** Baseline */
+            baseline: string;
+            /** Groups */
+            groups: components["schemas"]["LabelHistoryGroup"][];
+            /** Issue Ids */
+            issue_ids: string[];
+            /** Version */
+            version: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** LabelHistoryGroup */
+        LabelHistoryGroup: {
+            /** Issue Ids */
+            issue_ids: string[];
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "original" | "comparison" | "label_only";
+            /** Run Id */
+            run_id: string;
+            /** Run Name */
+            run_name: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** WorkSplitListResponse */
         WorkSplitListResponse: {
+            /** Label History */
+            label_history?: components["schemas"]["LabelHistoryCollection"][];
             /**
              * Assigned To Me
              * @default false
