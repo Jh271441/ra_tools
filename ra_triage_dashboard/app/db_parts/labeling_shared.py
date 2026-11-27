@@ -13,6 +13,7 @@ LABEL_TASK_KINDS = ("labeling", "model_review", "legacy")
 ISSUE_LABEL_STATES = ("none", "pending", "resolved", "conflict", "stale")
 ISSUE_LABEL_STATE_FILTERS = (
     *ISSUE_LABEL_STATES,
+    "exclusion_pending",
     "matches_gt",
     "needs_gt_review",
     "unknown",
@@ -44,11 +45,11 @@ def matches_issue_label_states(projection, selected_states):
     if not selected_states:
         return True
     state = str(projection.get("state") or "none")
-    workflow_state = "conflict" if projection.get("exclusion_conflict") else state
     relation = str(projection.get("gt_relation") or "unknown")
     return any(
         (
-            selected == workflow_state
+            selected == state
+            or (selected == "exclusion_pending" and bool(projection.get("exclusion_conflict")))
             or (state == "stale" and selected in {"stale", "conflict"})
             or (
                 selected == "needs_gt_review"

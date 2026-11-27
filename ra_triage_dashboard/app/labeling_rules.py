@@ -19,8 +19,6 @@ def has_label_submission(item):
 def labeling_filter_state(item):
     """Split the pending query bucket without changing stored resolution states."""
     status = item.get("label_state", "pending")
-    if (item.get("exclusion_summary") or {}).get("conflict"):
-        return "conflict"
     if status == "pending":
         return "incomplete" if has_label_submission(item) else "unannotated"
     return status

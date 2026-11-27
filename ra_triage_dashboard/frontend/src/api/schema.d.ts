@@ -6118,6 +6118,8 @@ export interface components {
             completion_ratio: number;
             /** Conflict Count */
             conflict_count?: number | null;
+            /** Conflict Issue Ids */
+            conflict_issue_ids?: string[] | null;
             /**
              * Created At
              * @default
@@ -6130,6 +6132,8 @@ export interface components {
             created_by: string;
             /** Dataset Id */
             dataset_id?: string | null;
+            /** Exclusion Pending Issue Ids */
+            exclusion_pending_issue_ids?: string[] | null;
             /**
              * Is Current
              * @default true

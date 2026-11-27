@@ -76,6 +76,7 @@ export interface LabelingSummaryCaseItem {
   expected_output?: string;
   gt_label?: string;
   is_excluded?: boolean;
+  exclusion_conflict?: boolean;
   rationales?: string[];
   tags?: string[];
   evidence_gaps?: string[];
@@ -1411,7 +1412,9 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
                             >
                               {currentStatus}
                             </span>
-                            {item.is_excluded && (
+                            {item.exclusion_conflict ? (
+                              <span className="label-summary-status" data-state="pending">{bilingual(lang, "排除待确定", "Exclusion pending")}</span>
+                            ) : item.is_excluded && (
                               <span className="label-summary-excluded">
                                 {bilingual(lang, "已排除", "Excluded")}
                               </span>

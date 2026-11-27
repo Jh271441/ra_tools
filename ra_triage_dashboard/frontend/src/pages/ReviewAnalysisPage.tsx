@@ -313,6 +313,7 @@ function readAnalysisRouteFromUrl(): AnalysisRouteState {
         "pending",
         "resolved",
         "conflict",
+        "exclusion_pending",
         "stale",
         "matches_gt",
         "needs_gt_review",

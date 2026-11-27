@@ -75,6 +75,8 @@ describe("ReviewAssignmentsPage", () => {
               pending_count: 40,
               completion_ratio: 0.75,
               conflict_count: 3,
+              conflict_issue_ids: ["cn1", "cn2", "cn3"],
+              exclusion_pending_issue_ids: ["cn2"],
               last_target_added_at: "2026-11-25T10:00:00Z",
               members: [
                 { username: "alice", assigned_count: 80, completed_count: 60, pending_count: 20, completion_ratio: 0.75 },
@@ -95,7 +97,16 @@ describe("ReviewAssignmentsPage", () => {
 
     const { container } = renderPage();
     expect(await screen.findByText(/1113 · 抽样集/)).toBeInTheDocument();
-    expect(screen.getByText("3 条相交冲突待裁决")).toBeInTheDocument();
+    for (const [name, filter, ids] of [
+      ["3 条分类分歧待裁决", "conflict", "cn1,cn2,cn3"],
+      ["1 条排除待确定", "exclusion_pending", "cn2"],
+    ]) {
+      const link = screen.getByRole("link", { name }) as HTMLAnchorElement;
+      const params = new URL(link.href).searchParams;
+      expect(params.get("label_state")).toBe(filter);
+      expect(params.get("issue_ids")).toBe(ids);
+      expect(params.get("work_split")).toBe("ver-1113");
+    }
     expect(screen.getByText("自动 · 持续追加")).toBeInTheDocument();
     expect(container.querySelectorAll("select").length).toBe(0);
 

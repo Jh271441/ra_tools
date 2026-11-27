@@ -172,6 +172,7 @@ export interface WorkSplitItem {
   pending_count?: number;
   completion_ratio?: number;
   conflict_count?: number;
+  exclusion_pending_issue_ids?: string[] | null;
   conflict_issue_ids?: string[] | null;
   pending_issue_ids?: string[] | null;
   source_split_id?: string | null;

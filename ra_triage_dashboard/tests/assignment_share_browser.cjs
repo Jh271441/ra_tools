@@ -25,7 +25,7 @@ async function init(page,lang,theme){
   state.session={username:'jasperchen',verified:true,access_role:'writer',is_admin:false,identity_pending:false};
   state.modelRuns=[{id:'run1009',name:'1009'}];
   const member={username:'liangxianghui',assigned_count:20,completed_count:0,pending_count:20,completion_ratio:0};
-  const base={model_run_id:'run1009',workflow_mode:'model_review_and_case_label',is_current:true,lifecycle:'active',total_count:20,assignment_count:20,completed_count:0,pending_count:20,members:[member],created_at:'2026-10-30T04:17:24Z',baseline_ids:['version-20261009'],filter_snapshot:{},page:3,page_count:5,changes:[],items:[{issue_id:'cn37071761',assignee:'liangxianghui',submitted:false,assignment_kind:'base'}]};
+  const base={conflict_count:2,conflict_issue_ids:['cn11','cn12'],exclusion_pending_issue_ids:['cn12','cn13'],model_run_id:'run1009',workflow_mode:'model_review_and_case_label',is_current:true,lifecycle:'active',total_count:20,assignment_count:20,completed_count:0,pending_count:20,members:[member],created_at:'2026-10-30T04:17:24Z',baseline_ids:['version-20261009'],filter_snapshot:{},page:3,page_count:5,changes:[],items:[{issue_id:'cn37071761',assignee:'liangxianghui',submitted:false,assignment_kind:'base'}]};
   window.tasks=[{...base,split_id:'campaign-905dd0d5a4144f589ea72b6c69b101ef',campaign_name:'0821 TE/RD 差异联合复核 / Combined disagreement review',
     baseline_ids:['0821-odd2','0821-nonodd2'],partition_case_counts:{'0821-odd2':11,'0821-nonodd2':9}},
    {...base,split_id:'campaign-version',appendable:true,release_family:'20261009',updated_at:'2026-10-30T04:17:24Z'},
@@ -62,6 +62,16 @@ async function init(page,lang,theme){
    const card=page.locator(`[data-review-assignment-batch="${task}"]`);
    assert.ok((await card.innerText()).includes(lang==='zh'?'ODD2 11 例 / 非 ODD2 9 例':'ODD2 11 cases / Non-ODD2 9 cases'));
    assert.equal(await page.evaluate(()=>state.reviewAssignments.assignee),'liangxianghui','language preserves detail filter');
+   for (const [filter, ids] of [['conflict', 'cn11,cn12'], ['exclusion_pending', 'cn12,cn13']]) {
+    const entry = card.locator(`a[href*="label_state=${filter}"]`);
+    const queue = new URL(await entry.getAttribute('href'), base);
+    assert.equal(queue.pathname, '/manual/review');
+    assert.equal(queue.searchParams.get('work_split'), task);
+    assert.equal(queue.searchParams.get('issue_ids'), ids);
+    assert.equal(queue.searchParams.has('work_assignee'), false);
+    assert.equal(queue.searchParams.has('task_progress'), false);
+    if (width < 640) assert.ok((await entry.boundingBox()).height >= 44);
+   }
    const search = page.locator('#reviewAssignmentBatchSearch');
    const cards = page.locator('#reviewAssignmentList article');
    const requestsBefore = await page.evaluate(()=>taskRequests.length);
@@ -120,6 +130,17 @@ async function init(page,lang,theme){
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no page overflow');
    if(width<640)for(const selector of ['#reviewAssignmentsShare','[data-share-review-assignment="campaign-version"]'])assert.ok(await page.locator(selector).evaluate(el=>el.getBoundingClientRect().height>=44),'44px tap target');
    if((width===320&&lang==='en'&&theme==='light')||(width===1440&&lang==='zh'&&theme==='dark'))await page.screenshot({path:`/tmp/assignment-share-${width}-${lang}-${theme}.png`,fullPage:true});
+   const versionCard = page.locator('[data-review-assignment-batch="campaign-version"]');
+   if (width === 1440 && lang === 'zh' && theme === 'dark') {
+    await versionCard.locator('.review-assignment-progress-label').screenshot({path:'/tmp/ra-assignment-queue-links.png'});
+   }
+   await versionCard.locator('.exclusion-pending-link').click();
+   await page.waitForURL('**/manual/review?**');
+   const restored = await page.evaluate(() => parsePageRoute());
+   assert.deepEqual(restored.labelStates, ['exclusion_pending']);
+   assert.deepEqual(restored.reviewIssueIds, ['cn12', 'cn13']);
+   assert.equal(restored.workSplitId, 'campaign-version');
+   assert.equal(restored.taskView, 'targets');
    results.push({width,language:lang,theme,passed:true});await page.close();
   }
   assert.deepEqual(errors,[]);

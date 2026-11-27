@@ -3094,6 +3094,20 @@
             ],
             "title": "Conflict Count"
           },
+          "conflict_issue_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conflict Issue Ids"
+          },
           "created_at": {
             "default": "",
             "title": "Created At",
@@ -3114,6 +3128,20 @@
               }
             ],
             "title": "Dataset Id"
+          },
+          "exclusion_pending_issue_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exclusion Pending Issue Ids"
           },
           "is_current": {
             "default": true,

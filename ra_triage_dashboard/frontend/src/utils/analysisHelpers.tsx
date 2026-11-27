@@ -260,6 +260,7 @@ export function buildLabelGtFilterOptions({
     },
   ];
   if (!labeling) {
+    stateItems.push({value:"exclusion_pending", label:bilingual(lang, "排除待确定", "Exclusion pending"), group:stateGroup});
     const legacyExtras: Array<[string, string, string]> = [
       ["stale", "裁决需确认", "Decision needs review"],
       ["matches_gt", "与 GT 一致", "Matches GT"],

@@ -85,7 +85,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
                 scenarios[item["scenario"]] += 1
             continue
         exclusion = item.get("exclusion_summary") or case_exclusion_projection(item.get("label_cases") or [], decision) or {}
-        submitted_states["conflict" if exclusion.get("conflict") else status] += 1
+        submitted_states[status] += 1
         if primary_result:
             adjudicated_count += 1
         if rationales:

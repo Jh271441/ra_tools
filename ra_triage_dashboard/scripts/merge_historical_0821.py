@@ -223,7 +223,7 @@ def merge_partition(db, conn, partition, sources, run_id, backup_sha, actor):
         selection_source_run_id=run_id, source_filter={"baselines": [partition], "issue_ids": ids},
         created_by=actor, created_by_source="authorized_migration",
     )
-    conflicts = db._review_overlap_conflicts(conn, [source["campaign"] for source in sources])
+    conflicts = db._review_overlap_queues(conn, [source["campaign"] for source in sources])
     target = db._campaign_create_in_connection(conn, spec=dict(
         name=title, purpose="model_review", workflow_mode="model_review_and_case_label",
         workset_id=workset["id"], evaluation_run_id=run_id, references=[reference],
@@ -251,8 +251,10 @@ def merge_partition(db, conn, partition, sources, run_id, backup_sha, actor):
         require(evidence_digest(records(conn, table, columns[0], target), columns) ==
                 evidence_digest([row for source in sources for row in source["linked"][table]], columns),
                 f"Original record changed: {partition} / {table}")
-    expected_conflicts = sorted({issue for ids in conflicts.values() for issue in ids})
-    require(db._review_overlap_conflicts(conn, [target])[target] == expected_conflicts, "Conflict set changed")
+    merged = db._review_overlap_queues(conn, [target])[target]
+    for kind, ids in merged.items():
+        expected = sorted({issue for queues in conflicts.values() for issue in queues[kind]})
+        require(ids == expected, f"Review queue changed: {kind}")
     card = db.list_review_work_splits(lifecycle="current", split_id=target)[0]
     require(card["total_count"] == len(ids), "Incorrect card membership")
     for field in ("pending_count", "completed_count", "assignment_count"):

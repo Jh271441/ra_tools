@@ -75,7 +75,7 @@ function selectedReviewDiscussionFilter() {
 }
 
 function issueCardReviewFlag(annotation, comparisonStatus = "") {
-  if (annotation?.is_excluded) {
+  if (annotation?.is_excluded && !annotation.exclusion_conflict) {
     return `<span class="issue-card-flag issue-card-flag-excluded" data-card-review-flag="excluded"><span class="ui-lang-zh">应该排除</span><span class="ui-lang-en">Exclude</span></span>`;
   }
   if (comparisonStatus === "no_gt") {
@@ -85,16 +85,14 @@ function issueCardReviewFlag(annotation, comparisonStatus = "") {
 }
 
 function issueCardLabelingFlag(item) {
-  if (item.exclusion_summary?.conflict) {
-    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="conflict">${uiText("排除有分歧", "Exclusion disagreement")}</span>`;
-  }
-  if (item.is_excluded ?? item.annotation?.is_excluded) {
-    return issueCardReviewFlag({ ...item.annotation, is_excluded: true });
-  }
+  const pending = item.exclusion_summary?.conflict
+    ? `<span class="issue-card-flag" data-card-review-flag="exclusion-pending">${uiText("排除待确定", "Exclusion pending")}</span>` : "";
   if (item.label_state === "conflict" || item.label_state === "stale") {
-    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="conflict"><span class="ui-lang-zh">冲突待处理</span><span class="ui-lang-en">Conflict</span></span>`;
+    return `<span class="issue-card-flag issue-card-flag-needs-gt" data-card-review-flag="conflict"><span class="ui-lang-zh">冲突待处理</span><span class="ui-lang-en">Conflict</span></span>${pending}`;
   }
-  return "";
+  if (pending) return pending;
+  return (item.is_excluded ?? item.annotation?.is_excluded)
+    ? issueCardReviewFlag({ ...item.annotation, is_excluded: true }) : "";
 }
 
 function issueCardLabelingAttributes(attributes) {
@@ -168,7 +166,7 @@ function issueCard(item, options = {}) {
       );
   const reviewFlag = isLabeling
     ? issueCardLabelingFlag(item)
-    : issueCardReviewFlag({ ...item.annotation, is_excluded: item.is_excluded ?? item.annotation?.is_excluded }, comparisonStatus);
+    : issueCardReviewFlag({ ...item.annotation, exclusion_conflict: item.label_state?.exclusion_conflict, is_excluded: item.is_excluded ?? item.annotation?.is_excluded }, comparisonStatus);
   const sharedLabelFlag = isLabeling
     ? ""
     : sharedLabelStateButtonMarkup(item, { compact: true });

@@ -207,26 +207,22 @@ export const BatchCard: React.FC<BatchCardProps> = ({
 
   const renderConflictBadge = (target: WorkSplitItem) => {
     const conflicts = Number(target.conflict_count || 0);
-    if (!conflicts) {
-      return Array.isArray(target.conflict_issue_ids) ? (
-        <small>{bilingual(lang, "无待裁决冲突", "No pending conflicts")}</small>
-      ) : null;
+    const pending = target.exclusion_pending_issue_ids || [];
+    if (!conflicts && !pending.length) {
+      return Array.isArray(target.conflict_issue_ids)
+        ? <small>{bilingual(lang, "无待裁决冲突", "No pending conflicts")}</small> : null;
     }
-    const href = reviewAssignmentBatchHref(target, "review", username, verified, {
-      issueIds: target.conflict_issue_ids || [],
-      labelStates: ["conflict"],
-      workAssignee: [],
-      taskProgress: [],
+    const href = (ids: string[], filter: string) => reviewAssignmentBatchHref(target, "review", username, verified, {
+      issueIds: ids, labelStates: [filter], workAssignee: [], taskProgress: [],
     });
-    return (
-      <a className="review-assignment-conflict-pill" href={href}>
-        {bilingual(
-          lang,
-          `${conflicts} 条相交冲突待裁决`,
-          `${conflicts} overlap conflict${conflicts === 1 ? "" : "s"}`,
-        )}
-      </a>
-    );
+    return <>
+      {conflicts > 0 && <a className="review-assignment-conflict-pill" href={href(target.conflict_issue_ids || [], "conflict")}>
+        {bilingual(lang, `${conflicts} 条分类分歧待裁决`, `${conflicts} classification dispute${conflicts === 1 ? "" : "s"}`)}
+      </a>}
+      {pending.length > 0 && <a className="review-assignment-conflict-pill exclusion-pending-link" href={href(pending, "exclusion_pending")}>
+        {bilingual(lang, `${pending.length} 条排除待确定`, `Pending exclusion · ${pending.length}`)}
+      </a>}
+    </>;
   };
 
   if (item.appendable) {

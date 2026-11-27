@@ -64,7 +64,7 @@ const batch = {
   members:[{username:'alice'}], conflict_count:8,
 };
 const card = s.renderVersionAssignmentBatch(batch);
-const badge = card.match(/<a class="review-assignment-conflict-pill" href="([^"]+)">8 overlap conflicts<\/a>/);
+const badge = card.match(/<a class="review-assignment-conflict-pill *" href="([^"]+)">8 classification disputes<\/a>/);
 assert.ok(badge);
 const link = new URL(badge[1].replaceAll('&amp;','&'),s.window.location.origin);
 assert.equal(link.pathname,'/manual/review');

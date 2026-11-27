@@ -314,8 +314,10 @@ def task(db, dataset, *, assignee='', status='all', query='', page=1, page_size=
                             extra_completed_count=max(0, sum(done_by_person.values()) - active_completed),
                             completion_ratio=active_completed / active_total if active_total else 0,
                         )
-                conflicts = db._review_overlap_conflicts(conn, [canonical], assigned_only=False)[canonical]
-                result.update(conflict_count=len(conflicts), conflict_issue_ids=conflicts)
+                queues = db._review_overlap_queues(conn, [canonical], assigned_only=False)[canonical]
+                target_ids = {row["issue_id"] for row in rows}
+                queues = {key: [iid for iid in ids if iid in target_ids] for key, ids in queues.items()}
+                result.update(conflict_count=len(queues["conflict_issue_ids"]), **queues)
     if detail:
         items=[]
         for row in rows:

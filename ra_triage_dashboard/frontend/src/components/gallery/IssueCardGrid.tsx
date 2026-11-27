@@ -20,6 +20,7 @@ export const GT_RAW_VALUES = ["out_of_scope", "未接起"] as const;
 export const GT_FILTER_VALUES = [...TRIAGE_LABELS, ...GT_RAW_VALUES] as const;
 
 export interface GalleryLabelState {
+  exclusion_conflict?: boolean;
   state?: string;
   expected_output?: string;
   gt_relation?: string;
@@ -41,6 +42,7 @@ export interface GalleryCaseItem {
   issue_id: string;
   gt_label?: string | null;
   gt_raw_label?: string | null;
+  exclusion_summary?: { conflict?: boolean } | null;
   is_excluded?: boolean;
   expected_output?: string | null;
   author?: string | null;
@@ -532,7 +534,10 @@ export const IssueCardGrid: React.FC<IssueCardGridProps> = ({
                   )}
                 </div>
                 <div className="issue-card-flags">
-                  {isExcluded ? (
+                  {(item.exclusion_summary?.conflict || labelStateObj?.exclusion_conflict) && (
+                    <span className="issue-card-flag" data-card-review-flag="exclusion-pending">{bilingual(lang, "排除待确定", "Exclusion pending")}</span>
+                  )}
+                  {isExcluded && !item.exclusion_summary?.conflict && !labelStateObj?.exclusion_conflict ? (
                     <span
                       className="issue-card-flag issue-card-flag-excluded"
                       data-card-review-flag="excluded"

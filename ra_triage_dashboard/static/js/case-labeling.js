@@ -1074,7 +1074,7 @@ function caseLabelFinalResultMarkup(caseData) {
   const result = caseData.label_state || {};
   const status = result.state || "pending";
   const label = status === "resolved" && result.expected_output ? expectedOutputDisplayText(result.expected_output) : caseDecisionStateText(status);
-  const exclusion = caseExclusionNeedsDecision(caseData) ? uiText("排除有分歧", "Exclusion disagreement") : caseData.label_state?.decision?.stale && caseData.label_state.decision.full_result ? uiText("排除待复核", "Recheck exclusion") : "";
+  const exclusion = caseExclusionNeedsDecision(caseData) ? uiText("排除待确定", "Exclusion pending") : caseData.label_state?.decision?.stale && caseData.label_state.decision.full_result ? uiText("排除待复核", "Recheck exclusion") : "";
   return `<div class="case-label-result-actions" id="caseLabelResultActions"><button class="history-inline-button case-label-result-button" id="caseLabelGoAdjudication" type="button" aria-haspopup="dialog" title="${escapeHtml(uiText("查看标注结果、原因与裁决", "View results, reasons and decisions"))}"><span class="case-label-status" data-state="${escapeHtml(status)}">${escapeHtml(label)}</span>${exclusion ? `<span class="case-exclusion-status">${escapeHtml(exclusion)}</span>` : ""}<span class="ui-select-caret" aria-hidden="true"></span></button><button type="button" class="icon-button case-label-info-button" id="caseDecisionInfo" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("查看裁决规则与流程图", "Decision rules and flowchart"))}" title="${escapeHtml(uiText("裁决规则", "Decision rules"))}">ⓘ</button></div>`;
 }
 

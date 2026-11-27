@@ -118,13 +118,21 @@ def run():
             assert all(text not in summary.inner_text() for text in ('待结论', 'Awaiting result', '已完成', 'Completed'))
             basis = page.locator('#caseDecisionEvidence .case-decision-basis')
             assert basis.is_visible()
+            assert not basis.evaluate('n => n.open')
+            toggle = basis.locator('summary')
+            previous_focus = page.evaluate('document.activeElement.id')
+            toggle.press('Enter')
+            assert basis.evaluate('n => n.open')
             assert '#201' in basis.inner_text()
             assert 'alice' in basis.inner_text()
             assert data['label_cases'][0]['revisions'][0]['rationale'] in basis.inner_text()
-            assert page.locator('.case-decision-conclusion h3').inner_text() == page.evaluate(
+            assert page.locator('.classification-flow h3').inner_text() == page.evaluate(
                 'expectedOutputDisplayText(fixtureData.label_state.expected_output)')
             assert dialog_fits(page)
             assert ('已同步' if page.evaluate("state.uiLanguage === 'zh'") else 'Synced') in summary.inner_text()
+            toggle.press('Enter')
+            if previous_focus:
+                page.locator('[id="' + previous_focus + '"]').focus()
             assert page.locator('#caseDecisionRelabel').is_enabled()
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
 
@@ -142,7 +150,7 @@ def run():
                     dialog = page.locator('#caseLabelDecisionDialog')
                     if (width, language, theme) in [(320, 'en', 'light'), (1440, 'zh', 'dark')]:
                         dialog.screenshot(path=str(OUTPUT / f'summary-{width}-{language}-{theme}.png'))
-                    assert dialog.locator('[data-decision-trail]').is_visible()
+                    assert not dialog.locator('[data-decision-trail]').is_visible()
                     page.locator('#caseLabelDecisionDialog [data-close-decision]').first.click()
                     page.wait_for_function('mediaResumes===1')
                     assert page.evaluate('document.querySelector("#annotationForm")===originalForm&&detailHeroMediaEl()===originalMedia')
@@ -167,10 +175,12 @@ def run():
             payload = page.evaluate('fixtureData')
             del payload['trail_metadata_status'], payload['dashboard_should_exclude']
             backend['held'].pop().fulfill(json=payload)
-            headline = page.locator('.case-decision-conclusion h3')
+            headline = page.locator('.classification-flow h3')
             headline.wait_for()
             evidence = page.locator('#caseDecisionEvidence')
             assert headline.inner_text() == '等待人工标注'
+            assert evidence.locator('.classification-flow li').count() == 2
+            evidence.locator('.case-decision-basis summary').click()
             assert evidence.inner_text().count('0/1 人已提交') == 2
             assert '未裁决' in evidence.inner_text() and '暂无排除意见' in evidence.inner_text()
             assert '分歧' not in evidence.inner_text()
@@ -196,13 +206,32 @@ def run():
             payload['label_state'].update(state='conflict', expected_output='')
             payload['exclusion_summary']['is_excluded'] = True
             backend['held'].pop().fulfill(json=payload)
-            headline = page.locator('.case-decision-conclusion h3')
+            headline = page.locator('.classification-flow h3')
             headline.wait_for()
             assert 'disputed' in headline.inner_text()
             basis = page.locator('.case-decision-basis')
+            exclusion = page.locator('.case-decision-exclusion')
+            assert exclusion.locator('h3').inner_text() == 'Exclusion pending'
+            assert exclusion.locator('li b').all_inner_texts() == ['1 vote', '1 vote']
+            assert page.locator('#caseDecisionRelabel').inner_text() == 'Relabel and decide'
+            basis.locator('summary').click()
             assert 'alice' in basis.inner_text() and 'bob' in basis.inner_text()
             assert peer['rationale'] in basis.inner_text()
-            assert '1 for exclusion, 1 for inclusion' in page.locator('.case-decision-exclusion').inner_text()
+            # Matching classification and split exclusion must keep adjudication optional.
+            payload['label_state'].update(state='resolved', expected_output='正确触发')
+            source.update(state='resolved', expected_output='正确触发')
+            for vote in source['revision_summaries']:
+                vote['expected_output'] = '正确触发'
+            payload['label_state']['human_publication']['lanes'].update(rd={'state':'resolved','label':'正确触发'})
+            page.locator('#caseDecisionRefresh').click()
+            page.wait_for_timeout(50)
+            backend['held'].pop().fulfill(json=payload)
+            page.locator('#caseDecisionRelabel', has_text='Review exclusion').wait_for()
+            page.evaluate("applyUiLanguage('zh',{persist:false})")
+            assert exclusion.locator('h3').inner_text() == '排除待确定'
+            assert basis.evaluate('n=>n.open')
+            basis.locator('summary').click()
+            page.locator('.case-decision-result').screenshot(path=str(OUTPUT / 'classification-exclusion-flow.png'))
             assert dialog_fits(page)
             results.append({'scenario': 'conflicting opinions with attributed evidence and exclusion counts', 'passed': True})
             page.close()

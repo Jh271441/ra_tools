@@ -610,7 +610,7 @@
   .review-assignment-batch-title { white-space: normal; overflow-wrap: anywhere; }
   .review-assignment-member-grid { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
   .review-assignment-progress-heading { flex-wrap: wrap; }
-  .review-assignment-conflict-pill { min-height: 44px; }
+  .review-assignment-conflict-pill { min-height: 44px; padding: 6px 12px; font-size: 12px; }
   .review-assignment-batch-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 8px; }
   .review-assignment-batch-actions .button { min-width: 0; min-height: 44px; white-space: normal; }
   .review-assignment-table-scroll { overflow-x: auto; }
@@ -1078,7 +1078,24 @@
 }
 
 @media (max-width:639px) {
-  .case-decision-result { grid-template-columns:minmax(0,1fr); gap:12px; }
+  .case-decision-result { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 11px; }
+  .case-decision-branch { grid-template-columns: minmax(0, 1fr); }
+  .case-decision-branch[data-input-count="2"] .case-decision-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .case-decision-inputs li { padding: 0 3px; }
+  .case-decision-branch[data-input-count="1"] .case-decision-inputs li { padding: 0; }
+  .case-decision-node { padding: 7px 9px; gap: 5px 6px; }
+  .case-decision-branch[data-input-count="2"] .case-decision-node { flex-direction: column; align-items: flex-start; }
+  .case-decision-vote-track { width: 100%; max-width: none; margin-inline: 0; flex: 0 0 auto; }
+  .case-decision-pill { font-size: 11.5px; padding: 2px 7px; }
+  .case-decision-bridge { height: 42px; align-items: start; }
+  .case-decision-wire-h, .case-decision-arrow-h { display: none; }
+  .case-decision-wire-v, .case-decision-arrow-v { display: block; }
+  .case-decision-arrow-v { bottom: 1px; left: 50%; width: 10px; height: 8px; transform: translateX(-50%); }
+  .case-decision-junction { width: 20px; height: 20px; margin-top: 7px; transform: none; }
+  .case-decision-conclusion { padding: 10px 12px 10px 14px; }
+  .case-decision-conclusion h3 { font-size: 16px; }
+  .case-decision-exclusion h3 { font-size: 15px; }
+  .case-decision-exclusion-empty .quiet-meta { margin-left: 0; }
 }
 
 @media (max-width:639px) {

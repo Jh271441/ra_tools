@@ -1,7 +1,6 @@
 /* Shared Issue-label projection for the Review gallery and detail view. */
 function sharedLabelStateVisual(labelState = {}) {
   const state = String(labelState.state || "none");
-  if (labelState.exclusion_conflict) return { kind: "conflict", zh: "排除有分歧", en: "Exclusion disagreement" };
   const relation = String(labelState.gt_relation || "unknown");
   if (state === "resolved") {
     if (labelState.gt_review_pending) {
@@ -78,9 +77,10 @@ function sharedLabelStateButtonMarkup(item, { showEmpty = false, compact = false
       `${visual.en} · View shared label sources for ${item?.issue_id || ""}`
     )
   );
-  return `<button class="shared-label-state-trigger shared-label-state-${visual.kind}${compact ? " shared-label-state-compact" : ""}" type="button" data-open-shared-label-state data-issue-id="${issueId}" aria-label="${title}" title="${title}">
+  return `<button class="shared-label-state-trigger shared-label-state-${visual.kind}${compact ? " shared-label-state-compact" : ""}" type="button" data-open-shared-label-state data-issue-id="${issueId}" aria-label="${title}${labelState.exclusion_conflict ? uiText(" · 排除待确定", " · Exclusion pending") : ""}" title="${title}">
     ${prefixMarkup}
     <span class="shared-label-state-value"><span class="ui-lang-zh">${escapeHtml(visual.zh)}</span><span class="ui-lang-en">${escapeHtml(visual.en)}</span></span>
+    ${labelState.exclusion_conflict ? `<span class="case-exclusion-status"><span class="ui-lang-zh">排除待确定</span><span class="ui-lang-en">Exclusion pending</span></span>` : ""}
     ${sourceCountMarkup}
   </button>`;
 }

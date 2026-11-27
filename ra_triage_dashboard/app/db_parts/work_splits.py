@@ -24,7 +24,6 @@ from .model_reviews import MODEL_REVIEW_STATUSES, MODEL_REVIEW_PUBLIC_ID_OFFSET
 from .shared import (
     COMPARISON_STATUSES,
     LABELS,
-    MODEL_LABELS,
     _json,
     _json_load,
     model_label_matches_gt,
@@ -36,13 +35,11 @@ from .shared import (
 )
 
 
-
-
 class DatabaseWorkSplitsMixin:
-    def _review_overlap_conflicts(self, conn, campaign_ids, *, assigned_only=True):
-        conflicts = {cid: [] for cid in campaign_ids}
+    def _review_overlap_queues(self, conn, campaign_ids, *, assigned_only=True):
+        queues = {cid: {"conflict_issue_ids": [], "exclusion_pending_issue_ids": []} for cid in campaign_ids}
         if not campaign_ids:
-            return conflicts
+            return queues
         marks = ",".join("?" for _ in campaign_ids)
         label_marks = ",".join("?" for _ in LABELS)
         assigned = """AND EXISTS (SELECT 1 FROM review_work_assignments a
@@ -51,8 +48,8 @@ class DatabaseWorkSplitsMixin:
         candidates = conn.execute(f"""
             WITH opinions AS (
             SELECT p.campaign_id, p.issue_id, m.baseline_scope,
-                   COUNT(DISTINCT CASE WHEN r.expected_output IN ({label_marks}) THEN r.expected_output END) AS label_count,
-                   COUNT(DISTINCT r.is_excluded) AS exclusion_count
+                   COUNT(DISTINCT CASE WHEN r.expected_output IN ({label_marks}) THEN r.expected_output END) AS labels,
+                   COUNT(DISTINCT r.is_excluded) AS exclusions
             FROM combined_review_progress p
             JOIN campaign_issue_members m ON m.campaign_id=p.campaign_id AND m.issue_id=p.issue_id
             JOIN label_revisions r ON r.id=p.case_label_revision_id AND lower(r.author)=lower(p.reviewer)
@@ -62,8 +59,7 @@ class DatabaseWorkSplitsMixin:
               AND NOT EXISTS (SELECT 1 FROM label_import_suppressed_revisions s WHERE s.revision_id=r.id)
             GROUP BY p.campaign_id, p.issue_id, m.baseline_scope
             HAVING COUNT(DISTINCT lower(p.reviewer)) > 1
-            )
-            SELECT * FROM opinions WHERE label_count > 1 OR exclusion_count > 1 ORDER BY issue_id
+            ) SELECT * FROM opinions WHERE labels > 1 OR exclusions > 1 ORDER BY issue_id
         """, (*LABELS, *campaign_ids)).fetchall()
         by_scope = defaultdict(list)
         for case in candidates:
@@ -74,10 +70,12 @@ class DatabaseWorkSplitsMixin:
                                                      include_sources=False, connection=conn)
             for r in cases:
                 current = states.get(r["issue_id"], {})
-                if ((r["label_count"] > 1 and current.get("state") in {"conflict", "stale"})
-                        or (r["exclusion_count"] > 1 and current.get("exclusion_conflict"))):
-                    conflicts[r["campaign_id"]].append(r["issue_id"])
-        return conflicts
+                queue = queues[r["campaign_id"]]
+                if r["labels"] > 1 and current.get("state") in {"conflict", "stale"}:
+                    queue["conflict_issue_ids"].append(r["issue_id"])
+                if r["exclusions"] > 1 and current.get("exclusion_conflict"):
+                    queue["exclusion_pending_issue_ids"].append(r["issue_id"])
+        return queues
 
     def list_work_assignees(
         self, *, issue_ids: Sequence[str] | None = None, model_run_id: str = ""
@@ -200,14 +198,14 @@ class DatabaseWorkSplitsMixin:
                 sorted(source_ids),
             ).fetchall() if source_ids else []
             sources_by_id = {str(source["id"]): dict(source) for source in source_rows}
-            historical_conflicts = self._review_overlap_conflicts(conn, [
+            historical_queues = self._review_overlap_queues(conn, [
                 row["id"] for row in split_rows if row["workflow_mode"] == "model_review_and_case_label"
                 and task_reviewable(row) and (
                     legacy_batch_source(row, sources_by_id)
                     or _json_load(row["filter_json"], {}).get("merged_review_sources")
                 )
             ])
-            historical_pending = pending_assignment_issue_ids(conn, list(historical_conflicts))
+            historical_pending = pending_assignment_issue_ids(conn, list(historical_queues))
             split_ids = [str(row["id"]) for row in split_rows]
             filters_by_split = {
                 str(row["id"]): _json_load(row["filter_json"], {}) for row in split_rows
@@ -381,9 +379,9 @@ class DatabaseWorkSplitsMixin:
                 {
                     "split_id": split_id,
                     "created_by": str(row["created_by"] or ""),
-                    **({"conflict_count": len(historical_conflicts[split_id]),
+                    **({"conflict_count": len(historical_queues[split_id]["conflict_issue_ids"]),
                         "pending_issue_ids": historical_pending[split_id],
-                        "conflict_issue_ids": historical_conflicts[split_id]} if split_id in historical_conflicts else {}),
+                        **historical_queues[split_id]} if split_id in historical_queues else {}),
                     "created_at": str(row["created_at"] or ""),
                     "campaign_name": str(row["campaign_name"] or ""),
                     "legacy_read_only": bool(row["legacy_read_only"]),

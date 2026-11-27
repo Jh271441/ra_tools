@@ -45,6 +45,7 @@ class WorkSplitItem(DashboardBaseModel):
     conflict_count: Optional[int] = None
     pending_issue_ids: Optional[List[str]] = None
     conflict_issue_ids: Optional[List[str]] = None
+    exclusion_pending_issue_ids: Optional[List[str]] = None
 
 
 class WorkSplitMetrics(DashboardBaseModel):

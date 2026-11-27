@@ -586,10 +586,32 @@ html[data-color-theme="light"] .allocation-convergence-bar { background: rgba(15
   display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px;
 }
 .review-assignment-conflict-pill {
-  display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px;
-  background: color-mix(in srgb, var(--warn) 16%, transparent);
-  color: var(--warn); font-size: 11px; font-weight: 650; line-height: 1.4;
-  text-decoration: underline; text-underline-offset: 2px;
+  display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+  color: var(--warn); font-size: 11px; font-weight: 650; line-height: 1.45;
+  text-decoration: none; transition: background-color 140ms ease, border-color 140ms ease;
+}
+.review-assignment-conflict-pill::before {
+  content: ""; width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: currentColor;
+}
+.review-assignment-conflict-pill::after {
+  content: "›"; font-size: 13px; line-height: 1; opacity: .75;
+}
+.review-assignment-conflict-pill:hover {
+  border-color: color-mix(in srgb, var(--warn) 66%, transparent);
+  background: color-mix(in srgb, var(--warn) 20%, transparent);
+  color: var(--warn); text-decoration: underline; text-underline-offset: 2px;
+}
+.review-assignment-conflict-pill.exclusion-pending-link {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+}
+.review-assignment-conflict-pill.exclusion-pending-link:hover {
+  border-color: color-mix(in srgb, var(--accent) 68%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
 }
 .review-assignment-conflict-pill:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
 .allocation-group-segment-label {

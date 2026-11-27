@@ -217,7 +217,7 @@ function readReviewFiltersFromUrl(): ReviewFilterState {
       ["pending", "in_progress", "completed", "blocked_by_label", "reviewed", "needs_gt_review"].includes(v),
     ),
     labelStates: parseFilterList(params.get("label_state")).filter((v) =>
-      ["none", "pending", "resolved", "conflict", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(v),
+      ["none", "pending", "resolved", "conflict", "exclusion_pending", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(v),
     ),
     gtRelations: normalizedGtRelationFilters(params.get("gt_relation")),
     issueTags: parseFilterList(params.get("issue_tags")),

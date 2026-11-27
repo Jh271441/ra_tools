@@ -323,7 +323,6 @@ class LabelingQueriesMixin:
                 continue
             exclusion_projection = task_exclusions.get(str(row["issue_id"])) if task else case_exclusion_projection(cases, (shared_state or {}).get("decision"))
             filter_state = labeling_filter_state({
-                "exclusion_summary": exclusion_projection,
                 "label_state": aggregate_state, "label_cases": cases,
                 "decision": (shared_state or {}).get("decision"),
             })

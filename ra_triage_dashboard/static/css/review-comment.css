@@ -157,6 +157,9 @@
 .issue-card-flag-excluded {
   border-color: rgba(251,191,36,.4); color: #f3ce77; background: rgba(251,191,36,.09);
 }
+.issue-card-flag[data-card-review-flag="exclusion-pending"] {
+  border-color: rgba(36,211,239,.4); color: #7ce8f7; background: rgba(36,211,239,.1);
+}
 .issue-card-labels {
   min-width: 0; overflow: hidden; display: flex; align-items: center; flex-wrap: nowrap; gap: 6px 10px;
 }
@@ -1425,6 +1428,7 @@ html[data-color-theme="light"] .shared-label-state-unknown { border-color: #cbd5
 html[data-color-theme="light"] .issue-card-run-review-state { color: #64748b; }
 html[data-color-theme="light"] .issue-card-run-review-prefix { color: #475569; }
 html[data-color-theme="light"] .issue-card-flag-model-no-gt { border-color: #fcd34d; color: #92400e; background: #fffbeb; }
+html[data-color-theme="light"] .issue-card-flag[data-card-review-flag="exclusion-pending"] { border-color: #7dd3e4; color: #076b82; background: #e6f7fb; }
 .model-review-status-field {
   display: grid;
   gap: 5px;

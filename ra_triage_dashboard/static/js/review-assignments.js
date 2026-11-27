@@ -263,14 +263,16 @@ function reviewAssignmentDetailAction(item, { detailHref = '' } = {}, draft = fa
 
 function reviewAssignmentConflictBadge(item) {
   const conflicts = Number(item.conflict_count || 0);
-  if (!conflicts) return Array.isArray(item.conflict_issue_ids)
-    ? `<small>${uiText("无待裁决冲突", "No pending conflicts")}</small>` : '';
-  const href = pageUrl("review", {
-    ...reviewAssignmentRouteOptions(item, "review"),
-    issueIds: item.conflict_issue_ids || [], labelStates: ["conflict"], workAssignee: [], taskProgress: [],
-  });
-  const label = uiText(`${conflicts} 条相交冲突待裁决`, `${conflicts} overlap conflict${conflicts === 1 ? "" : "s"}`);
-  return `<a class="review-assignment-conflict-pill" href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+  const pending = item.exclusion_pending_issue_ids || [];
+  if (!conflicts && !pending.length) return Array.isArray(item.conflict_issue_ids)
+    ? `<small>${uiText("无待裁决冲突", "No pending conflicts")}</small>` : "";
+  const link = (ids, filter, label, style = "") => {
+    const href = pageUrl("review", {...reviewAssignmentRouteOptions(item, "review"),
+      issueIds: ids, labelStates: [filter], workAssignee: [], taskProgress: []});
+    return `<a class="review-assignment-conflict-pill ${style}" href="${escapeHtml(href)}">${escapeHtml(label)}</a>`;
+  };
+  return (conflicts ? link(item.conflict_issue_ids || [], "conflict", uiText(`${conflicts} 条分类分歧待裁决`, `${conflicts} classification dispute${conflicts === 1 ? "" : "s"}`)) : "")
+    + (pending.length ? link(pending, "exclusion_pending", uiText(`${pending.length} 条排除待确定`, `Pending exclusion · ${pending.length}`), "exclusion-pending-link") : "");
 }
 
 function renderReviewAssignmentBatch(item, options = {}) {

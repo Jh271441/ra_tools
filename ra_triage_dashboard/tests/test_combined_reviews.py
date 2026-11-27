@@ -71,6 +71,8 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         )
 
     def test_overlap_queue_distinguishes_missing_classification_from_exclusion_conflict(self):
+        from unittest.mock import patch
+        from ra_triage_dashboard.app.routers import cases as gallery
         from ra_triage_dashboard.app.db_parts.labeling_shared import matches_issue_label_states
         from ra_triage_dashboard.app.labeling_summary import summarize_labeling_cases
 
@@ -83,11 +85,21 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         def verify(classification, conflict, excluded, bucket):
             state = self.db.project_issue_label_states("scope", ["cn1"], include_sources=False)["cn1"]
             self.assertEqual((state["state"], state["exclusion_conflict"]), (classification, conflict))
-            self.assertEqual(matches_issue_label_states(state, ["conflict"]), conflict)
-            expected = ["cn1"] if conflict else []
+            self.assertEqual(matches_issue_label_states(state, ["conflict"]), classification == "conflict")
+            expected = ["cn1"] if classification == "conflict" else []
             with self.db.connect() as conn:
                 for assigned_only in (True, False):
-                    self.assertEqual(self.db._review_overlap_conflicts(conn, [cid], assigned_only=assigned_only)[cid], expected)
+                    queue = self.db._review_overlap_queues(conn, [cid], assigned_only=assigned_only)[cid]
+                    self.assertEqual(queue["conflict_issue_ids"], expected)
+                    self.assertEqual(queue["exclusion_pending_issue_ids"], ["cn1"] if conflict else [])
+            self.assertEqual(matches_issue_label_states(state, ["exclusion_pending"]), conflict)
+            filters = dict(baseline_scopes=["scope"], model_run_id=self.runs[0]["id"],
+                           work_split_id=cid, issue_ids=["cn1"])
+            with patch.object(gallery, "database", self.db), patch.object(gallery, "_review_tag_catalog", return_value=[]):
+                for selector, ids in [("conflict", expected), ("exclusion_pending", ["cn1"] if conflict else [])]:
+                    result = gallery._case_result_with_status_filter(filters=filters, review_statuses=(),
+                                                                    label_states=(selector,), page=1, page_size=20)
+                    self.assertEqual([row["issue_id"] for row in result["items"]], ids)
             rows, _ = self.db._project_labeling_cases(baseline_scopes=["scope"], status=bucket)
             self.assertEqual([r["issue_id"] for r in rows], ["cn1"])
             summary = summarize_labeling_cases(rows)
@@ -102,16 +114,23 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
         verify("pending", False, True, "incomplete")
         with self.db.connect() as conn:
             conn.execute("UPDATE label_revisions SET is_excluded=false WHERE author='bob'")
-        verify("pending", True, True, "conflict")
-        self.assertEqual(self.db.labeling_case_issue_ids(baseline_scopes=["scope"], status="incomplete"), [])
+        verify("pending", True, True, "incomplete")
+        with self.db.connect() as conn:
+            conn.execute("UPDATE label_revisions SET expected_output='正确触发' WHERE author='bob'")
+        verify("conflict", True, True, "conflict")
+        with self.db.connect() as conn:
+            conn.execute("UPDATE label_revisions SET is_excluded=true WHERE author='bob'")
+        verify("conflict", False, True, "conflict")
+        with self.db.connect() as conn:
+            conn.execute("UPDATE label_revisions SET is_excluded=false WHERE author='bob'")
         with self.db.connect() as conn:
             conn.execute("UPDATE label_revisions SET expected_output='误触发' WHERE author='bob'")
-        state = verify("resolved", True, True, "conflict")
+        state = verify("resolved", True, True, "resolved")
         args = dict(baseline_scope="scope", issue_id="cn1", expected_output="误触发", actor="alice",
                     actor_source="test", actor_verified=True, rationale="checked the labels",
                     expected_source_fingerprint=state["source_fingerprint"])
         legacy = self.db.adjudicate_issue_label(**args)["decision"]
-        verify("resolved", True, True, "conflict")
+        verify("resolved", True, True, "resolved")
         self.db.adjudicate_issue_label(**args, expected_previous_decision_id=legacy["id"],
                                        full_result={"is_excluded": False})
         verify("resolved", False, False, "resolved")

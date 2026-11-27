@@ -37,12 +37,57 @@ function caseDecisionSourceBasis(data, source, index) {
     ? uiText(`${source.submitted_count}/${source.assigned_count} 人已提交`, `${source.submitted_count}/${source.assigned_count} reviewers submitted`) : "";
   const outcome = source.state === "resolved" && source.expected_output
     ? expectedOutputDisplayText(source.expected_output) : caseDecisionStateText(source.state);
-  return `<li><strong>${escapeHtml(caseDecisionSourceName(data, source, index))}</strong> · ${escapeHtml([outcome, progress].filter(Boolean).join(" · "))}
+  return `<li><div class="case-decision-basis-source-head"><strong>${escapeHtml(caseDecisionSourceName(data, source, index))}</strong><span>${escapeHtml([outcome, progress].filter(Boolean).join(" · "))}</span></div>
     ${effective.map(r => {
       const label = r.expected_output ? expectedOutputDisplayText(r.expected_output) : uiText("缺少分类", "Classification missing");
       const note = r.rationale || uiText("未填写标注说明", "No rationale recorded");
       return `<p>${escapeHtml([r.author, `#${r.id}`, label].filter(Boolean).join(" · "))} — ${escapeHtml(note)}</p>`;
     }).join("")}</li>`;
+}
+
+function caseDecisionValueTone(raw) {
+  if (raw === "正确触发" || raw === "included") return "ok";
+  if (raw === "误触发" || raw === "conflict") return "fail";
+  if (raw === "无需协助" || raw === "stale" || raw === "excluded") return "warn";
+  if (raw === "真实卡住" || raw === "decision") return "accent";
+  return "muted";
+}
+
+function caseDecisionBridgeIcon(icon) {
+  if (icon === "check") return '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.4 6.2 4.9 8.7 9.6 3.5"/></svg>';
+  if (icon === "alert" || icon === "split") return '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.6v4M6 9.1v.3"/></svg>';
+  return '<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="3" cy="6" r=".95" fill="currentColor" stroke="none"/><circle cx="6" cy="6" r=".95" fill="currentColor" stroke="none"/><circle cx="9" cy="6" r=".95" fill="currentColor" stroke="none"/></svg>';
+}
+
+function caseDecisionBranch(inputs, { caption, outcome, note = "", kind = "", tone = "accent", badge = "", icon = "pending" }) {
+  const multi = inputs.length > 1;
+  const wireH = multi
+    ? '<path d="M0 25C18 25 20 50 32 50"/><path d="M0 75C18 75 20 50 32 50"/><path d="M32 50H58"/>'
+    : '<path d="M0 50H58"/>';
+  const wireV = multi
+    ? '<path d="M25 0C25 13 48 11 50 17"/><path d="M75 0C75 13 52 11 50 17"/><path d="M50 17V37"/>'
+    : '<path d="M50 0V37"/>';
+  const itemsMarkup = inputs.map(item => {
+    const nodeTone = item.tone || "muted";
+    const bar = typeof item.ratio === "number"
+      ? `<span class="case-decision-vote-track" aria-hidden="true"><i style="width:${item.ratio}%"></i></span>` : "";
+    return `<li data-node-tone="${nodeTone}"><div class="case-decision-node"><span class="case-decision-node-label"><i class="case-decision-dot" aria-hidden="true"></i><span>${escapeHtml(item.name)}</span></span>${bar}<b class="case-decision-pill" data-tone="${nodeTone}">${escapeHtml(item.value)}</b></div></li>`;
+  }).join("");
+  return `<div class="case-decision-branch ${kind}" data-flow-tone="${tone}" data-input-count="${inputs.length}">
+    <ul class="case-decision-inputs">${itemsMarkup}</ul>
+    <div class="case-decision-bridge" aria-hidden="true">
+      <svg class="case-decision-wire case-decision-wire-h" viewBox="0 0 64 100" preserveAspectRatio="none">${wireH}</svg>
+      <svg class="case-decision-arrow case-decision-arrow-h" viewBox="0 0 8 10"><path d="M1.5 1.5 6 5 1.5 8.5"/></svg>
+      <svg class="case-decision-wire case-decision-wire-v" viewBox="0 0 100 42" preserveAspectRatio="none">${wireV}</svg>
+      <svg class="case-decision-arrow case-decision-arrow-v" viewBox="0 0 10 8"><path d="M1.5 1.5 5 6 8.5 1.5"/></svg>
+      <span class="case-decision-junction">${caseDecisionBridgeIcon(icon)}</span>
+    </div>
+    <div class="case-decision-conclusion">
+      <div class="case-decision-conclusion-head"><span>${escapeHtml(caption)}</span>${badge ? `<em class="case-decision-state-chip">${escapeHtml(badge)}</em>` : ""}</div>
+      <h3>${escapeHtml(outcome)}</h3>
+      ${note ? `<small class="case-decision-note">${escapeHtml(note)}</small>` : ""}
+    </div>
+  </div>`;
 }
 
 function caseDecisionFlowMarkup(data) {
@@ -59,15 +104,79 @@ function caseDecisionFlowMarkup(data) {
   const excluded = data.exclusion_summary?.is_excluded;
   const votes = caseExclusionVotes(data);
   const exclusionConflict = caseExclusionNeedsDecision(data);
-  let exclusionBasis = uiText("暂无排除意见", "No exclusion opinion recorded");
-  if (decision?.full_result && !decision.stale) {
-    exclusionBasis = uiText(`采用 Issue 裁决 #${decision.id}`, `Issue decision #${decision.id} applies`);
-  } else if (votes.length) {
-    const yes = votes.filter(v => v.is_excluded === true).length;
-    const no = votes.filter(v => v.is_excluded === false).length;
-    exclusionBasis = uiText(`排除 ${yes} 票，不排除 ${no} 票`, `${yes} for exclusion, ${no} for inclusion`);
-    if (exclusionConflict) exclusionBasis += uiText("，有分歧，暂按排除处理", " · disputed, provisionally excluded");
+  const labelInputs = [];
+  if (human?.lanes) {
+    for (const [role, name] of [["rd", "RD"], ["te", "TE′"]]) {
+      const lane = human.lanes[role];
+      if (!lane) continue;
+      labelInputs.push({
+        name,
+        value: lane.label ? rdLabel(lane.label) : humanStatus(lane.state),
+        tone: lane.label ? caseDecisionValueTone(lane.label) : caseDecisionValueTone(lane.state),
+      });
+    }
+  } else if (sources.length && sources.length <= 2) {
+    sources.forEach((source, i) => labelInputs.push({
+      name: caseDecisionSourceName(data, source, i),
+      value: source.expected_output ? expectedOutputDisplayText(source.expected_output) : caseDecisionStateText(source.state),
+      tone: caseDecisionValueTone(source.expected_output || source.state),
+    }));
+  } else {
+    labelInputs.push({
+      name: uiText("标注来源", "Label sources"),
+      value: String(sources.length),
+      tone: sources.length ? "accent" : "muted",
+    });
   }
+  const decisionRef = decision ? uiText(`裁决 #${decision.id}`, `Decision #${decision.id}`) : "";
+  const labelTone = output ? caseDecisionValueTone(output) : status === "conflict" ? "fail" : status === "stale" ? "warn" : "muted";
+  const labelBadge = decision && !decision.stale ? uiText("已裁决", "Decided")
+    : output ? uiText("已确认", "Confirmed")
+    : status === "conflict" ? uiText("需裁决", "Needs decision")
+    : status === "stale" ? uiText("待复核", "Recheck")
+    : uiText("待提交", "Waiting");
+  const labelIcon = output ? "check" : (status === "conflict" || status === "stale") ? "alert" : "pending";
+  const labelFlow = caseDecisionBranch(labelInputs, {
+    caption: uiText("分类结论", "Classification"),
+    outcome: headline,
+    note: decision && !decision.stale ? decisionRef : "",
+    kind: "classification-flow",
+    tone: labelTone,
+    badge: labelBadge,
+    icon: labelIcon,
+  });
+  const exclusionInputs = [];
+  if (decision?.full_result && !decision.stale) {
+    exclusionInputs.push({ name: uiText("裁决", "Decision"), value: `#${decision.id}`, tone: "accent" });
+  } else {
+    const totalVotes = votes.filter(v => typeof v.is_excluded === "boolean").length;
+    for (const [value, name, voteTone] of [[true, uiText("排除", "Exclude"), "warn"], [false, uiText("不排除", "Include"), "ok"]]) {
+      const count = votes.filter(v => v.is_excluded === value).length;
+      if (count) {
+        exclusionInputs.push({
+          name,
+          value: uiText(`${count} 票`, `${count} ${count === 1 ? "vote" : "votes"}`),
+          tone: voteTone,
+          ratio: totalVotes ? Math.round((count / totalVotes) * 100) : 0,
+        });
+      }
+    }
+  }
+  const exclusionTone = exclusionConflict ? "warn" : excluded === true ? "warn" : excluded === false ? "ok" : "muted";
+  const exclusionBadge = decision?.full_result && !decision.stale ? uiText("已裁决", "Decided")
+    : exclusionConflict ? uiText("意见相反", "Split")
+    : typeof excluded === "boolean" ? uiText("已一致", "Agreed") : "";
+  const exclusionFlow = exclusionInputs.length
+    ? caseDecisionBranch(exclusionInputs, {
+        caption: uiText("排除意见", "Exclusion"),
+        outcome: exclusionConflict ? uiText("排除待确定", "Exclusion pending") : caseExclusionText(excluded),
+        note: exclusionConflict ? uiText("当前暂按排除", "Provisionally excluded") : "",
+        kind: "case-decision-exclusion",
+        tone: exclusionTone,
+        badge: exclusionBadge,
+        icon: exclusionConflict ? "split" : "check",
+      })
+    : `<div class="case-decision-exclusion-empty"><span class="case-decision-empty-dot" aria-hidden="true"></span><span class="case-decision-empty-caption">${uiText("排除意见", "Exclusion")}</span><p class="quiet-meta">${uiText("暂无排除意见", "No exclusion opinion recorded")}</p></div>`;
   let reason = explanation.reason;
   if (!sources.length && status === "none") {
     const roles = pendingRoles.map(role => role === "rd" ? "RD" : "TE′");
@@ -78,16 +187,18 @@ function caseDecisionFlowMarkup(data) {
   }
   const decisionNote = decision?.rationale || decision?.label_rationale;
   return `<section class="case-decision-result">
-    <div class="case-decision-conclusion"><span>${uiText("Issue 分类结论", "Issue classification")}</span><h3>${escapeHtml(headline)}</h3></div>
-    ${humanRoleSummary(human, {showProgress:true})}
-    <section class="case-decision-basis"><h4>${uiText("判定依据", "Decision basis")}</h4>
-      <p>${escapeHtml(reason)}</p>
-      ${decision ? `<p>${escapeHtml([uiText(`裁决 #${decision.id}`, `Decision #${decision.id}`), decision.created_by, formatTime(decision.created_at), decisionNote || uiText("未填写裁决说明", "No decision rationale recorded")].filter(Boolean).join(" · "))}</p>` : ""}
-      ${sources.length ? `<ul>${sources.map((source, i) => caseDecisionSourceBasis(data, source, i)).join("")}</ul>` : ""}
-      ${status === "pending" && !exclusionConflict ? `<p class="quiet-meta">${uiText("可直接关闭，待标注人补齐分类。", "You can close this dialog while the reviewers complete their labels.")}</p>` : ""}
-    </section>
-    <div class="case-decision-exclusion"><p><strong>${uiText("排除意见", "Exclusion")}</strong> ${typeof excluded === "boolean" ? (exclusionConflict ? uiText("暂按排除", "Provisionally excluded") : escapeHtml(caseExclusionText(excluded))) + " · " : ""}${escapeHtml(exclusionBasis)}</p>
-      <p class="quiet-meta">${uiText("Trail 排除状态", "Trail exclusion status")} · <span data-decision-trail>${escapeHtml(caseExclusionTrailText(data))}</span></p></div>
+    ${labelFlow}
+    ${exclusionFlow}
+    <details class="case-decision-basis"><summary id="caseDecisionBasisToggle"><span class="case-decision-basis-title"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.2h10M3 8h10M3 11.8h6.5"/></svg>${uiText("判定依据", "Decision basis")}</span><span class="case-decision-basis-chevron" aria-hidden="true"></span></summary>
+      <div class="case-decision-basis-body">
+        ${humanRoleSummary(human, {showProgress:true})}
+        <p class="case-decision-basis-reason">${escapeHtml(reason)}</p>
+        ${decision ? `<p class="case-decision-basis-decision">${escapeHtml([uiText(`裁决 #${decision.id}`, `Decision #${decision.id}`), decision.created_by, formatTime(decision.created_at), decisionNote || uiText("未填写裁决说明", "No decision rationale recorded")].filter(Boolean).join(" · "))}</p>` : ""}
+        ${sources.length ? `<ul class="case-decision-basis-sources">${sources.map((source, i) => caseDecisionSourceBasis(data, source, i)).join("")}</ul>` : ""}
+        ${status === "pending" && !exclusionConflict ? `<p class="quiet-meta">${uiText("可直接关闭，待标注人补齐分类。", "You can close this dialog while the reviewers complete their labels.")}</p>` : ""}
+        <p class="quiet-meta case-decision-trail-row"><span>${uiText("Trail 排除状态", "Trail exclusion status")}</span><span class="case-decision-trail-value" data-decision-trail>${escapeHtml(caseExclusionTrailText(data))}</span></p>
+      </div>
+    </details>
   </section>`;
 }
 function caseDecisionRevisions(data) {
@@ -113,8 +224,16 @@ function renderCaseLabelDecisionDialog() {
     ? `<p class="comment-thread-empty" role="status" aria-live="polite">${uiText("正在加载标注来源…", "Loading label sources…")}</p>`
     : failed ? `<div class="case-label-decision-error" role="alert"><p>${uiText("标注来源加载失败，请重试。", "Could not load label sources. Try again.")}</p><small>${escapeHtml(error)}</small></div>`
     : caseLabelDecisionMarkup(c.caseData);
-  const decisionNeeded = ["conflict", "stale"].includes(c.caseData.label_state?.state) || caseExclusionNeedsDecision(c.caseData);
-  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2 id="caseLabelDecisionTitle">${uiText("标注与裁决", "Labels and decisions")}</h2><small>${escapeHtml(c.caseData.issue_id)}</small></div><button type="button" class="icon-button" id="caseDecisionCloseIcon" data-close-decision aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body" id="caseDecisionEvidence" aria-busy="${loading}">${body}</div><div class="dialog-actions"><button type="button" class="button button-quiet" id="caseDecisionRefresh" ${loading ? "disabled" : ""}>${failed ? uiText("重试加载", "Retry loading") : uiText("刷新来源", "Refresh sources")}</button><button type="button" class="button ${decisionNeeded ? "button-primary" : "button-quiet"}" id="caseDecisionRelabel" ${!ready || !hasDashboardWriteRole() || !caseDecisionRevisions(c.caseData).length ? "disabled" : ""}>${decisionNeeded ? uiText("重新标注并裁决", "Relabel and decide") : uiText("裁决（可选）", "Optional decision")}</button><button type="button" class="button ${decisionNeeded ? "button-quiet" : "button-primary"}" id="caseDecisionClose" data-close-decision>${uiText("关闭", "Close")}</button></div></div>`;
+  const decisionNeeded = ["conflict", "stale"].includes(c.caseData.label_state?.state);
+  const actionLabel = decisionNeeded ? uiText("重新标注并裁决", "Relabel and decide")
+    : ready && caseExclusionNeedsDecision(c.caseData) ? uiText("核对排除意见", "Review exclusion")
+    : uiText("裁决（可选）", "Optional decision");
+  dialog.innerHTML = `<div class="dialog-card"><div class="dialog-heading"><div><h2 id="caseLabelDecisionTitle">${uiText("标注与裁决", "Labels and decisions")}</h2><small>${escapeHtml(c.caseData.issue_id)}</small></div><button type="button" class="icon-button" id="caseDecisionCloseIcon" data-close-decision aria-label="${uiText("关闭", "Close")}">×</button></div><div class="case-label-decision-body" id="caseDecisionEvidence" aria-busy="${loading}">${body}</div><div class="dialog-actions"><button type="button" class="button button-quiet" id="caseDecisionRefresh" ${loading ? "disabled" : ""}>${failed ? uiText("重试加载", "Retry loading") : uiText("刷新来源", "Refresh sources")}</button><button type="button" class="button ${decisionNeeded ? "button-primary" : "button-quiet"}" id="caseDecisionRelabel" ${!ready || !hasDashboardWriteRole() || !caseDecisionRevisions(c.caseData).length ? "disabled" : ""}>${actionLabel}</button><button type="button" class="button ${decisionNeeded ? "button-quiet" : "button-primary"}" id="caseDecisionClose" data-close-decision>${uiText("关闭", "Close")}</button></div></div>`;
+  const basis = dialog.querySelector(".case-decision-basis");
+  if (basis) {
+    basis.open = Boolean(c.basisOpen);
+    basis.addEventListener("toggle", () => { if (basis.isConnected) c.basisOpen = basis.open; });
+  }
   dialog.querySelectorAll("[data-close-decision]").forEach(b => b.addEventListener("click", () => dialog.close()));
   dialog.querySelectorAll("[data-adopt-decision]").forEach(b => b.addEventListener("click", () => startCaseDecisionEditor(c.caseData, Number(b.dataset.adoptDecision))));
   $("#caseDecisionRelabel").addEventListener("click", () => startCaseDecisionEditor(c.caseData));

@@ -22,6 +22,7 @@ function labelGtFilterGroups({ selected = [], labeling = false } = {}) {
     { value: labeling ? "incomplete" : "pending", label: uiText("待形成结论", "Pending") },
     { value: "resolved", label: uiText("已形成结论", "Resolved") },
     { value: "conflict", label: uiText("需处理分歧", "Needs resolution") },
+    ...(!labeling ? [{value:"exclusion_pending", label:uiText("排除待确定", "Exclusion pending")}] : []),
     ...[
       ["stale", "裁决需确认", "Decision needs review"],
       ["matches_gt", "与 GT 一致", "Matches GT"],
@@ -418,7 +419,7 @@ function normalizedReviewRouteFilters(params) {
     ["pending", "in_progress", "completed", "blocked_by_label", "reviewed", "needs_gt_review"].includes(value)
   );
   const labelStates = parseFilterList(params.get("label_state")).filter((value) =>
-    ["none", "pending", "resolved", "conflict", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)
+    ["none", "pending", "resolved", "conflict", "exclusion_pending", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)
   );
   const rawPage = Number.parseInt(params.get("page") || "1", 10);
   const rawPageSize = Number.parseInt(
@@ -496,7 +497,7 @@ function normalizedAnalysisRouteFilters(params) {
     modelLabel: modelLabels,
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus: statuses,
-    labelStates: parseFilterList(params.get("label_state")).filter(value => ["none", "pending", "resolved", "conflict", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)),
+    labelStates: parseFilterList(params.get("label_state")).filter(value => ["none", "pending", "resolved", "conflict", "exclusion_pending", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)),
     gtRelations: normalizedGtRelationFilters(params.get("gt_relation")),
     missingEvidence: parseFilterList(params.get("evidence")),
     sceneTag: parseFilterList(params.get("scene_tag")),

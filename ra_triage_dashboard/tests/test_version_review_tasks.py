@@ -37,7 +37,7 @@ class VersionReviewTasksTest(unittest.TestCase):
         conn.execute('CREATE TABLE issue_work_splits (id TEXT, mode TEXT, reviewers_per_issue INTEGER, overlap_ratio REAL, lifecycle TEXT, legacy_read_only INTEGER, config_revision INTEGER)')
         conn.execute('INSERT INTO issue_work_splits VALUES (?, ?, ?, ?, ?, ?, ?)', ('canonical-campaign', 'blind', 3, .5, 'active', 0, 1))
         self.db.connect = lambda: conn
-        self.db._review_overlap_conflicts = lambda conn, ids, **kwargs: {cid: ['cn1'] for cid in ids}
+        self.db._review_overlap_queues = lambda conn, ids, **kwargs: {cid: dict(conflict_issue_ids=['cn1', 'cn3'], exclusion_pending_issue_ids=['cn2', 'cn3']) for cid in ids}
         self.db.version_campaign_id=lambda _: 'canonical-campaign'
         self.db.version_campaign_dataset=lambda _: self.dataset['id']
         for row in self.rows:
@@ -45,6 +45,7 @@ class VersionReviewTasksTest(unittest.TestCase):
         result=task(self.db,self.dataset)
         self.assertEqual(result['split_id'],'canonical-campaign')
         self.assertTrue(result['physically_merged'])
+        self.assertEqual(result['exclusion_pending_issue_ids'], ['cn2'])
         self.assertEqual((result['conflict_count'], result['conflict_issue_ids']), (1, ['cn1']))
         self.assertEqual((result['mode'], result['reviewers_per_issue'], result['overlap_ratio']), ('blind', 3, .5))
         self.assertEqual(version_task_detail(self.db,'old-campaign')['split_id'],'canonical-campaign')
