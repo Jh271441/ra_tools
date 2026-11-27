@@ -231,20 +231,59 @@ function labelSummaryStatusMarkup(data) {
 }
 
 function labelSummaryMatrixMarkup(data) {
-  const labels = ["误触发", "正确触发", "无需协助"];
+  const labels = LABELS;
+  const displayLabels = [t("tag.false_trigger"), t("tag.correct_trigger"), t("tag.no_assist")];
+  const totalLabel = t("analysis.total_col");
   const pairs = new Map((data.pairs || []).map((row) => [`${row.gt}|${row.label}`, Number(row.count || 0)]));
   const columnTotals = new Map(labels.map((label) => [label, 0]));
   const rows = labels.map((gt, rowIndex) => {
     const cells = labels.map((label, columnIndex) => {
       const count = pairs.get(`${gt}|${label}`) || 0;
       columnTotals.set(label, (columnTotals.get(label) || 0) + count);
-      return `<td class="${gt === label ? "confusion-match" : count ? "confusion-mismatch" : ""}" data-confusion-row="${rowIndex}" data-confusion-col="${columnIndex}" tabindex="0" title="GT ${escapeHtml(gt)} · 标注 ${escapeHtml(label)}: ${count}">${count}</td>`;
+      const title = uiText(
+        `GT ${displayLabels[rowIndex]} · 标注 ${displayLabels[columnIndex]} · ${count}`,
+        `GT ${displayLabels[rowIndex]} · Label ${displayLabels[columnIndex]} · ${count}`,
+      );
+      return `<td class="${gt === label ? "confusion-match" : count ? "confusion-mismatch" : ""}" data-confusion-row="${rowIndex}" data-confusion-col="${columnIndex}" tabindex="0" title="${escapeHtml(title)}">${count}</td>`;
     }).join("");
     const rowTotal = labels.reduce((sum, label) => sum + (pairs.get(`${gt}|${label}`) || 0), 0);
-    return `<tr><th scope="row" data-confusion-row="${rowIndex}">${escapeHtml(gt)}</th>${cells}<td class="confusion-total" data-confusion-row="${rowIndex}" data-confusion-total tabindex="0">${rowTotal}</td></tr>`;
+    return `<tr><th scope="row" data-confusion-row="${rowIndex}">${escapeHtml(displayLabels[rowIndex])}</th>${cells}<td class="confusion-total" data-confusion-row="${rowIndex}" data-confusion-total tabindex="0">${rowTotal}</td></tr>`;
   }).join("");
   const total = [...columnTotals.values()].reduce((sum, count) => sum + count, 0);
-  return `<table class="analysis-confusion-table"><thead><tr><th>GT ↓ / 标注 →</th>${labels.map((label, index) => `<th scope="col" data-confusion-col="${index}">${escapeHtml(label)}</th>`).join("")}<th scope="col" data-confusion-total-col>合计</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th>合计</th>${labels.map((label, index) => `<td class="confusion-total" data-confusion-col="${index}">${columnTotals.get(label) || 0}</td>`).join("")}<td class="confusion-total">${total}</td></tr></tfoot></table>`;
+  return `<table class="analysis-confusion-table"><thead><tr><th>${uiText("GT ↓ / 标注 →", "GT ↓ / Label →")}</th>${displayLabels.map((label, index) => `<th scope="col" data-confusion-col="${index}">${escapeHtml(label)}</th>`).join("")}<th scope="col" data-confusion-total-col>${totalLabel}</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th>${totalLabel}</th>${labels.map((label, index) => `<td class="confusion-total" data-confusion-col="${index}">${columnTotals.get(label) || 0}</td>`).join("")}<td class="confusion-total">${total}</td></tr></tfoot></table>`;
+}
+
+function labelSummaryMatrixCardMarkup(data) {
+  const pairs = data.pairs || [];
+  const comparable = pairs.reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const matches = pairs.filter((row) => row.gt === row.label).reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const total = Number(data.total ?? data.annotated ?? comparable);
+  const exclusions = data.matrix_exclusions || {};
+  const reasons = [
+    ["missing_gt", uiText("GT 未设置", "GT unset")],
+    ["unsupported_gt", uiText("GT 超出三分类", "GT outside the three classes")],
+    ["no_final_label", uiText("暂无最终三分类标注", "Final three-class label unavailable")],
+  ].filter(([key]) => Number(exclusions[key]) > 0)
+    .map(([key, label]) => `${label} ${Number(exclusions[key])}`);
+  const counts = uiText(`可比较 ${comparable} / ${total} · 一致 ${matches}`, `Comparable ${comparable} / ${total} · Matches ${matches}`);
+  const helpLabel = uiText("可比较说明", "Comparison details");
+  const reasonLine = reasons.length ? `<span>${escapeHtml(uiText("未纳入矩阵", "Outside the matrix") + " · " + reasons.join(" · "))}</span>` : "";
+  return `<section class="page-card analysis-confusion-card" aria-labelledby="labelSummaryMatrixTitle">
+    <div class="section-heading analysis-confusion-heading label-summary-matrix-heading">
+      <h3 id="labelSummaryMatrixTitle">${uiText("GT × 标注结果混淆矩阵", "GT × labeling confusion matrix")}</h3>
+      <div class="label-summary-matrix-counts">
+        <small>${escapeHtml(counts)}</small>
+        <span class="model-review-run-help ui-info" data-ui-info data-ui-info-align="end">
+          <button class="ui-info-button" type="button" data-ui-info-trigger aria-expanded="false" aria-controls="labelSummaryMatrixInfo" aria-label="${escapeHtml(helpLabel)}" title="${escapeHtml(helpLabel)}"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
+          <span class="model-review-run-tooltip ui-info-tooltip" id="labelSummaryMatrixInfo" role="dialog" aria-label="${escapeHtml(helpLabel)}">
+            ${reasonLine}
+            <span>${uiText("GT 和最终标注均属于三分类时计入矩阵。", "The matrix counts Issues with both GT and a final label in the three classes.")}</span>
+          </span>
+        </span>
+      </div>
+    </div>
+    <div class="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">${labelSummaryMatrixMarkup(data)}</div>
+  </section>`;
 }
 
 function labelSummaryClusterPanels(data) {
@@ -367,16 +406,15 @@ function labelSummaryCaseMarkup(item) {
 function renderLabelingSummary(data) {
   if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling-summary") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling-summary"))) return;
   const root = $("#labelSummaryContent");
-  const comparable = (data.pairs || []).reduce((sum, row) => sum + Number(row.count || 0), 0);
-  const matches = (data.pairs || []).filter((row) => row.gt === row.label).reduce((sum, row) => sum + Number(row.count || 0), 0);
   const page = Number(data.page || 1);
   const pageCount = Math.max(1, Number(data.page_count || 0));
   root.innerHTML = `<nav class="mobile-summary-tools"><button class="button button-quiet" type="button" data-mobile-scroll-target="labelSummaryCaseList">${uiText("查看标注明细", "Go to annotations")}</button><button class="button button-quiet" type="button" data-mobile-disclosure="labelSummaryClusterPanels" aria-controls="labelSummaryClusterPanels" aria-expanded="false">${uiText("场景与标签图表", "Tag charts")}</button></nav><section class="analysis-summary-grid" aria-label="Labeling overview"><article class="analysis-stat-card"><span>问题标注</span><strong>${Number(data.annotated || 0)}</strong><small>当前范围 ${Number(data.total || 0)} 个 Case</small></article><article class="analysis-stat-card"><span>已填写依据</span><strong>${Number(data.reason_count || 0)}</strong><small>未填写 ${Number(data.empty_reason_count || 0)}</small></article><button class="analysis-stat-card label-summary-adjudicated" id="labelSummaryAdjudicated" type="button" aria-pressed="${labelSummaryFilters.cluster === "adjudicated"}"><span>已裁决 Case</span><strong>${Number(data.adjudicated_count || 0)}</strong><small>${labelSummaryFilters.cluster === "adjudicated" ? "正在筛选 · 点击取消" : "查看裁决记录"}</small></button></section>
-    <section class="analysis-decision-grid analysis-has-gt" aria-label="Label state and GT comparison">${labelSummaryGtChartMarkup(data)}<section class="page-card analysis-review-status-card" aria-labelledby="labelSummaryStatusTitle"><div class="section-heading analysis-review-status-heading"><div><h3 id="labelSummaryStatusTitle">${uiText("标注状态", "Labeling status")}</h3></div><small>${escapeHtml(uiText(`已提交 ${Number(data.annotated || 0)} 个 Issue`, `${Number(data.annotated || 0)} submitted Issues`))}</small></div><div class="analysis-review-status-chart" id="labelSummaryStatusChart">${labelSummaryStatusMarkup(data)}</div></section><section class="page-card analysis-confusion-card"><div class="section-heading analysis-confusion-heading"><div><h3>GT × 标注结果混淆矩阵</h3></div><small>可比较 ${comparable} · 一致 ${matches}</small></div><div class="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">${labelSummaryMatrixMarkup(data)}</div></section></section>
+    <section class="analysis-decision-grid analysis-has-gt" aria-label="${uiText("标注状态与 GT 对照", "Label state and GT comparison")}">${labelSummaryGtChartMarkup(data)}<section class="page-card analysis-review-status-card" aria-labelledby="labelSummaryStatusTitle"><div class="section-heading analysis-review-status-heading"><div><h3 id="labelSummaryStatusTitle">${uiText("标注状态", "Labeling status")}</h3></div><small>${escapeHtml(uiText(`已提交 ${Number(data.annotated || 0)} 个 Issue`, `${Number(data.annotated || 0)} submitted Issues`))}</small></div><div class="analysis-review-status-chart" id="labelSummaryStatusChart">${labelSummaryStatusMarkup(data)}</div></section>${labelSummaryMatrixCardMarkup(data)}</section>
     <section class="analysis-cluster-grid" id="labelSummaryClusterPanels" aria-label="Structured labeling clusters">${labelSummaryClusterPanels(data)}</section>
     <section class="page-card analysis-case-card"><div class="section-heading label-summary-detail-heading"><h3>${uiText("标注依据明细", "Label rationales")}</h3><div class="label-summary-detail-actions"><button class="text-link label-summary-rules-button" id="labelSummaryRulesButton" type="button" aria-haspopup="dialog"><span aria-hidden="true">ⓘ</span> ${uiText("期望输出规则", "Result rules")}</button><small>${escapeHtml(uiText(`共 ${Number(data.annotated || 0)} 个 Case · 当前页 ${(data.items || []).length} 个`, `${Number(data.annotated || 0)} ${Number(data.annotated || 0) === 1 ? "Case" : "Cases"} · ${(data.items || []).length} on this page`))}${chartDetailFilterNote("labeling-summary", data)}</small></div></div><div class="analysis-case-list" id="labelSummaryCaseList">${(data.items || []).length ? data.items.map(labelSummaryCaseMarkup).join("") : `<div class="analysis-empty">${uiText("当前范围暂无标注提交", "No annotations in this scope")}</div>`}</div><nav class="case-pagination gallery-pagination label-summary-pagination" aria-label="${escapeHtml(uiText("标注明细分页", "Annotation pagination"))}"><div class="case-pagination-main"><button class="button button-quiet" id="labelSummaryPrevious" type="button" ${page <= 1 ? "disabled" : ""}>${uiText("上一页", "Previous")}</button><span id="labelSummaryPageState">${page} / ${pageCount}</span><button class="button button-quiet" id="labelSummaryNext" type="button" ${page >= pageCount ? "disabled" : ""}>${uiText("下一页", "Next")}</button><span class="page-jump-control"><label for="labelSummaryPageJump">${uiText("跳至", "Go to")}</label><input id="labelSummaryPageJump" type="number" min="1" max="${pageCount}" value="${page}" inputmode="numeric" ${pageCount <= 1 ? "disabled" : ""}/><span>${uiText("页", "page")}</span><button class="button button-quiet" id="labelSummaryPageJumpButton" type="button" ${pageCount <= 1 ? "disabled" : ""}>${uiText("跳转", "Go")}</button></span></div><label class="case-page-size" for="labelSummaryPageSize"><span>${uiText("每页", "Per page")}</span><select id="labelSummaryPageSize">${CASE_PAGE_SIZES.map(value => `<option value="${value}">${value}</option>`).join("")}</select><span>${uiText("条", "items")}</span></label></nav></section>`;
   $("#labelSummaryRulesButton")?.addEventListener("click", () => showLabelSummaryRules());
   $("#labelSummaryGtRules")?.addEventListener("click", () => showLabelSummaryRules({ gt: true }));
+  bindUiInfoPopovers(root);
   $("#labelSummaryAdjudicated")?.addEventListener("click", () => {
     labelSummaryFilters.cluster = labelSummaryFilters.cluster === "adjudicated" ? "" : "adjudicated";
     labelSummaryPage = 1;

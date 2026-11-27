@@ -499,6 +499,7 @@
   .topbar .header-metrics { margin: 0; }
   .header-metrics > div { min-width: 0; }
   .header-metrics span { white-space: normal; }
+  .metric-review-count { min-height: 44px; padding-inline: 3px; }
   .app-shell.sidebar-mobile-open .sidebar-nav-group .sidebar-item { min-height: 48px; }
   .sidebar-group-toggle { min-height: 44px; }
 

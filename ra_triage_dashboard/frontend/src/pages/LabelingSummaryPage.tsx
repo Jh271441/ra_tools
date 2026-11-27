@@ -117,6 +117,7 @@ export interface LabelingSummaryResponse {
   };
   gt_update_counts?: GtUpdateCounts;
   pairs?: Array<{ gt: string; label: string; count: number }>;
+  matrix_exclusions?: { missing_gt?: number; unsupported_gt?: number; no_final_label?: number };
   tags?: Record<string, number>;
   items?: LabelingSummaryCaseItem[];
 }
@@ -606,15 +607,24 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
     ];
   }, [data?.submitted_states, lang]);
 
+  const matrixExclusions = data?.matrix_exclusions;
+  const matrixReasons = ([
+    [matrixExclusions?.missing_gt, bilingual(lang, "GT 未设置", "GT unset")],
+    [matrixExclusions?.unsupported_gt, bilingual(lang, "GT 超出三分类", "GT outside the three classes")],
+    [matrixExclusions?.no_final_label, bilingual(lang, "暂无最终三分类标注", "Final three-class label unavailable")],
+  ] as const).filter(([count]) => (count ?? 0) > 0)
+    .map(([count, label]) => `${label} ${count}`);
+
   const confusionData = useMemo(() => {
     const pairs = new Map(
       (data?.pairs || []).map((row) => [`${row.gt}|${row.label}`, Number(row.count || 0)]),
     );
+    const columnLabels = lang === "en" ? ["False trigger", "Correct trigger", "No assist"] : [...TRIAGE_LABELS];
     const colTotals = TRIAGE_LABELS.map(() => 0);
     let comparable = 0;
     let matches = 0;
 
-    const rows: ConfusionTableRow[] = TRIAGE_LABELS.map((gt) => {
+    const rows: ConfusionTableRow[] = TRIAGE_LABELS.map((gt, rowIndex) => {
       let rowTotal = 0;
       const cells = TRIAGE_LABELS.map((label, colIndex) => {
         const count = pairs.get(`${gt}|${label}`) || 0;
@@ -623,19 +633,19 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
         comparable += count;
         if (gt === label) matches += count;
         return {
-          colLabel: label,
+          colLabel: columnLabels[colIndex],
           count,
           tone: (gt === label ? "match" : count ? "mismatch" : "") as
             | "match"
             | "mismatch"
             | "",
-          title: `GT ${gt} · ${bilingual(lang, "标注", "Label")} ${label}: ${count}`,
+          title: `GT ${columnLabels[rowIndex]} · ${bilingual(lang, "标注", "Label")} ${columnLabels[colIndex]} · ${count}`,
         };
       });
-      return { gtLabel: gt, cells, total: rowTotal };
+      return { gtLabel: columnLabels[rowIndex], cells, total: rowTotal };
     });
     const grandTotal = colTotals.reduce((a, b) => a + b, 0);
-    return { rows, colTotals, grandTotal, comparable, matches };
+    return { rows, columnLabels, colTotals, grandTotal, comparable, matches };
   }, [data?.pairs, lang]);
 
   const clusterPanels = useMemo(() => {
@@ -1208,7 +1218,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
 
             <section
               className="analysis-decision-grid analysis-has-gt"
-              aria-label="Label state and GT comparison"
+              aria-label={bilingual(lang, "标注状态与 GT 对照", "Label state and GT comparison")}
             >
               <AnalysisGtCard
                 counts={data.gt_update_counts}
@@ -1248,23 +1258,29 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
                 </div>
               </section>
 
-              <section className="page-card analysis-confusion-card">
-                <div className="section-heading analysis-confusion-heading">
-                  <div>
-                    <h3>{bilingual(lang, "GT × 标注结果混淆矩阵", "GT × Labeling confusion matrix")}</h3>
+              <section className="page-card analysis-confusion-card" aria-labelledby="labelSummaryMatrixTitle">
+                <div className="section-heading analysis-confusion-heading label-summary-matrix-heading">
+                  <h3 id="labelSummaryMatrixTitle">{bilingual(lang, "GT × 标注结果混淆矩阵", "GT × labeling confusion matrix")}</h3>
+                  <div className="label-summary-matrix-counts">
+                    <small>
+                      {bilingual(
+                        lang,
+                        `可比较 ${confusionData.comparable} / ${data.total} · 一致 ${confusionData.matches}`,
+                        `Comparable ${confusionData.comparable} / ${data.total} · Matches ${confusionData.matches}`,
+                      )}
+                    </small>
+                    <UiInfoPopover id="labelSummaryMatrixInfo" ariaLabel={bilingual(lang, "可比较说明", "Comparison details")}>
+                      {matrixReasons.length > 0 && (
+                        <span>{bilingual(lang, "未纳入矩阵", "Outside the matrix")} · {matrixReasons.join(" · ")}</span>
+                      )}
+                      <span>{bilingual(lang, "GT 和最终标注均属于三分类时计入矩阵。", "The matrix counts Issues with both GT and a final label in the three classes.")}</span>
+                    </UiInfoPopover>
                   </div>
-                  <small>
-                    {bilingual(
-                      lang,
-                      `可比较 ${confusionData.comparable} · 一致 ${confusionData.matches}`,
-                      `Comparable ${confusionData.comparable} · Match ${confusionData.matches}`,
-                    )}
-                  </small>
                 </div>
                 <div className="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">
                   <AnalysisConfusionTable
                     cornerHeader={bilingual(lang, "GT ↓ / 标注 →", "GT ↓ / Label →")}
-                    columnLabels={[...TRIAGE_LABELS]}
+                    columnLabels={confusionData.columnLabels}
                     rows={confusionData.rows}
                     totalLabel={bilingual(lang, "合计", "Total")}
                     columnTotals={confusionData.colTotals}

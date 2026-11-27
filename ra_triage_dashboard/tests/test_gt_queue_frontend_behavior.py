@@ -49,7 +49,7 @@ Object.assign(global,{
  uiText:(zh,en)=>state.uiLanguage==='en'?en:zh,escapeHtml:value=>String(value),formatTime:value=>value,labelBadge:value=>value,tagLabel:value=>value,evidenceLabel:value=>value,
  parseFilterList:value=>Array.isArray(value)?value:String(value||'').split(',').filter(Boolean),joinFilterList:value=>(value||[]).join(','),
  normalizeBaselineIds:value=>value,selectedBaselineQueryValue:()=>state.selectedBaselineIds.join(','),defaultBaselineIdsFromConfig:()=>['0508'],
- populateUiSelect(){},bindUiSelect(){},renderMultiFilter(){},relabelMultiFilter(){return false;},setMultiFilterValues(){},enhanceNativeUiSelect:el=>{assert(el);el.enhanced=true;},showToast(){},t:key=>key,
+ populateUiSelect(){},bindUiSelect(){},bindUiInfoPopovers(){},renderMultiFilter(){},relabelMultiFilter(){return false;},setMultiFilterValues(){},enhanceNativeUiSelect:el=>{assert(el);el.enhanced=true;},showToast(){},t:key=>key,
  buildAnalysisQueryParams:()=>new URLSearchParams({comparison:'all'}),
  bindAnalysisReviewStatusHover:el=>assert(el),bindAnalysisConfusionHover:el=>assert(el),bindAnalysisPieHover:el=>assert(el),clearAnalysisPieEnterAnimations:el=>assert(el),
 });
@@ -78,7 +78,10 @@ window.location.search=initialSearch;restoreLabelSummaryRoute({force:true});
 refreshLabelSummaryLanguage();assert.equal(labelSummaryFilters.taskId,'task-a');
 const readyUrl=new URL(pageUrl('labeling-summary',labelSummaryRouteOptions()),'http://localhost');
 assert.equal(readyUrl.searchParams.has('gt_update'),false);assert.equal(readyUrl.searchParams.get('page'),'2');assert.equal(readyUrl.searchParams.get('baselines'),'version-20261009');
-const data={gt_update_counts:{all:7,ready:3,blocked:3},annotated:7,page:1,page_size:20,items:[{issue_id:'cn101',label_state:'resolved',gt_label:'正确触发',expected_output:'误触发',rationales:['evidence']}]};
+const data={gt_update_counts:{all:7,ready:3,blocked:3},total:8,annotated:7,page:1,page_size:20,
+  pairs:[{gt:'误触发',label:'误触发',count:1},{gt:'正确触发',label:'误触发',count:2}],
+  matrix_exclusions:{missing_gt:1,no_final_label:4},
+  items:[{issue_id:'cn101',label_state:'resolved',gt_label:'正确触发',expected_output:'误触发',rationales:['evidence']}]};
 assert.deepEqual(labelSummaryGtChartItems(data).map(item=>item.count),[3,3,1]);
 assert.deepEqual(labelSummaryGtChartItems(data).map(item=>item.color),['var(--chart-blue)','var(--chart-indigo)','var(--chart-teal)']);
 const markup=labelSummaryGtChartMarkup(data);
@@ -121,6 +124,14 @@ assert.match($('#labelSummaryContent').innerHTML,/id="labelSummaryGtChart"/);
 assert.match($('#labelSummaryContent').innerHTML,/id="labelSummaryCaseList"/);
 assert.match($('#labelSummaryContent').innerHTML,/analysis-cluster-grid/);
 assert.match($('#labelSummaryContent').innerHTML,/GT × 标注结果/);
+assert.ok($('#labelSummaryContent').innerHTML.includes('可比较 3 / 8 · 一致 1'));
+assert.match($('#labelSummaryContent').innerHTML,/aria-expanded="false" aria-controls="labelSummaryMatrixInfo"/);
+assert.match($('#labelSummaryContent').innerHTML.split('id="labelSummaryMatrixInfo"')[1],/未纳入矩阵 · GT 未设置 1 · 暂无最终三分类标注 4/);
+state.uiLanguage='en';
+assert.match(labelSummaryMatrixCardMarkup(data),/Outside the matrix · GT unset 1/);
+assert.ok(labelSummaryMatrixCardMarkup({total:0}).includes('Comparable 0 / 0 · Matches 0'));
+assert.doesNotMatch(labelSummaryMatrixCardMarkup({total:0}),/Outside the matrix/);
+state.uiLanguage='zh';
 assert.doesNotMatch($('#labelSummaryContent').innerHTML,/data-gt-update-view/);
 assert.equal($('#labelSummaryPageSize').enhanced,true);
 state.uiLanguage='en';labelSummaryTasks=[{id:'task-a',name:'Task A'}];labelSummaryData=data;refreshLabelSummaryLanguage();
