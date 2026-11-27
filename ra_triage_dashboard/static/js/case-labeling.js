@@ -868,6 +868,10 @@ function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSiz
 function applyCaseLabelingListResult(result) {
   state.caseLabeling.page = result.page || 1;
   state.caseLabeling.data = result;
+  state.caseLabeling.labelers = result.labelers || [];
+  state.caseLabeling.assignees = result.assignees || [];
+  renderCaseLabelingAuthorPicker();
+  renderCaseLabelingAssigneePicker();
   renderCaseLabelingList(result);
   syncCaseLabelingDetailQueue();
 }
@@ -893,16 +897,12 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
   const params = caseLabelingListParams({page});
   const result = await api(`/api/labeling/cases?${params}`);
   if (seq !== state.caseLabeling.requestSeq || !isPageContextCurrent(pageContext)) return;
-  state.caseLabeling.labelers = result.labelers || [];
   state.caseLabeling.author = parseFilterList(state.caseLabeling.author).filter((value) =>
-    state.caseLabeling.labelers.includes(value)
+    (result.labelers || []).includes(value)
   );
-  state.caseLabeling.assignees = result.assignees || [];
   state.caseLabeling.assignee = parseFilterList(state.caseLabeling.assignee).filter((value) =>
-    state.caseLabeling.assignees.includes(value)
+    (result.assignees || []).includes(value)
   );
-  renderCaseLabelingAuthorPicker();
-  renderCaseLabelingAssigneePicker();
   applyCaseLabelingListResult(result);
   if (persistRoute) persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
   loadCaseLabelingClusters().catch((error) => showToast(error.message, true));
@@ -951,18 +951,39 @@ function caseLabelingQueueItems() {
   return data?.items || [];
 }
 
-function captureCaseLabelingDecisionQueue() {
+function captureCaseLabelingSaveQueue(issueId) {
   return {
+    issueId,
     ids: caseLabelingQueueItems().map(item => item.issue_id),
     filterKey: caseLabelingListParams().toString(),
     detailSeq: state.caseLabeling.detailSeq,
+    actor: state.session?.username || "",
+    pageContext: capturePageContext(),
   };
 }
 
-async function refreshCaseLabelingDecisionQueue(context) {
+function caseLabelingSaveQueueIsCurrent(context) {
+  return state.activePage === "labeling"
+    && isPageContextCurrent(context.pageContext)
+    && state.caseLabeling.issueId === context.issueId
+    && state.caseLabeling.detailSeq === context.detailSeq
+    && (state.session?.username || "") === context.actor
+    && caseLabelingListParams().toString() === context.filterKey;
+}
+
+function canLeaveCaseLabelingAfterSave(decision = false) {
+  const labeling = state.caseLabeling;
+  if (caseLabelDecisionUi.editor || $("#caseLabelDecisionDialog")?.open || labeling.pendingImages.length) return false;
+  if (!decision) return !labeling.dirty && !isImeComposing({target: document.activeElement});
+  return !hasFocusedTextInput($("#caseLabelingForm"))
+    && (!labeling.dirty || Boolean(persistCurrentCaseLabelingDraft(labeling.caseData)?.persisted));
+}
+
+async function refreshCaseLabelingQueueAfterSave(context, {decision = false} = {}) {
+  if (!caseLabelingSaveQueueIsCurrent(context)) return;
   const labeling = state.caseLabeling;
   const seq = ++labeling.requestSeq;
-  const current = () => seq === labeling.requestSeq && caseDecisionResultIsCurrent(context);
+  const current = () => seq === labeling.requestSeq && caseLabelingSaveQueueIsCurrent(context);
   const params = caseLabelingListParams({page: labeling.page});
   let result;
   try {
@@ -970,28 +991,34 @@ async function refreshCaseLabelingDecisionQueue(context) {
       cache: "no-store", signal: new AbortController().signal,
     });
   } catch (_) {
-    if (current()) showToast(uiText(
+    if (current()) showToast(decision ? uiText(
       "裁决已保存，筛选结果刷新失败。请刷新后继续。",
       "Decision saved. The filtered results could not refresh. Reload to continue."
+    ) : uiText(
+      "标注已保存，筛选结果刷新失败。请刷新后继续。",
+      "Label saved. The filtered results could not refresh. Reload to continue."
     ), true);
     return;
   }
   if (!current()) return;
   applyCaseLabelingListResult(result);
 
-  const {ids} = context.labelingQueue;
-  const index = ids.indexOf(context.caseData.issue_id);
+  const {ids, issueId} = context;
+  const index = ids.indexOf(issueId);
   const remaining = result.queue_issue_ids;
-  if (index < 0 || !Array.isArray(remaining) || remaining.includes(context.caseData.issue_id)) return;
-  if (caseLabelDecisionUi.editor || $("#caseLabelDecisionDialog")?.open || labeling.pendingImages.length
-    || hasFocusedTextInput($("#caseLabelingForm"))
-    || (labeling.dirty && !persistCurrentCaseLabelingDraft(labeling.caseData)?.persisted)) {
-    showToast(uiText(
+  if (index < 0 || !Array.isArray(remaining) || remaining.includes(issueId)) return;
+  const canAdvance = () => {
+    if (canLeaveCaseLabelingAfterSave(decision)) return true;
+    showToast(decision ? uiText(
       "裁决已保存。此 Issue 已移出当前筛选，可以继续编辑。",
       "Decision saved. This Issue left the filter. You can keep editing here."
+    ) : uiText(
+      "标注已保存。此 Issue 已移出当前筛选，可以继续编辑。",
+      "Label saved. This Issue left the filter. You can keep editing here."
     ));
-    return;
-  }
+    return false;
+  };
+  if (!canAdvance()) return;
   if (!remaining.length) {
     closeCaseLabelingDetail({historyMode: "replace"});
     return;
@@ -1000,7 +1027,7 @@ async function refreshCaseLabelingDecisionQueue(context) {
   const nextId = ids.slice(index + 1).find(id => matching.has(id));
   const previousId = ids.slice(0, index).reverse().find(id => matching.has(id));
   const targetId = nextId || previousId || remaining[Math.min(index, remaining.length - 1)];
-  await selectCaseLabelingIssue(targetId, {historyMode: "replace"});
+  await selectCaseLabelingIssue(targetId, {historyMode: "replace", canApply: canAdvance});
 }
 
 function syncCaseLabelingDetailQueue() {
@@ -1715,15 +1742,18 @@ function renderCaseLabelingEditor(caseData, {decision = null, skipDraftRestore =
   if (decision) bindCaseDecisionEditor(decision);
 }
 
-async function selectCaseLabelingIssue(issueId, { updateRoute = true, historyMode = "push" } = {}) {
+async function selectCaseLabelingIssue(issueId, {
+  updateRoute = true, historyMode = "push", fresh = false, canApply = null,
+} = {}) {
   const normalized = String(issueId || "").trim();
   if (!normalized || state.activePage !== "labeling" || caseLabelDecisionUi.saving) return;
   if (caseLabelDecisionUi.editor) exitCaseDecisionEditor();
   let pageContext = capturePageContext();
   const seq = ++state.caseLabeling.detailSeq;
   const task = state.caseLabeling.taskId ? `&task_id=${encodeURIComponent(state.caseLabeling.taskId)}` : "";
-  const caseData = await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(normalized)}?${task ? task.slice(1) : ""}`));
-  if (seq !== state.caseLabeling.detailSeq || !isPageContextCurrent(pageContext)) return;
+  const caseData = await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(normalized)}?${task ? task.slice(1) : ""}`),
+    fresh ? {cache: "no-store", signal: new AbortController().signal} : undefined);
+  if (seq !== state.caseLabeling.detailSeq || !isPageContextCurrent(pageContext) || (canApply && !canApply())) return;
   state.caseLabeling.issueId = normalized;
   state.caseLabeling.caseData = caseData;
   setCaseLabelingRevisionBaseline(
@@ -2008,6 +2038,7 @@ async function saveCaseLabelingRevision(event) {
   const submittedForm = caseLabelingFormPayload();
   const submittedIssueId = caseData.issue_id;
   const submittedTaskId = submittedForm.task_id;
+  const queue = captureCaseLabelingSaveQueue(submittedIssueId);
   const submittedAuthor = String(state.session?.username || "").trim().toLowerCase() || "anonymous";
   const expectedPreviousId = caseLabelingExpectedPreviousRevisionId(caseData, submittedTaskId);
   const payload = {
@@ -2041,6 +2072,7 @@ async function saveCaseLabelingRevision(event) {
   const submittedSignature = savedDraft?.signature || "";
   const storagePersisted = savedDraft ? savedDraft.persisted !== false : false;
   button.disabled = true;
+  let committed = false;
   try {
     let result;
     if (files.length) {
@@ -2062,6 +2094,7 @@ async function saveCaseLabelingRevision(event) {
         headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
       });
     }
+    committed = true;
     acknowledgeLocalChange(result);
     if (typeof clearCaseLabelDraftIfMatch === "function") {
       clearCaseLabelDraftIfMatch(submittedIssueId, submittedTaskId, "submission", {
@@ -2072,23 +2105,21 @@ async function saveCaseLabelingRevision(event) {
     } else if (typeof clearCaseLabelDraft === "function") {
       clearCaseLabelDraft(submittedIssueId, submittedTaskId, "submission");
     }
-    const currentActor = String(state.session?.username || "").trim().toLowerCase() || "anonymous";
-    const stillOnSameContext =
-      state.caseLabeling.caseData?.issue_id === submittedIssueId
+    const stillOnSameContext = caseLabelingSaveQueueIsCurrent(queue)
+      && state.caseLabeling.caseData === caseData
       && caseLabelingSubmissionTaskId(state.caseLabeling.caseData) === submittedTaskId
-      && currentActor === submittedAuthor
-      && !caseLabelDecisionUi?.editor;
-    const nextBaseRevId = result?.revision?.id ?? expectedPreviousId ?? null;
-    if (stillOnSameContext) {
-      setCaseLabelingRevisionBaseline(
-        state.caseLabeling.caseData,
-        submittedTaskId,
-        nextBaseRevId,
-        submittedAuthor
-      );
+      && !caseLabelDecisionUi.editor;
+    if (!stillOnSameContext) {
+      showToast(uiText("标注已保存。", "Label saved."));
+      if (state.activePage === "labeling" && (state.session?.username || "") === queue.actor) {
+        await loadCaseLabelingCases({persistRoute: false});
+      }
+      return;
     }
+    const nextBaseRevId = result?.revision?.id ?? expectedPreviousId ?? null;
+    setCaseLabelingRevisionBaseline(caseData, submittedTaskId, nextBaseRevId, submittedAuthor);
     let sameTabEditedDuringSave = false;
-    if (stillOnSameContext && $("#caseLabelingForm") && typeof caseLabelDraftSignature === "function") {
+    if ($("#caseLabelingForm") && typeof caseLabelDraftSignature === "function") {
       const livePayload = caseLabelingFormPayload();
       const livePending = typeof normalizeCaseLabelPendingAttachments === "function"
         ? normalizeCaseLabelPendingAttachments(state.caseLabeling.pendingImages)
@@ -2122,24 +2153,23 @@ async function saveCaseLabelingRevision(event) {
           "Previous label saved; your newer edits are preserved as a local draft."
         )
       );
-      await loadCaseLabelingCases({ page: state.caseLabeling.page });
-    } else if (stillOnSameContext) {
+    } else {
       state.caseLabeling.missingDraftAttachments = [];
       state.caseLabeling.draftNotice = null;
       state.caseLabeling.dirty = false;
       clearPendingCaseLabelingImages();
       showToast(uiText("标注已保存。", "Label saved."));
-      await Promise.all([
-        selectCaseLabelingIssue(submittedIssueId, { updateRoute: false }),
-        loadCaseLabelingCases({ page: state.caseLabeling.page }),
-      ]);
-    } else {
-      // User already navigated away to another Issue/context; refresh list only
-      // so this late response never mutates the newly opened Issue's form or baseline.
-      showToast(uiText("标注已保存。", "Label saved."));
-      await loadCaseLabelingCases({ page: state.caseLabeling.page });
+    }
+    await refreshCaseLabelingQueueAfterSave(queue);
+    if (caseLabelingSaveQueueIsCurrent(queue) && canLeaveCaseLabelingAfterSave()) {
+      await selectCaseLabelingIssue(submittedIssueId, {updateRoute: false, fresh: true, canApply: canLeaveCaseLabelingAfterSave});
     }
   } catch (error) {
+    if (committed) {
+      showToast(uiText("标注已保存，页面刷新失败。请刷新后继续。", "Label saved. The page could not refresh. Reload to continue."), true);
+      return;
+    }
+    if (!caseLabelingSaveQueueIsCurrent(queue)) return;
     state.caseLabeling.dirty = true;
     const notice = {
       kind: "save_failed",

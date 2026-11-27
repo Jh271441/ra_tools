@@ -582,6 +582,8 @@ async function run() {
         issueId: "cn400",
         taskId: "task-1",
         page: 1,
+        detailSeq: 1,
+        requestSeq: 0,
         dirty: true,
         draftNotice: null,
         missingDraftAttachments: [],
@@ -610,10 +612,18 @@ async function run() {
       return null;
     },
     inferExpectedOutputFromSelectedTags: () => ({ value: "", conflict: false }),
+    capturePageContext: () => ({page: "labeling"}),
+    isPageContextCurrent: () => true,
+    selectedBaselineQueryValue: () => "0626",
+    DEFAULT_CASE_PAGE_SIZE: 20,
+    joinFilterList: (values) => (values || []).join(","),
+    isImeComposing: () => false,
+    document: {},
     acknowledgeLocalChange: () => {},
     showToast: () => {},
     releasePreviewUrlLater: () => {},
     api: (url, opts) => {
+      if (opts.method !== "POST") return Promise.resolve({queue_issue_ids:["cn400","cn500"],total:2,page:1});
       const body = JSON.parse(opts.body);
       saveRequests.push({ url, body, headers: opts.headers });
       return new Promise((resolve, reject) => {
@@ -625,6 +635,7 @@ async function run() {
   vm.runInContext(draftSrc, saveCtx);
   vm.runInContext(caseLabelingSrc, saveCtx);
   saveCtx.loadCaseLabelingCases = async () => {};
+  saveCtx.renderCaseLabelingList = () => {};
   saveCtx.selectCaseLabelingIssue = async () => {};
 
   const submitEvent = { preventDefault() {}, submitter: submitBtn, currentTarget: fakeFormEl };

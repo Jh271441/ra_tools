@@ -543,7 +543,7 @@ async function adjudicateIssueLabel(event) {
       ? await reviewSaveNavigationContext(c.data.issue_id) : null;
     if (navigationContext && !reviewSaveNavigationIsCurrent(navigationContext)) return;
     if (navigationContext) navigationContext.savedKind = "decision";
-    const labelingQueue = state.activePage === "labeling" ? captureCaseLabelingDecisionQueue() : null;
+    const labelingQueue = state.activePage === "labeling" ? captureCaseLabelingSaveQueue(c.data.issue_id) : null;
     const pendingAttachments = typeof normalizeCaseLabelPendingAttachments === "function"
       ? normalizeCaseLabelPendingAttachments(c.images)
       : [];
@@ -594,10 +594,9 @@ async function adjudicateIssueLabel(event) {
   finally{caseLabelDecisionUi.saving=false;formNode.querySelectorAll("[data-decision-was-disabled]").forEach(n=>{n.disabled=n.dataset.decisionWasDisabled==="true";delete n.dataset.decisionWasDisabled;});enhanceDashboardSelects(formNode);}
 }
 function caseDecisionResultIsCurrent(c) {
+  if (c.labelingQueue) return caseLabelingSaveQueueIsCurrent(c.labelingQueue);
   return isPageContextCurrent(c.pageContext) && caseDecisionCurrentIssueId() === c.caseData.issue_id
-    && selectedBaselineQueryValue() === c.baselines && (!c.actor || c.actor === state.session?.username)
-    && (!c.labelingQueue || (c.labelingQueue.detailSeq === state.caseLabeling.detailSeq
-      && c.labelingQueue.filterKey === caseLabelingListParams().toString()));
+    && selectedBaselineQueryValue() === c.baselines && (!c.actor || c.actor === state.session?.username);
 }
 
 async function refreshCaseDecisionResult(c) {
@@ -610,7 +609,7 @@ async function refreshCaseDecisionResult(c) {
     }
     if (!caseDecisionResultIsCurrent(c)) return;
     if (c.labelingQueue) {
-      await refreshCaseLabelingDecisionQueue(c);
+      await refreshCaseLabelingQueueAfterSave(c.labelingQueue, {decision: true});
       if (!caseDecisionResultIsCurrent(c)) return;
     }
     const fresh=await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(c.caseData.issue_id)}`), {
