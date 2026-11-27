@@ -127,6 +127,52 @@ class DatasetPartitionsTest(unittest.TestCase):
                 self.assertIn(expected.encode(), export.body)
                 self.assertNotIn(other.encode(), export.body)
 
+    def test_run_catalog_priority_uses_selected_dataset_membership(self):
+        family = "20261009"
+        version = f"version-{family}"
+        target_id = self.ids[0]
+        version_run_id = self.db.ensure_version_stream(family, "test")
+        self.db.append_version_predictions(
+            run_id=version_run_id,
+            rows=[dict(issue_id=target_id, model_label="误触发", model_confidence=0.5)],
+        )
+        self.db.ingest_version_dataset(
+            family=family,
+            policy={"sampling_policy": "version_probability_v3", "seed": "a" * 64},
+            items=[dict(issue_id=target_id, software_version=f"1.gen4-release-{family}.594",
+                        state="published", is_target=True, is_sample=False, is_low=True)],
+            batch_key="membership",
+            actor="test",
+        )
+        other, _ = self.db.import_model_run(
+            name="Other dataset default",
+            source_name="other.json",
+            source_sha256="other-fixture",
+            metadata={},
+            rows=[dict(issue_id=self.ids[1], model_label="误触发")],
+        )
+        self.db.set_default_model_run(other["id"])
+
+        with (
+            patch.object(runs, "database", self.db),
+            patch.object(runs, "settings", SimpleNamespace(data_dir=self.root)),
+            patch.object(runs, "_model_source_file", return_value=None),
+        ):
+            for selected, expected in (
+                (version, (2, 1, 0)),
+                (PARTITION_IDS[1], (0, 2, 0)),
+                (f"{version},{PARTITION_IDS[1]}", (2, 2, 0)),
+            ):
+                with self.subTest(selected=selected):
+                    request = Request(dict(type="http", query_string=f"baselines={selected}".encode(), headers=[]))
+                    payload = asyncio.run(runs.model_runs(request))
+                    self.assertEqual(payload["default_model_run_id"], other["id"])
+                    self.assertEqual(payload["items"][0]["id"], other["id"])
+                    priorities = {item["id"]: item["selected_dataset_priority"] for item in payload["items"]}
+                    self.assertEqual(
+                        priorities, dict(zip((version_run_id, self.run["id"], other["id"]), expected))
+                    )
+
     def test_visible_catalog_preserves_sources(self):
         result = baselines.operational_baseline_summaries(self.registry.public_summaries(), self.db)
         self.assertEqual({row['id'] for row in result}, set(PARTITION_IDS))

@@ -18,6 +18,7 @@ from ..support.baselines import (
     resolve_request_baseline_ids,
     resolve_request_baseline_scopes,
     restrict_version_issue_ids,
+    scopes_for_baseline_ids,
 )
 from ..support.catalogs import resolve_review_exclusion_filter
 from ..support.common import _detail
@@ -98,9 +99,10 @@ async def comparison_case_inputs(request: Request, issue_id: str, baseline_run_i
 
 @router.get("/api/model-runs", responses={200: {"model": ModelRunListResponse}})
 async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
-    scopes = resolve_request_baseline_scopes(baselines, request=request)
+    baseline_ids = await asyncio.to_thread(resolve_request_baseline_ids, baselines, request=request)
     items = await asyncio.to_thread(
-        database.list_model_runs, baseline_scopes=scopes,
+        database.list_model_runs,
+        baseline_scopes=await asyncio.to_thread(scopes_for_baseline_ids, baseline_ids),
         issue_ids=await asyncio.to_thread(restrict_version_issue_ids, baselines, request=request),
     )
     coverage_map = await asyncio.to_thread(
@@ -117,6 +119,14 @@ async def model_runs(request: Request, baselines: str = "") -> dict[str, Any]:
         )
         for item in items
     ]
+    selected_ids = set(baseline_ids)
+    for item in items:
+        # Use the selected membership for coverage, and favor the Run's own
+        # datasets over incidental overlap. Catalog consumers keep their order.
+        priority = 0
+        if item["baseline_prediction_count"] > 0:
+            priority = 1 if selected_ids.isdisjoint(item["inferred_baseline_ids"]) else 2
+        item["selected_dataset_priority"] = priority
 
     def _attach_source_files(rows: list[dict[str, Any]]) -> None:
         # Each iteration stats the archived upload on (possibly network) disk,

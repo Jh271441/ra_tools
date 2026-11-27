@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 export interface UiSelectOption {
   value: string;
@@ -17,6 +17,7 @@ export interface UiSelectProps {
   disabled?: boolean;
   className?: string;
   compact?: boolean;
+  menuWidth?: number;
 }
 
 /**
@@ -34,10 +35,12 @@ export const UiSelect: React.FC<UiSelectProps> = ({
   disabled = false,
   className = "",
   compact = false,
+  menuWidth,
 }) => {
   const [open, setOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
   const [alignRight, setAlignRight] = useState(false);
+  const [menuSize, setMenuSize] = useState<React.CSSProperties>();
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -51,8 +54,9 @@ export const UiSelect: React.FC<UiSelectProps> = ({
   );
   const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : null;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
+    const viewport = menuWidth ? window.visualViewport : undefined;
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
         setOpen(false);
@@ -66,22 +70,44 @@ export const UiSelect: React.FC<UiSelectProps> = ({
         triggerRef.current?.focus();
       }
     };
-    const handleResize = () => {
+    const handleResize = (event?: Event) => {
+      if (event?.target === menuRef.current) return;
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const spaceAbove = rect.top;
-      setOpenUpward(spaceBelow < 220 && spaceAbove > spaceBelow);
-      const menuWidth = menuRef.current?.offsetWidth || Math.max(rect.width, 220);
-      setAlignRight(rect.left + menuWidth > window.innerWidth - 12 && rect.right > menuWidth);
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const spaceBelow = viewportTop + viewportHeight - rect.bottom;
+      const spaceAbove = rect.top - viewportTop;
+      const upward = spaceBelow < 220 && spaceAbove > spaceBelow;
+      setOpenUpward(upward);
+      if (menuWidth) {
+        const margin = 8;
+        const viewportLeft = viewport?.offsetLeft ?? 0;
+        const viewportWidth = viewport?.width ?? window.innerWidth;
+        const width = Math.min(Math.max(rect.width, menuWidth), viewportWidth - 2 * margin);
+        const left = Math.max(
+          viewportLeft + margin,
+          Math.min(rect.left, viewportLeft + viewportWidth - width - margin),
+        );
+        const available = (upward ? spaceAbove : spaceBelow) - 4 - margin;
+        setMenuSize({
+          width, minWidth: 0, maxWidth: width, left: left - rect.left,
+          maxHeight: Math.max(0, Math.min(280, viewportHeight * 0.5, available)),
+        });
+        return;
+      }
+      const width = menuRef.current?.offsetWidth || Math.max(rect.width, 220);
+      setAlignRight(rect.left + width > window.innerWidth - 12 && rect.right > width);
     };
     handleResize();
-    const rafId = window.requestAnimationFrame(handleResize);
+    const rafId = window.requestAnimationFrame(() => handleResize());
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("touchstart", handlePointerDown, { passive: true });
     document.addEventListener("keydown", handleKeyDownGlobal, true);
     window.addEventListener("resize", handleResize);
     window.addEventListener("scroll", handleResize, true);
+    viewport?.addEventListener("resize", handleResize);
+    viewport?.addEventListener("scroll", handleResize);
     return () => {
       window.cancelAnimationFrame(rafId);
       document.removeEventListener("mousedown", handlePointerDown);
@@ -89,8 +115,22 @@ export const UiSelect: React.FC<UiSelectProps> = ({
       document.removeEventListener("keydown", handleKeyDownGlobal, true);
       window.removeEventListener("resize", handleResize);
       window.removeEventListener("scroll", handleResize, true);
+      viewport?.removeEventListener("resize", handleResize);
+      viewport?.removeEventListener("scroll", handleResize);
     };
-  }, [open]);
+  }, [open, menuWidth]);
+
+  const moveToOption = (index: number) => {
+    setActiveIndex(index);
+    const menu = menuRef.current;
+    const option = menu?.children[index] as HTMLElement | undefined;
+    if (!menu || !option) return;
+    const { offsetTop: top, offsetHeight: height } = option;
+    if (top < menu.scrollTop) menu.scrollTop = top;
+    else if (top + height > menu.scrollTop + menu.clientHeight) {
+      menu.scrollTop = top + height - menu.clientHeight;
+    }
+  };
 
   const moveActive = (delta: number) => {
     if (!options.length) return;
@@ -98,7 +138,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
     for (let step = 0; step < options.length; step += 1) {
       next = (next + delta + options.length) % options.length;
       if (!options[next]?.disabled) {
-        setActiveIndex(next);
+        moveToOption(next);
         return;
       }
     }
@@ -145,14 +185,14 @@ export const UiSelect: React.FC<UiSelectProps> = ({
     if (event.key === "Home" && open) {
       event.preventDefault();
       const first = options.findIndex((o) => !o.disabled);
-      if (first >= 0) setActiveIndex(first);
+      if (first >= 0) moveToOption(first);
       return;
     }
     if (event.key === "End" && open) {
       event.preventDefault();
       for (let i = options.length - 1; i >= 0; i -= 1) {
         if (!options[i]?.disabled) {
-          setActiveIndex(i);
+          moveToOption(i);
           break;
         }
       }
@@ -188,6 +228,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listboxId}
+        aria-activedescendant={open && options[activeIndex] ? `${listboxId}-option-${activeIndex}` : undefined}
         disabled={disabled}
         onClick={(e) => {
           e.stopPropagation();
@@ -212,7 +253,8 @@ export const UiSelect: React.FC<UiSelectProps> = ({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel}
-          className={`ui-select-panel is-positioned ra-react-select-menu${openUpward ? " is-upward" : ""}${alignRight ? " is-align-right" : ""}`}
+          className={`ui-select-panel is-positioned ra-react-select-menu${openUpward ? " is-upward" : ""}${alignRight && !menuWidth ? " is-align-right" : ""}${menuWidth ? " ui-select-wrap-options" : ""}`}
+          style={menuWidth ? menuSize : undefined}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
@@ -222,6 +264,7 @@ export const UiSelect: React.FC<UiSelectProps> = ({
             return (
               <button
                 key={option.value}
+                id={`${listboxId}-option-${index}`}
                 type="button"
                 role="option"
                 aria-selected={isSelected}

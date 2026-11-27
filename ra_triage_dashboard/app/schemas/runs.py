@@ -17,6 +17,9 @@ class ModelRunSummary(DashboardBaseModel):
     prediction_count: int = 0
     baseline_prediction_count: int = 0
     failure_count: int = 0
+    selected_dataset_priority: int = Field(
+        default=0, ge=0, le=2, description="Selected dataset match: none (0), overlap (1), direct (2)."
+    )
     inferred_baseline_ids: List[str] = Field(default_factory=list)
     source_file: Optional[Dict[str, Any]] = None
 

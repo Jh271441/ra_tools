@@ -503,6 +503,45 @@ function readInitialRunCatalog(page, baselines, path) {
   return promise;
 }
 
+function renderReviewRunPicker() {
+  if (typeof window !== "undefined" && (
+    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
+    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
+  )) return;
+  const select = $("#modelRunFilter");
+  const picker = $("#modelRunPicker");
+  if (!picker && !select) return;
+  const runs = [...state.modelRuns].sort((a, b) =>
+    (b.selected_dataset_priority ?? 0) - (a.selected_dataset_priority ?? 0)
+  );
+  const runOptions = [
+    { value: "", label: t("filter.no_run") },
+    ...runs.map((run) => {
+      const tag = run.is_default ? t("runs.default_prefix") : "";
+      const inferred = Array.isArray(run.inferred_baseline_ids)
+        ? run.inferred_baseline_ids.filter(Boolean)
+        : [];
+      const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
+      return {
+        value: run.id,
+        label: `${tag}${run.name}${setHint} · ${t("runs.set_count")} ${run.baseline_prediction_count ?? 0} · ${t("runs.err_count")} ${run.failure_count ?? 0}`,
+      };
+    }),
+  ];
+  if (picker && typeof populateUiSelect === "function") {
+    populateUiSelect(picker, runOptions, state.selectedRunId);
+    bindUiSelect(picker, { maxHeight: 360, minWidth: 480 });
+  } else if (select) {
+    select.innerHTML = runOptions
+      .map(
+        (item) =>
+          `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
+      )
+      .join("");
+    select.value = state.selectedRunId;
+  }
+}
+
 async function loadRuns({
   preferDefault = false,
   preserveEmpty = false,
@@ -525,8 +564,6 @@ async function loadRuns({
     if (aliasUrl.searchParams.has("run")) { aliasUrl.searchParams.set("run", state.selectedRunId); history.replaceState(history.state, "", aliasUrl.pathname + aliasUrl.search); }
   }
   state.modelRuns = data.items || [];
-  const select = $("#modelRunFilter");
-  const picker = $("#modelRunPicker");
   const previousRunId = state.selectedRunId;
   const preferredRunId =
     data.default_model_run_id ||
@@ -537,20 +574,6 @@ async function loadRuns({
     : preserveEmpty
       ? state.selectedRunId
       : state.selectedRunId || data.default_model_run_id || state.config?.default_model_run_id || "";
-  const runOptions = [
-    { value: "", label: t("filter.no_run") },
-    ...state.modelRuns.map((run) => {
-      const tag = run.is_default ? t("runs.default_prefix") : "";
-      const inferred = Array.isArray(run.inferred_baseline_ids)
-        ? run.inferred_baseline_ids.filter(Boolean)
-        : [];
-      const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
-      return {
-        value: run.id,
-        label: `${tag}${run.name}${setHint} · ${t("runs.set_count")} ${run.baseline_prediction_count ?? 0} · ${t("runs.err_count")} ${run.failure_count ?? 0}`,
-      };
-    }),
-  ];
   const candidateRun = state.modelRuns.find((run) => run.id === candidate);
   // A missing team default means "no overlay". Never silently promote the
   // newest Run, and never carry an implicit/inherited Run into a dataset where
@@ -564,24 +587,7 @@ async function loadRuns({
     candidate = "";
   }
   state.selectedRunId = state.modelRuns.some((run) => run.id === candidate) ? candidate : "";
-  const reviewOwned = typeof window !== "undefined" && Boolean(
-    window.__RA_REACT_WORKBENCH__?.ownsPage?.("review") ||
-    window.__RA_REACT_OWNED_PAGES__?.includes?.("review")
-  );
-  if (!reviewOwned) {
-    if (picker && typeof populateUiSelect === "function") {
-      populateUiSelect(picker, runOptions, state.selectedRunId);
-      bindUiSelect(picker, { maxHeight: 360, maxWidth: 520 });
-    } else if (select) {
-      select.innerHTML = runOptions
-        .map(
-          (item) =>
-            `<option value="${escapeHtml(item.value)}">${escapeHtml(item.label)}</option>`
-        )
-        .join("");
-      select.value = state.selectedRunId;
-    }
-  }
+  renderReviewRunPicker();
   if (preferDefault && !previousRunId && state.selectedRunId) {
     // A Run is an overlay on the immutable selected GT workset. Selecting or
     // importing it must not shrink the workset itself. Keep the established
