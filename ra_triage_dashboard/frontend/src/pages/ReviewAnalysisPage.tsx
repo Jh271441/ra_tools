@@ -454,8 +454,15 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
   active,
   lang,
   theme,
-  selectedBaselines,
+  selectedBaselines: workbenchBaselines,
 }) => {
+  // The dataset picker updates the URL before notifying this island. On a cold
+  // chart link the classic shell can still be reporting its initial 0508.
+  const routeBaselines = new URLSearchParams(window.location.search).get("baselines");
+  const selectedBaselines = useMemo(
+    () => routeBaselines ? parseFilterList(routeBaselines) : workbenchBaselines,
+    [routeBaselines, workbenchBaselines],
+  );
   const [route, setRoute] = useState<AnalysisRouteState>(readAnalysisRouteFromUrl);
   const [issueDraft, setIssueDraft] = useState<string>(() => route.issueIds.join(", "));
   const [searchDraft, setSearchDraft] = useState<string>(() => route.search);
@@ -597,7 +604,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
       window.history.replaceState(
         { ...(window.history.state || {}), page: "analysis" },
         "",
-        nextUrl,
+        nextUrl + window.location.hash,
       );
     }
   }, [active, route, selectedBaselines, runsQuery.isLoading]);
