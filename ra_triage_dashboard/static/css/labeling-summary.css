@@ -6,12 +6,15 @@
 #labelSummaryContent .analysis-confusion-table tfoot td { border-top: 1px solid var(--line); color: var(--muted); font-weight: 750; }
 .label-summary-matrix-heading { flex-wrap: wrap; gap: 0 8px; }
 .label-summary-matrix-heading h3 { margin: 0; }
-.label-summary-matrix-counts { min-width: 0; display: flex; align-items: center; gap: 3px; }
+.label-summary-matrix-counts { min-width: 0; max-width: 100%; display: inline-flex; align-items: center; gap: 3px; }
 .label-summary-matrix-counts .ui-info { flex: 0 0 auto; color: var(--accent); }
 .label-summary-matrix-counts .ui-info-button { color: inherit; }
 .label-summary-matrix-counts .ui-info-button svg { width: 14px; height: 14px; }
+.label-summary-matrix-counts .ui-info .ui-info-tooltip { width: min(192px, calc(100vw - 24px)); }
 .label-summary-matrix-counts .ui-info:not(.is-open) .ui-info-tooltip { opacity: 0; visibility: hidden; }
 .label-summary-matrix-counts small { overflow: visible; white-space: normal; }
+.label-summary-matrix-exclusion { display: flex; justify-content: space-between; gap: 12px; }
+.label-summary-matrix-exclusion b { font-variant-numeric: tabular-nums; }
 .label-summary-case-row .analysis-case-reason { overflow-wrap: anywhere; }
 .label-summary-case-row .analysis-chip { max-width: 100%; overflow-wrap: anywhere; }
 .label-summary-case-row .analysis-case-labels { align-content: start; }

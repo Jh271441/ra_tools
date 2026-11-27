@@ -57,6 +57,7 @@ class LabelingSummaryTest(unittest.TestCase):
         self.assertEqual(data['total'], 0)
         self.assertEqual(data['pairs'], [])
         self.assertEqual(data['matrix_exclusions'], {})
+        self.assertEqual(data['matrix_gt_exclusions'], [])
         self.assertEqual(data['people'], [])
         self.assertEqual(data['outputs'], {})
         self.assertEqual(data['items'], [])
@@ -66,8 +67,10 @@ class LabelingSummaryTest(unittest.TestCase):
         items = [
             {"issue_id": "match", "label_state": "resolved", "expected_output": "误触发", "gt_label": "误触发"},
             {"issue_id": "missing", "label_state": "resolved", "expected_output": "正确触发", "gt_label": ""},
+            {"issue_id": "outside", "label_state": "resolved", "expected_output": "正确触发", "gt_label": "", "gt_raw_label": "out_of_scope"},
+            {"issue_id": "unanswered", "label_state": "resolved", "expected_output": "无需协助", "gt_label": "", "gt_raw_label": "未接起"},
             {"issue_id": "other", "label_state": "resolved", "expected_output": "正确触发", "gt_label": "其他"},
-            {"issue_id": "unresolved", "label_state": "conflict", "gt_label": ""},
+            {"issue_id": "unresolved", "label_state": "conflict", "gt_label": "", "gt_raw_label": "out_of_scope"},
         ]
         for item in items:
             item["label_cases"] = [{"resolution": {"heads": [{"author": "alice"}]}}]
@@ -75,8 +78,14 @@ class LabelingSummaryTest(unittest.TestCase):
 
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(data["pairs"], [{"gt": "误触发", "label": "误触发", "count": 1}])
-        self.assertEqual(data["matrix_exclusions"], {"missing_gt": 1, "unsupported_gt": 1, "no_final_label": 1})
-        self.assertEqual(data["total"], 4)
+        self.assertEqual(data["matrix_exclusions"], {"missing_gt": 1, "unsupported_gt": 3, "no_final_label": 1})
+        self.assertEqual(data["matrix_gt_exclusions"], [
+            {"label": None, "count": 1},
+            {"label": "out_of_scope", "count": 1},
+            {"label": "其他", "count": 1},
+            {"label": "未接起", "count": 1},
+        ])
+        self.assertEqual(data["total"], 6)
 
     def test_task_adjudication_is_primary_and_original_conflict_is_retained(self):
         heads=[{"id":1,"author":"alice","expected_output":"正确触发","rationale":"original a","tags":["old"]},{"id":2,"author":"bob","expected_output":"误触发","rationale":"original b"}]

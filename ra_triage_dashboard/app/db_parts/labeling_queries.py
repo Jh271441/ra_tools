@@ -146,6 +146,7 @@ class LabelingQueriesMixin:
         gt_relation: str = "",
         comment_state: str = "all",
         cluster: str = "",
+        include_raw_gt: bool = False,
     ) -> tuple[list[dict[str, Any]], str]:
         relations = normalize_gt_relation_filter(gt_relation)
         scopes = _clean_values(baseline_scopes)
@@ -223,7 +224,7 @@ class LabelingQueriesMixin:
         if normalized_exclusions - {"excluded", "active"}:
             raise ValueError("排除筛选不合法。")
         normalized_cluster = _parse_labeling_cluster(cluster)
-        raw_gt_sql = self._gt_raw_label_sql("issue") if relations else "''"
+        raw_gt_sql = self._gt_raw_label_sql("issue") if relations or include_raw_gt else "''"
         selected_source_sql = (", '' AS task_source_run_id" if combined else
                                ", workset.selection_source_run_id AS task_source_run_id" if task else "")
         with self.connect() as conn:
@@ -384,6 +385,7 @@ class LabelingQueriesMixin:
                     "issue_id": str(row["issue_id"]),
                     "baseline_scope": str(row["baseline_scope"] or ""),
                     "gt_label": str(row["gt_label"] or ""),
+                    **({"gt_raw_label": str(row["gt_raw_label"] or "")} if include_raw_gt else {}),
                     "gt_source": str(row["gt_source"] or ""),
                     "title": str(row["title"] or ""),
                     "scenario": str(row["scenario"] or ""),

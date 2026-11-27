@@ -258,29 +258,29 @@ function labelSummaryMatrixCardMarkup(data) {
   const comparable = pairs.reduce((sum, row) => sum + Number(row.count || 0), 0);
   const matches = pairs.filter((row) => row.gt === row.label).reduce((sum, row) => sum + Number(row.count || 0), 0);
   const total = Number(data.total ?? data.annotated ?? comparable);
-  const exclusions = data.matrix_exclusions || {};
-  const reasons = [
-    ["missing_gt", uiText("GT 未设置", "GT unset")],
-    ["unsupported_gt", uiText("GT 超出三分类", "GT outside the three classes")],
-    ["no_final_label", uiText("暂无最终三分类标注", "Final three-class label unavailable")],
-  ].filter(([key]) => Number(exclusions[key]) > 0)
-    .map(([key, label]) => `${label} ${Number(exclusions[key])}`);
+  const gtLabels = new Map([
+    ["out_of_scope", "Out of scope"],
+    ["未接起", uiText("未接起", "Unanswered")],
+  ]);
+  const exclusions = (data.matrix_gt_exclusions || []).map(({ label, count }) => ({
+    label: gtLabels.get(label) ?? label ?? "Null",
+    count,
+  }));
+  const noFinalLabel = Number(data.matrix_exclusions?.no_final_label || 0);
+  if (noFinalLabel) exclusions.push({ label: uiText("无最终标注", "No final label"), count: noFinalLabel });
   const counts = uiText(`可比较 ${comparable} / ${total} · 一致 ${matches}`, `Comparable ${comparable} / ${total} · Matches ${matches}`);
   const helpLabel = uiText("可比较说明", "Comparison details");
-  const reasonLine = reasons.length ? `<span>${escapeHtml(uiText("未纳入矩阵", "Outside the matrix") + " · " + reasons.join(" · "))}</span>` : "";
+  const help = exclusions.length ? `<span class="model-review-run-help ui-info" data-ui-info data-ui-info-align="end">
+    <button class="ui-info-button" type="button" data-ui-info-trigger aria-expanded="false" aria-controls="labelSummaryMatrixInfo" aria-label="${escapeHtml(helpLabel)}" title="${escapeHtml(helpLabel)}"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
+    <span class="model-review-run-tooltip ui-info-tooltip" id="labelSummaryMatrixInfo" role="dialog" aria-label="${escapeHtml(helpLabel)}">
+      <strong>${uiText("未纳入", "Excluded")} ${total - comparable}</strong>
+      ${exclusions.map(({ label, count }) => `<span class="label-summary-matrix-exclusion"><span>${escapeHtml(label)}</span><b>${Number(count)}</b></span>`).join("")}
+    </span>
+  </span>` : "";
   return `<section class="page-card analysis-confusion-card" aria-labelledby="labelSummaryMatrixTitle">
     <div class="section-heading analysis-confusion-heading label-summary-matrix-heading">
       <h3 id="labelSummaryMatrixTitle">${uiText("GT × 标注结果混淆矩阵", "GT × labeling confusion matrix")}</h3>
-      <div class="label-summary-matrix-counts">
-        <small>${escapeHtml(counts)}</small>
-        <span class="model-review-run-help ui-info" data-ui-info data-ui-info-align="end">
-          <button class="ui-info-button" type="button" data-ui-info-trigger aria-expanded="false" aria-controls="labelSummaryMatrixInfo" aria-label="${escapeHtml(helpLabel)}" title="${escapeHtml(helpLabel)}"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg></button>
-          <span class="model-review-run-tooltip ui-info-tooltip" id="labelSummaryMatrixInfo" role="dialog" aria-label="${escapeHtml(helpLabel)}">
-            ${reasonLine}
-            <span>${uiText("GT 和最终标注均属于三分类时计入矩阵。", "The matrix counts Issues with both GT and a final label in the three classes.")}</span>
-          </span>
-        </span>
-      </div>
+      <span class="label-summary-matrix-counts"><small>${escapeHtml(counts)}</small>${help}</span>
     </div>
     <div class="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">${labelSummaryMatrixMarkup(data)}</div>
   </section>`;
