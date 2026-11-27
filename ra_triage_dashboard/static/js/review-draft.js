@@ -284,7 +284,7 @@ function markReviewDraftField(form, target) {
   fields.forEach((field) => form._reviewDraftFields.add(field));
 }
 
-function persistReviewDraft(caseData) {
+function persistReviewDraft(caseData, { requireStorage = false } = {}) {
   const form = $("#annotationForm");
   if (!caseData?.issue_id || !form || typeof window === "undefined") return;
   const runId = state.reviewEditRunId || currentReviewRunId(caseData);
@@ -315,6 +315,7 @@ function persistReviewDraft(caseData) {
     );
     window.localStorage.setItem(reviewDraftStorageKey(caseData.issue_id, runId, workSplitId, reviewer), JSON.stringify(draft));
   } catch {
+    if (requireStorage) return null;
     // Draft persistence is best effort and must never block Review input.
   }
   return draft;

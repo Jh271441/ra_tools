@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import runpy
+from urllib.parse import urlencode
 
 from playwright.sync_api import sync_playwright
 
@@ -20,17 +21,24 @@ setup = setup.replace('  state.selectedCase = fixtureData;', r'''
   fixtureData.label_cases=[{id:'labels',revisions:[revision,peer]}];
   fixtureData.exclusion_summary={is_excluded:false};
   fixtureContext.label_state=fixtureData.label_state;
+  if(qa.chart){
+    state.selectedRunId='';state.reviewWorkSplitId='';state.selectedBaselineIds=['0206'];
+    state.reviewAnalysisScope=new URLSearchParams(location.search).get('analysis_scope');
+    fixtureData.review_assignment=null;
+    fixtureContext.campaign={id:'',evaluation_run_id:''};
+  }
   state.casePage=1;state.casePageSize=10;state.caseTotal=qa.ids.length;
   state.cases=qa.ids.slice(0,10).map(issue_id=>({...structuredClone(fixtureData),issue_id}));
   state.reviewTaskProgress=[];state.reviewFormDirty=false;state.pendingReviewImages=[];
-  state.reviewComparisonStatus='all';state.reviewTaskContext={id:'task',workflow_mode:'model_review_and_case_label'};
+  state.reviewComparisonStatus='all';
+  state.reviewTaskContext=qa.chart?null:{id:'task',workflow_mode:'model_review_and_case_label'};
   refreshReviewDerivedData=()=>{};
   renderMultiFilter($('#sharedLabelStateFilter'),{groups:labelGtFilterGroups(),selected:qa.conflict?['conflict']:[]});
   state.selectedCase = fixtureData;
 ''')
 
-API = r'''({count, conflict})=>{
-  window.qa={ids:Array.from({length:count},(_,i)=>`cn${i+1}`),resolved:new Set(),posts:[],calls:[],conflict,holdContext:false};
+API = r'''({count, conflict, chart})=>{
+  window.qa={ids:Array.from({length:count},(_,i)=>`cn${i+1}`),resolved:new Set(),posts:[],calls:[],conflict,chart,holdContext:false};
   const select=selectCase;
   selectCase=async(...args)=>{if(qa.posts.length)qa.navigationAt=performance.now();return select(...args);};
   function data(issue){
@@ -52,7 +60,9 @@ API = r'''({count, conflict})=>{
     if(p==='/api/cases'||p==='/api/cases/issue-ids'){
       if(qa.failQueue&&qa.posts.length)throw Error('Synthetic queue failure');
       const requested=u.searchParams.get('issue_ids')?.split(',');
-      const ids=qa.ids.filter(id=>(!requested||requested.includes(id))&&(u.searchParams.get('label_state')!=='conflict'||!qa.resolved.has(id)));
+      const chartScope=new URLSearchParams(u.searchParams.get('analysis_scope'));
+      const filtered=u.searchParams.get('label_state')==='conflict'||chartScope.get('chart_gt')==='blocked';
+      const ids=qa.ids.filter(id=>(!requested||requested.includes(id))&&(!filtered||!qa.resolved.has(id)));
       if(p.endsWith('/issue-ids'))return {issue_ids:ids};
       const page=Number(u.searchParams.get('page')||1),size=Number(u.searchParams.get('page_size')||10);
       if(qa.pageDelay)await new Promise(resolve=>setTimeout(resolve,qa.pageDelay));
@@ -76,24 +86,41 @@ def run():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
 
-        def scenario(width=1440, language='zh', theme='dark', count=25, selected='cn12', conflict=True, dirty=False, failure=''):
+        def scenario(width=1440, language='zh', theme='dark', count=25, selected='cn12',
+                     conflict=True, dirty=False, chart=False, failure=''):
             page = browser.new_page(viewport={'width': width, 'height': 1000})
             page.set_default_timeout(7000)
             page.on('pageerror', lambda error: errors.append(str(error)))
             page.route('http://review-decision.test/**', lambda route: route.fulfill(content_type='text/html', body=fixture['html']))
-            page.goto('http://review-decision.test/manual/review?issue='+selected+'&run=run&comparison=all&baselines=fixture'
-                      + ('&label_state=conflict' if conflict else ''))
+            params = {'issue': selected, 'run': 'none' if chart else 'run', 'comparison': 'all',
+                      'baselines': '0206' if chart else 'fixture'}
+            if chart:
+                params['analysis_scope'] = 'comparison=all&chart_gt=blocked&baselines=0206'
+            elif conflict:
+                params['label_state'] = 'conflict'
+            page.goto('http://review-decision.test/manual/review?' + urlencode(params))
             for name in fixture['styles']:
                 page.add_style_tag(content=(ROOT/'static'/name).read_text())
             for name in fixture['modules']:
                 page.add_script_tag(content=(ROOT/'static/js'/name).read_text())
-            page.evaluate(API, {'count':count,'conflict':conflict})
+            page.evaluate(API, {'count':count,'conflict':conflict and not chart,'chart':chart})
             page.evaluate(setup.replace("'cn1'", repr(selected)), {'catalog':fixture['catalog']})
             page.evaluate('([language,theme])=>{applyUiLanguage(language,{persist:false});applyColorTheme(theme,{persist:false});}', [language,theme])
             page.wait_for_function("state.combinedReviewLoad?.status==='ready'")
             if dirty:
-                page.locator('#annotationNote').fill('Unsaved model draft / 未保存草稿')
+                note = '#combinedCaseRationale' if chart else '#annotationNote'
+                page.locator(note).fill('Unsaved draft / 未保存草稿')
                 page.evaluate('qa.holdContext=true;window.originalForm=document.querySelector("#annotationForm");window.originalMedia=document.querySelector("#detailHeroMedia")')
+            if failure == 'storage':
+                page.evaluate("""() => {
+                  const setItem = Storage.prototype.setItem;
+                  Storage.prototype.setItem = function(key, value) {
+                    if (key.startsWith('ra-triage-review-draft:v2:')) {
+                      throw new DOMException('Synthetic storage quota', 'QuotaExceededError');
+                    }
+                    return setItem.call(this, key, value);
+                  };
+                }""")
             page.locator('#reviewSharedLabelState [data-open-shared-label-state]').click()
             page.locator('#caseLabelDecisionDialog [data-adopt-decision="201"]').click()
             page.locator('#caseDecisionConfirmExclusion').check()
@@ -106,6 +133,24 @@ def run():
             page.evaluate("failure=>{qa.failPost=failure==='post';qa.failQueue=failure==='queue';qa.pageDelay=failure==='slow_page'?2000:0;}",failure)
             page.locator('#caseLabelingForm button[type="submit"]').click()
             return page
+
+        for width, language, theme in [(320, 'en', 'light'), (390, 'zh', 'dark'), (1440, 'zh', 'dark')]:
+            page = scenario(width, language, theme, chart=True, dirty=True, failure='slow_page')
+            page.wait_for_function("state.selectedCase?.issue_id==='cn13'")
+            assert page.evaluate('state.caseTotal') == 24
+            assert page.locator('#detailQueueIndexInput').input_value() == '12'
+            assert page.locator('#nextIssueButton').is_enabled()
+            assert 'run=none' in page.url and 'baselines=0206' in page.url and 'chart_gt%3Dblocked' in page.url
+            assert page.evaluate("readReviewDraft('cn12', '', '', 'alice')?.case_rationale") == 'Unsaved draft / 未保存草稿'
+            assert page.evaluate('qa.posts.length') == 1
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            if width == 1440:
+                page.wait_for_function('!state.reviewQueueStale')
+                page.evaluate("selectCase('cn12', {historyMode:'replace'})")
+                assert page.locator('#combinedCaseRationale').input_value() == 'Unsaved draft / 未保存草稿'
+            results.append({'scenario':'0206 GT needs attention with preserved draft',
+                            'width':width,'language':language,'theme':theme,'passed':True})
+            page.close()
 
         for width in [320,390,1440]:
             for language in ['zh','en']:
@@ -126,13 +171,14 @@ def run():
             ('last Issue', {'count':3,'selected':'cn3'}, 'cn2'),
             ('empty queue', {'count':1,'selected':'cn1'}, ''),
             ('all-state filter', {'selected':'cn2','conflict':False}, 'cn2'),
-            ('ordinary draft and slow context', {'selected':'cn2','dirty':True}, 'cn2'),
+            ('storage unavailable with ordinary draft and slow context',
+             {'selected':'cn2','dirty':True,'failure':'storage'}, 'cn2'),
         ]:
             page=scenario(**options)
             page.wait_for_function('expected=>qa.posts.length===1&&state.selectedId===expected&&!caseLabelDecisionUi.saving',arg=expected)
             if options.get('dirty'):
                 page.wait_for_function("state.caseTotal===24&&!state.cases.some(item=>item.issue_id==='cn2')")
-                assert page.locator('#annotationNote').input_value()=='Unsaved model draft / 未保存草稿'
+                assert page.locator('#annotationNote').input_value()=='Unsaved draft / 未保存草稿'
                 assert page.evaluate('document.querySelector("#annotationForm")===originalForm&&document.querySelector("#detailHeroMedia")===originalMedia')
             if not options.get('conflict',True):
                 page.wait_for_function("state.selectedCase.label_state.state==='resolved'")

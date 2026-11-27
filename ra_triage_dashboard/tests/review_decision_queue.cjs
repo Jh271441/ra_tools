@@ -3,13 +3,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty = false} = {}) {
-  let remaining = [...ids], scope = 'model_run_id=run&baselines=0821-odd2&label_state=conflict';
-  const calls = [], messages = [], selectedIds = [], contextLoads = [];
+function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty = false,
+  chart = false, draftStorage = false, pendingImages = []} = {}) {
+  const baseline = chart ? '0206' : '0821-odd2';
+  let remaining = [...ids], scope = chart
+    ? 'analysis_scope=comparison%3Dall%26chart_gt%3Dblocked%26baselines%3D0206&baselines=0206'
+    : 'model_run_id=run&baselines=0821-odd2&label_state=conflict';
+  const isFiltered = params => params.has('label_state')
+    || new URLSearchParams(params.get('analysis_scope')).get('chart_gt') === 'blocked';
+  const calls = [], messages = [], selectedIds = [], contextLoads = [], preservedDrafts = [];
   const state = {activePage:'review', selectedId:selected, selectedCase:{issue_id:selected, media:{}},
     cases:remaining.slice((page - 1) * 2, page * 2).map(issue_id => ({issue_id})),
     casePage:page, casePageSize:2, caseTotal:remaining.length, session:{username:'alice'},
-    selectedRunId:'run', reviewWorkSplitId:'', pageNavigationEpoch:0, pendingReviewImages:[],
+    selectedRunId:chart ? '' : 'run', reviewWorkSplitId:'', pageNavigationEpoch:0, pendingReviewImages:pendingImages,
     reviewFormDirty:dirty, caseLabeling:{pendingImages:[]}, combinedReviewContext:{}};
   const controls = {form:{querySelectorAll:() => []}, error:{textContent:''},
     confirm:{checked:true}, rationale:{value:'Decision rationale'}};
@@ -20,7 +26,7 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
     $:id => ({'#caseLabelingForm':controls.form, '#caseDecisionEditorError':controls.error,
       '#caseDecisionConfirmExclusion':controls.confirm, '#caseDecisionReviewRationale':controls.rationale})[id] || null,
     uiText:(zh, en) => en, showToast:message => messages.push(message),
-    selectedBaselineQueryValue:() => '0821-odd2', withBaselineQuery:p => p,
+    selectedBaselineQueryValue:() => baseline, withBaselineQuery:p => p,
     hasDashboardWriteRole:() => true, enhanceDashboardSelects() {}, acknowledgeLocalChange() {},
     caseExclusionErrorMessage:e => e.message,
     caseLabelingFormPayload:() => ({expected_output:'误触发', tags:[], rationale:'Label rationale', is_excluded:false}),
@@ -28,14 +34,20 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
     currentReviewGalleryExportParams:() => new URLSearchParams(scope + '&format=xlsx&gallery_scope=true'),
     capturePageContext:() => ({epoch:state.pageNavigationEpoch}),
     isPageContextCurrent:c => c.epoch === state.pageNavigationEpoch,
-    caseRationalePendingImages:() => [], renderReviewSummary() {}, renderCaseNavigation() {},
+    caseRationalePendingImages:() => [], hasFocusedTextInput:() => false,
+    persistReviewDraft: (issue, options) => {
+      if (!draftStorage) return null;
+      preservedDrafts.push({id:issue.issue_id, options});
+      return {};
+    },
+    renderReviewSummary() {}, renderCaseNavigation() {},
     refreshCaseLabelDecisionLanguage() {}, refreshReviewDerivedData() {},
     clearDetail:() => {state.selectedId=''; state.selectedCase=null;}, showPage() {},
     selectCase:async(id, options) => {selectedIds.push({id, options}); state.selectedId=id; state.selectedCase={issue_id:id};},
     loadCases:async(options) => {
       calls.push({kind:'list', options});
       if (failQueue) throw new Error('Queue offline');
-      const visible=scope.includes('label_state=conflict') ? remaining : ['cn1', 'cn2', 'cn3'];
+      const visible=isFiltered(new URLSearchParams(scope)) ? remaining : ['cn1', 'cn2', 'cn3'];
       state.caseTotal=visible.length;
       state.casePage=Math.min(options.page, Math.max(1, Math.ceil(visible.length / 2)));
       state.cases=visible.slice((state.casePage - 1) * 2, state.casePage * 2).map(issue_id => ({issue_id}));
@@ -55,7 +67,7 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
         beforeQueue();
         if (failQueue) throw new Error('Queue offline');
         const params=new URL(url, 'http://fixture').searchParams;
-        return {issue_ids:params.has('label_state') ? [...remaining] : ['cn1', 'cn2', 'cn3']};
+        return {issue_ids:isFiltered(params) ? [...remaining] : ['cn1', 'cn2', 'cn3']};
       }
       if (url.startsWith('/api/labeling/cases/')) return {...data, label_state:{state:'resolved'}};
       throw new Error(`Unexpected API ${url}`);
@@ -70,9 +82,9 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
     state.reviewFormDirty=dirty;
   };
   vm.runInContext(`caseLabelDecisionUi.editor={key:'draft', data:${JSON.stringify(data)},
-    pageContext:capturePageContext(), baselines:'0821-odd2', actor:'alice',
+    pageContext:capturePageContext(), baselines:${JSON.stringify(baseline)}, actor:'alice',
     images:[], retained:[], adoptedId:7, ordinary:{}, reviewHost:{}}`, s);
-  return {s, state, calls, messages, selectedIds, contextLoads, controls,
+  return {s, state, calls, messages, selectedIds, contextLoads, controls, preservedDrafts,
     failPost:() => {failPost=true;}, failQueue:() => {failQueue=true;},
     holdContext:() => {holdContext=true;}, beforeQueue:fn => {beforeQueue=fn;},
     allFilter:() => {scope=scope.replace('&label_state=conflict', '');},
@@ -91,6 +103,29 @@ function fixture({selected = 'cn2', page = 1, ids = ['cn1', 'cn2', 'cn3'], dirty
   assert.equal(JSON.parse(post.options.body).model_run_id, undefined, 'Decision stays Issue-bound');
   assert(f.calls.filter(call => call.kind === 'list').every(call => call.options.fresh));
   assert.equal(f.contextLoads.length, 0, 'Do not read the old Issue context after advancing');
+
+  f=fixture({chart:true, dirty:true, draftStorage:true});
+  await f.s.adjudicateIssueLabel();
+  assert.equal(f.state.selectedId, 'cn3', 'A stored text draft must not strand a decided Issue outside the GT chart filter');
+  assert.equal(f.state.caseTotal, 2);
+  assert.equal(f.preservedDrafts.length, 1);
+  assert.equal(f.preservedDrafts[0].id, 'cn2');
+  assert.equal(f.preservedDrafts[0].options.requireStorage, true);
+  const chartQuery = new URL(f.calls.find(call => call.url?.includes('/issue-ids?')).url, 'http://fixture').searchParams;
+  assert.equal(chartQuery.get('analysis_scope'), 'comparison=all&chart_gt=blocked&baselines=0206');
+  assert.equal(chartQuery.get('baselines'), '0206');
+  assert(!chartQuery.has('model_run_id'));
+
+  const pendingImages = [{id:'pending'}];
+  f=fixture({chart:true, dirty:true, draftStorage:true, pendingImages});
+  await f.s.adjudicateIssueLabel();
+  assert.equal(f.state.selectedId, 'cn2', 'Keep unsaved images in the open Issue');
+  assert.equal(f.state.pendingReviewImages, pendingImages);
+  assert.equal(f.preservedDrafts.length, 0);
+
+  f=fixture({chart:true, selected:'cn2', page:2, ids:['cn1', 'cn3']});
+  await f.s.adjudicateIssueLabel();
+  assert.equal(f.state.selectedId, 'cn3', 'Recover the correct neighbor of an already-removed chart result');
 
   f=fixture({selected:'cn3'}); await f.s.adjudicateIssueLabel();
   assert.equal(f.state.selectedId, 'cn2', 'An off-page final Issue returns to its predecessor');
