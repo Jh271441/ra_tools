@@ -215,6 +215,22 @@ describe("ReviewAnalysisPage 1:1 parity", () => {
     );
   }
 
+  it("keeps the chart link dataset while the workbench still reports its initial baseline", async () => {
+    window.history.replaceState({}, "", "/manual-s6/review-analysis?baselines=0821-odd2&run=run-01&chart_review=pending#analysisCaseList");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ReviewAnalysisPage active lang="zh" theme="dark" selectedBaselines={["0508"]} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) =>
+      String(url).includes("/api/review-reason-analysis?") && String(url).includes("baselines=0821-odd2"),
+    )).toBe(true));
+    expect(new URLSearchParams(window.location.search).get("baselines")).toBe("0821-odd2");
+    expect(window.location.hash).toBe("#analysisCaseList");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("baselines=0508"))).toBe(false);
+  });
+
   it("renders KPIs, 8 SVG donuts, confusion matrix, case row, model history & discussion bridges, and zero native selects", async () => {
     const openHistory = vi.fn();
     const openDiscussion = vi.fn().mockResolvedValue(undefined);
