@@ -273,7 +273,8 @@ class LabelingQueriesMixin:
             source_run_id=task_source_run_id,
         )
         shared_by_issue: dict[str, dict[str, Any]] = {}
-        if not task:
+        filter_decision_changes = "decision_changed" in normalized_statuses
+        if not task or filter_decision_changes:
             issue_ids_by_scope: dict[str, list[str]] = defaultdict(list)
             for row in rows:
                 issue_ids_by_scope[str(row["baseline_scope"] or "")].append(
@@ -285,7 +286,7 @@ class LabelingQueriesMixin:
                         scope,
                         scope_issue_ids,
                         include_sources=False,
-                        preloaded_cases=cases_by_issue,
+                        preloaded_cases=None if task else cases_by_issue,
                     )
                 )
         task_exclusions = self.project_issue_exclusions([str(row["issue_id"]) for row in rows]) if task else {}
@@ -310,7 +311,9 @@ class LabelingQueriesMixin:
             else:
                 aggregate_state = "pending"
                 expected_output_value = ""
-            shared_state = shared_by_issue.get(str(row["issue_id"])) if not task else None
+            issue_state = shared_by_issue.get(str(row["issue_id"])) or {}
+            changed_decision = bool((issue_state.get("decision") or {}).get("classification_changed"))
+            shared_state = issue_state if not task or changed_decision else None
             if shared_state:
                 aggregate_state = str(shared_state.get("state") or "pending")
                 if aggregate_state == "none":
@@ -329,6 +332,7 @@ class LabelingQueriesMixin:
             # Legacy pending URLs/API clients retain the union. New controls
             # distinguish untouched assignments from real incomplete submissions.
             if (normalized_statuses and filter_state not in normalized_statuses
+                    and not (filter_decision_changes and changed_decision)
                     and not ("pending" in normalized_statuses and filter_state in {"incomplete", "unannotated"})):
                 continue
             if normalized_authors:

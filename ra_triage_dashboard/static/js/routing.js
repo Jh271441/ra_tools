@@ -22,6 +22,7 @@ function labelGtFilterGroups({ selected = [], labeling = false } = {}) {
     { value: labeling ? "incomplete" : "pending", label: uiText("待形成结论", "Pending") },
     { value: "resolved", label: uiText("已形成结论", "Resolved") },
     { value: "conflict", label: uiText("需处理分歧", "Needs resolution") },
+    ...(labeling ? [{value:"decision_changed", label:uiText("最新标注与旧裁决不同", "Label differs from prior decision")}] : []),
     ...(!labeling ? [{value:"exclusion_pending", label:uiText("排除待确定", "Exclusion pending")}] : []),
     ...[
       ["stale", "裁决需确认", "Decision needs review"],
@@ -557,7 +558,7 @@ function normalizedLabelingStatusFilters(value, { submittedOnly = false } = {}) 
   // summary already displays submitted Issues only.
   return [...new Set(parseFilterList(value).flatMap((status) => status === "pending"
     ? (submittedOnly ? ["incomplete"] : ["unannotated", "incomplete"])
-    : [status]))].filter((status) => ["unannotated", "incomplete", "resolved", "conflict"].includes(status));
+    : [status]))].filter((status) => ["unannotated", "incomplete", "resolved", "conflict"].includes(status) || (submittedOnly && status === "decision_changed"));
 }
 
 function labelingStatusFilterOptions({ submittedOnly = false } = {}) {

@@ -70,6 +70,46 @@ class CombinedReviewWorkflowTest(unittest.TestCase):
             idempotency_key=key, is_excluded=excluded, attachments=attachments,
         )
 
+    def test_summary_filters_new_labels_that_disagree_with_the_last_decision(self):
+        from ra_triage_dashboard.app.labeling_summary import summarize_labeling_cases
+
+        campaign = self.campaign(0)
+        cid = campaign["id"]
+
+        def submit(label, key):
+            ctx = self.db.combined_review_context(issue_id="cn1", campaign_id=cid, reviewer="alice")
+            self.submit(campaign, ctx, label=label, key=key, rationale=key, update_case_details=True)
+
+        def state():
+            return self.db.project_issue_label_states("scope", ["cn1"])["cn1"]
+
+        def decide(label, previous=None):
+            return self.db.adjudicate_issue_label(
+                baseline_scope="scope", issue_id="cn1", expected_output=label,
+                actor="alice", actor_source="test", actor_verified=True, rationale="checked",
+                expected_source_fingerprint=state()["source_fingerprint"], expected_previous_decision_id=previous,
+            )["decision"]["id"]
+
+        def check(expected):
+            for task_id in ("", cid):
+                rows, _ = self.db._project_labeling_cases(
+                    baseline_scopes=["scope"], task_id=task_id, status="decision_changed")
+                summary = summarize_labeling_cases(rows)
+                self.assertEqual([row["issue_id"] for row in summary["items"]], expected)
+                if expected:
+                    self.assertTrue(summary["items"][0]["decision"]["stale"])
+
+        submit("误触发", "initial")
+        decision_id = decide("误触发")
+        check([])
+        submit("误触发", "same-label")
+        self.assertTrue(state()["decision"]["stale"])
+        check([])
+        submit("正确触发", "different-label")
+        check(["cn1"])
+        decide("正确触发", decision_id)
+        check([])
+
     def test_overlap_queue_distinguishes_missing_classification_from_exclusion_conflict(self):
         from unittest.mock import patch
         from ra_triage_dashboard.app.routers import cases as gallery
