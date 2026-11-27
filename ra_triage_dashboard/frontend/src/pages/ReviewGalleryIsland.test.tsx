@@ -115,6 +115,16 @@ describe("ReviewGalleryIsland", () => {
     );
   });
 
+  it("opens a chart selection as cards and lets the user clear its scope", async () => {
+    window.history.replaceState({}, "", "/manual-s6/review?baselines=0508&run=run-1&comparison=all&analysis_scope=chart_review%3Dcompleted");
+    renderWithQuery(<ReviewGalleryIsland active lang="zh" selectedBaselines={["0508"]} isAdmin canWrite identityPending={false} />);
+    await screen.findByText("cn38048091");
+    const requests = vi.mocked(fetch).mock.calls.map(([input]) => new URL(String(input), window.location.origin));
+    expect(requests.some(url => url.pathname.endsWith("/api/cases") && url.searchParams.get("analysis_scope") === "chart_review=completed")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "清除图表筛选" }));
+    expect(new URLSearchParams(window.location.search).has("analysis_scope")).toBe(false);
+  });
+
   it("renders filters, issue cards, zero native selects, and delegates card open to classic detail", async () => {
     const { container } = renderWithQuery(
       <ReviewGalleryIsland

@@ -33,6 +33,7 @@ def _version_task_scope(value):
 
 def _case_filter_kwargs(
     *,
+    analysis_scope: str = "",
     search: str = "",
     gt_label: str = "",
     model_label: str = "",
@@ -122,6 +123,9 @@ def _case_filter_kwargs(
     selected_ids = restrict_version_issue_ids(
         baselines, request=request, issue_ids=selected_ids, task_id=work_split_id, target_group=target_group,
     )
+    if analysis_scope:
+        from .review_chart_scope import chart_issue_ids
+        selected_ids = chart_issue_ids(analysis_scope, scopes, selected_ids)
     try:
         issue_tag_groups = parse_issue_tag_groups(issue_tags, _review_tag_catalog(), REVIEW_TAG_ALIASES) if issue_tags else ()
     except ValueError as exc:

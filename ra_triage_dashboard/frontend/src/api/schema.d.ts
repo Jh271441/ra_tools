@@ -7361,6 +7361,7 @@ export interface operations {
         parameters: {
             query?: {
                 search?: string;
+                analysis_scope?: string;
                 gt_label?: string;
                 model_label?: string;
                 annotation_label?: string;
@@ -7413,6 +7414,7 @@ export interface operations {
         parameters: {
             query?: {
                 search?: string;
+                analysis_scope?: string;
                 gt_label?: string;
                 model_label?: string;
                 annotation_label?: string;
@@ -9890,6 +9892,8 @@ export interface operations {
                 q?: string;
                 issue_ids?: string;
                 issue_tags?: string;
+                chart_gt?: string;
+                chart_label?: string;
                 status?: string;
                 author?: string;
                 assignee?: string;
@@ -10135,6 +10139,8 @@ export interface operations {
                 q?: string;
                 issue_ids?: string;
                 issue_tags?: string;
+                chart_gt?: string;
+                chart_label?: string;
                 status?: string;
                 author?: string;
                 assignee?: string;
@@ -12112,6 +12118,7 @@ export interface operations {
                 work_agreement?: string;
                 work_split_id?: string;
                 gallery_scope?: boolean;
+                analysis_scope?: string;
                 work_assignee?: string;
             };
             header?: never;
@@ -13675,6 +13682,7 @@ export interface operations {
         parameters: {
             query?: {
                 search?: string;
+                analysis_scope?: string;
                 gt_label?: string;
                 model_label?: string;
                 annotation_label?: string;

@@ -50,6 +50,7 @@ Object.assign(global,{
  parseFilterList:value=>Array.isArray(value)?value:String(value||'').split(',').filter(Boolean),joinFilterList:value=>(value||[]).join(','),
  normalizeBaselineIds:value=>value,selectedBaselineQueryValue:()=>state.selectedBaselineIds.join(','),defaultBaselineIdsFromConfig:()=>['0508'],
  populateUiSelect(){},bindUiSelect(){},renderMultiFilter(){},relabelMultiFilter(){return false;},setMultiFilterValues(){},enhanceNativeUiSelect:el=>{assert(el);el.enhanced=true;},showToast(){},t:key=>key,
+ buildAnalysisQueryParams:()=>new URLSearchParams({comparison:'all'}),
  bindAnalysisReviewStatusHover:el=>assert(el),bindAnalysisConfusionHover:el=>assert(el),bindAnalysisPieHover:el=>assert(el),clearAnalysisPieEnterAnimations:el=>assert(el),
 });
 vm.runInThisContext(fs.readFileSync(process.argv[3],'utf8'));
@@ -85,14 +86,14 @@ assert.match(markup,/42.9%/);assert.match(markup,/14.3%/);assert.match(markup,/G
 assert.match(markup,/section-heading analysis-review-status-heading/);
 assert.match(markup,/标注尚未齐备、来源冲突/);
 const analysisMarkup=analysisGtChartMarkup(data,{prefix:'analysis'});
-for(const [html,page,listId] of [[markup,'labeling-summary','labelSummaryCaseList'],[analysisMarkup,'review-analysis','analysisCaseList']]){
+for(const [html,page] of [[markup,'case-labeling'],[analysisMarkup,'review']]){
  const links=Array.from(html.matchAll(/class="chart-detail-link"[^>]* href="([^"]+)"/g),m=>new URL(m[1],'http://localhost'));
- assert.deepEqual(links.map(u=>u.searchParams.get('chart_gt')),['ready','blocked','aligned']);
+ assert.deepEqual(links.map(u=>(page==='review'?new URLSearchParams(u.searchParams.get('analysis_scope')):u.searchParams).get('chart_gt')),['ready','blocked','aligned']);
  for(const u of links){
-   assert.equal(u.pathname,'/manual/'+page);assert.equal(u.hash,'#'+listId);
+   assert.equal(u.pathname,'/manual/'+page);assert.equal(u.hash,'');
    assert.equal(u.searchParams.get('baselines'),'version-20261009');
    assert.equal(u.searchParams.has('page'),false);
-   if(page==='labeling-summary')assert.equal(u.searchParams.get('task'),'task-a');
+   if(page==='case-labeling')assert.equal(u.searchParams.get('task'),'task-a');
  }
 }
 // Zero states must not shift the remaining slices onto another legend color.

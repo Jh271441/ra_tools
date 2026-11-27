@@ -467,6 +467,7 @@ async def export_review_reason_analysis(
     work_agreement: str = "all",
     work_split_id: str = "",
     gallery_scope: bool = False,
+    analysis_scope: str = "",
     work_assignee: str = "",
 ) -> Response:
     # Every export format uses the same current Review projection. Once the
@@ -488,6 +489,7 @@ async def export_review_reason_analysis(
     gallery_items: list[dict[str, Any]] = []
     if gallery_scope:
         case_filters = await asyncio.to_thread(_case_filter_kwargs,
+            analysis_scope=analysis_scope,
             search=search,
             gt_label=gt_label,
             model_label=model_label,

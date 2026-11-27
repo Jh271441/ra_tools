@@ -413,6 +413,7 @@ function currentReviewFilterPayload() {
       comparison: state.selectedRunId ? (state.reviewComparisonStatus || "all") : "all",
       failure_only: false,
       missing_evidence: state.clusterKey || "",
+      ...(state.reviewAnalysisScope && { analysis_scope: state.reviewAnalysisScope }),
       issue_ids: (state.reviewIssueIds || []).join(","),
       baselines: selectedBaselineQueryValue(),
       work_assignee: "",
@@ -446,6 +447,7 @@ function currentReviewFilterPayload() {
         : "all",
     failure_only: false,
     missing_evidence: state.clusterKey || "",
+    ...(state.reviewAnalysisScope && { analysis_scope: state.reviewAnalysisScope }),
     issue_ids: (state.reviewIssueIds || []).join(","),
     baselines: selectedBaselineQueryValue(),
     // When creating a new split, ignore current assignee filter so the pool

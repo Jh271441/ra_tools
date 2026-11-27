@@ -19,6 +19,7 @@ function syncReviewGalleryState(snapshot = {}) {
     state.reviewComparisonStatus = String(snapshot.reviewComparisonStatus || "all");
   }
   if ("failureOnly" in snapshot) state.failureOnly = Boolean(snapshot.failureOnly);
+  if ("analysisScope" in snapshot) state.reviewAnalysisScope = snapshot.analysisScope;
   if (Array.isArray(snapshot.reviewIssueIds)) state.reviewIssueIds = [...snapshot.reviewIssueIds];
   if (Array.isArray(snapshot.reviewIssueTags)) state.reviewIssueTags = [...snapshot.reviewIssueTags];
   if ("reviewTargetGroup" in snapshot) state.reviewTargetGroup = String(snapshot.reviewTargetGroup || "");
@@ -918,6 +919,7 @@ async function loadCases({
   const controller = state.caseListController = new AbortController();
   state.casePage = Math.max(1, Number(page) || 1);
   const params = new URLSearchParams();
+  if (state.reviewAnalysisScope) params.set("analysis_scope", state.reviewAnalysisScope);
   const rf = isReviewGalleryReactOwned() && state._reactReviewFilters ? state._reactReviewFilters : null;
   const search = rf ? rf.search : ($("#searchInput")?.value.trim() || "");
   const gtLabel = rf ? joinFilterList(rf.gtLabel) : joinFilterList(getMultiFilterValues($("#gtFilter")));

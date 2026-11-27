@@ -430,6 +430,7 @@ def _ensure_case_thumbnail(source: Path, destination: Path) -> None:
 async def list_cases(
     request: Request,
     search: str = "",
+    analysis_scope: str = "",
     gt_label: str = "",
     model_label: str = "",
     annotation_label: str = "",
@@ -454,6 +455,7 @@ async def list_cases(
 ) -> dict[str, Any]:
     filters = await asyncio.to_thread(_case_filter_kwargs,
         search=search,
+        analysis_scope=analysis_scope,
         gt_label=gt_label,
         model_label=model_label,
         annotation_label=annotation_label,
@@ -564,6 +566,7 @@ async def review_task_context(split_id: str, request: Request, issue_id: str = "
 async def list_case_issue_ids(
     request: Request,
     search: str = "",
+    analysis_scope: str = "",
     gt_label: str = "",
     model_label: str = "",
     annotation_label: str = "",
@@ -587,6 +590,7 @@ async def list_case_issue_ids(
 
     filters = await asyncio.to_thread(_case_filter_kwargs,
         search=search,
+        analysis_scope=analysis_scope,
         gt_label=gt_label,
         model_label=model_label,
         annotation_label=annotation_label,
@@ -644,6 +648,7 @@ async def list_case_issue_ids(
 async def work_assignees(
     request: Request,
     search: str = "",
+    analysis_scope: str = "",
     gt_label: str = "",
     model_label: str = "",
     annotation_label: str = "",
@@ -666,6 +671,7 @@ async def work_assignees(
 
     filters = await asyncio.to_thread(_case_filter_kwargs,
         search=search,
+        analysis_scope=analysis_scope,
         gt_label=gt_label,
         model_label=model_label,
         annotation_label=annotation_label,
@@ -734,6 +740,7 @@ async def split_case_work(request: Request) -> dict[str, Any]:
         raise _detail(400, "实验名称不能超过 80 个字符。")
     filter_body = body.get("filters") if isinstance(body.get("filters"), dict) else {}
     filters = await asyncio.to_thread(_case_filter_kwargs,
+        analysis_scope=_as_text(filter_body.get("analysis_scope")),
         search=_as_text(filter_body.get("search")),
         gt_label=_as_text(filter_body.get("gt_label")),
         model_label=_as_text(filter_body.get("model_label")),

@@ -1,3 +1,4 @@
+import { ChartQueueFilter } from "../components/gallery/ChartQueueFilter";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
@@ -75,6 +76,8 @@ interface LabelingFilterState {
   issueTags: string[];
   search: string;
   issueIds: string[];
+  chartGt: string;
+  chartLabel: string;
   status: string[];
   author: string[];
   assignee: string[];
@@ -117,7 +120,7 @@ function readLabelingFiltersFromUrl(): LabelingFilterState {
   );
   const cluster = String(params.get("cluster") || "").trim();
   return {
-    taskId: /^(?:split|campaign)-[A-Za-z0-9]+$/.test(params.get("task") || "")
+    taskId: /^(?:split|campaign)-[A-Za-z0-9-]{1,120}$/.test(params.get("task") || "")
       ? params.get("task") || ""
       : "",
     targetGroup: params.get("target_group") || "",
@@ -126,7 +129,9 @@ function readLabelingFiltersFromUrl(): LabelingFilterState {
     issueIds: parseFilterList(params.get("issue_ids")).filter((v) =>
       ISSUE_QUERY_ID_RE.test(v),
     ),
-    status: normalizedLabelingStatusFilters(params.get("status")),
+    chartGt: params.get("chart_gt") || "",
+    chartLabel: params.get("chart_label") || "",
+    status: normalizedLabelingStatusFilters(params.get("status"), { submittedOnly: params.has("chart_gt") || params.has("chart_label") }),
     author: parseFilterList(params.get("author"))
       .map((v) => v.toLowerCase())
       .filter((v) => /^[a-z0-9._@-]{1,128}$/.test(v)),
@@ -207,6 +212,8 @@ function buildTaskScopeKey(
     issueIds: trimmedSearch ? [] : f.issueIds,
     targetGroup: f.targetGroup || "",
     issueTags: f.issueTags,
+    chartGt: f.chartGt,
+    chartLabel: f.chartLabel,
     status: f.status,
     author: f.author,
     assignee: f.assignee,
@@ -366,6 +373,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
           issueTags: next.issueTags,
           search: next.search,
           issueIds: next.issueIds,
+          chartGt: next.chartGt,
+          chartLabel: next.chartLabel,
           status: next.status,
           author: next.author,
           assignee: next.assignee,
@@ -387,6 +396,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         if (next.issueTags.length) params.set("issue_tags", joinFilterList(next.issueTags));
         if (next.search) params.set("q", next.search);
         if (next.issueIds.length) params.set("issue_ids", next.issueIds.join(","));
+        if (next.chartGt) params.set("chart_gt", next.chartGt);
+        if (next.chartLabel) params.set("chart_label", next.chartLabel);
         if (next.status.length) params.set("status", joinFilterList(next.status));
         if (next.author.length) params.set("author", joinFilterList(next.author));
         if (next.assignee.length) params.set("assignee", joinFilterList(next.assignee));
@@ -458,6 +469,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
       issue_ids: filters.issueIds.join(","),
       target_group: filters.targetGroup || "",
       issue_tags: joinFilterList(filters.issueTags),
+      ...(filters.chartGt && { chart_gt: filters.chartGt }),
+      ...(filters.chartLabel && { chart_label: filters.chartLabel }),
       status: joinFilterList(filters.status),
       author: joinFilterList(filters.author),
       assignee: joinFilterList(filters.assignee),
@@ -651,6 +664,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
       issueTags: [],
       search: "",
       issueIds: [],
+      chartGt: "",
+      chartLabel: "",
       status: [],
       author: [],
       assignee: [],
@@ -730,6 +745,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         issue_ids: activeIssueIds.join(","),
         target_group: filters.targetGroup || "",
         issue_tags: joinFilterList(filters.issueTags),
+        ...(filters.chartGt && { chart_gt: filters.chartGt }),
+        ...(filters.chartLabel && { chart_label: filters.chartLabel }),
         status: joinFilterList(filters.status),
         author: joinFilterList(filters.author),
         assignee: joinFilterList(filters.assignee),
@@ -803,6 +820,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         issue_ids: nextFilters.issueIds.join(","),
         target_group: nextFilters.targetGroup || "",
         issue_tags: joinFilterList(nextFilters.issueTags),
+        ...(nextFilters.chartGt && { chart_gt: nextFilters.chartGt }),
+        ...(nextFilters.chartLabel && { chart_label: nextFilters.chartLabel }),
         status: joinFilterList(nextFilters.status),
         author: joinFilterList(nextFilters.author),
         assignee: joinFilterList(nextFilters.assignee),
@@ -1017,6 +1036,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         aria-label={bilingual(lang, "标注筛选", "Labeling filters")}
         hidden={isInactiveScope}
       >
+        <ChartQueueFilter lang={lang} gt={filters.chartGt} label={filters.chartLabel}
+          onClear={() => updateFilters(prev => ({ ...prev, chartGt: "", chartLabel: "", page: 1 }))} />
         <div className="mobile-filter-bar">
           <button
             className="button button-quiet mobile-filter-toggle"

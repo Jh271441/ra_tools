@@ -1413,3 +1413,60 @@
   .analysis-decision-grid .analysis-review-status-legend-copy strong { white-space: normal; }
   #analysisCaseList, #labelSummaryCaseList { scroll-margin-top: calc(var(--mobile-topbar-height, 62px) + 12px); }
 }
+
+/* A summary card spans the content pane at these widths, including the compact sidebar. */
+@media (max-width: 1024px) {
+  .label-summary-case-row {
+    align-items: start;
+    padding: 10px 12px;
+    gap: 6px 16px;
+    overflow-wrap: anywhere;
+  }
+  .label-summary-case-row .analysis-case-identity { display: flex; align-items: center; flex-wrap: wrap; column-gap: 8px; }
+  .label-summary-case-row .analysis-case-identity span { white-space: normal; font-size: 12px; }
+  .label-summary-case-row .analysis-issue-link { font-size: 14px; }
+  .label-summary-case-row .label-summary-result-line,
+  .label-summary-case-row .label-summary-final-label > span:first-child,
+  .label-summary-case-row .label-summary-gt-line { font-size: 12px; }
+  .label-summary-case-row .analysis-chip { font-size: 11px; }
+  .label-summary-case-row .analysis-case-reason { gap: 4px; }
+  .label-summary-case-row .analysis-case-reason > .reason-empty {
+    color: var(--muted);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 400;
+  }
+  .label-summary-case-row .analysis-chip-list:empty { display: none; }
+  .label-summary-case-row .analysis-case-meta {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0 12px;
+    padding-top: 4px;
+    border-top: 1px solid var(--line-soft);
+    font-size: 12px;
+    text-align: start;
+  }
+  .label-summary-case-row .label-summary-source-line { font-size: inherit; }
+  .label-summary-case-row .label-summary-source > summary {
+    margin-inline: 0;
+    min-height: 44px;
+    align-content: center;
+  }
+  .label-summary-case-row .analysis-case-actions { margin-inline-start: auto; }
+  .label-summary-case-row .analysis-case-actions a,
+  .label-summary-case-row .analysis-issue-link,
+  .label-summary-detail-actions .chart-detail-filter a,
+  .label-summary-detail-actions .label-summary-rules-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    max-width: 100%;
+  }
+  .label-summary-case-row .analysis-case-actions a { font-size: 13px; }
+  .label-summary-detail-heading { flex-wrap: wrap; gap: 0 12px; }
+  .label-summary-detail-heading > .label-summary-detail-actions {
+    justify-content: flex-start;
+    gap: 0 12px;
+  }
+}

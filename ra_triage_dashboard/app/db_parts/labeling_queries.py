@@ -412,6 +412,8 @@ class LabelingQueriesMixin:
         expected_output: str = "",
         gt_label: str = "",
         gt_relation: str = "",
+        chart_gt: str = "",
+        chart_label: str = "",
         comment_state: str = "all",
         cluster: str = "",
         page: int = 1,
@@ -436,6 +438,11 @@ class LabelingQueriesMixin:
             comment_state=comment_state,
             cluster=cluster,
         )
+        if chart_gt or chart_label:
+            projected, _ = self.labeling_gt_update_cases(
+                baseline_scopes=scopes, items=projected, task_id=task_id,
+                chart_gt=chart_gt, chart_label=chart_label,
+            )
         safe_page_size = min(100, max(1, int(page_size)))
         total = len(projected)
         pages = (total + safe_page_size - 1) // safe_page_size if total else 0
@@ -528,6 +535,8 @@ class LabelingQueriesMixin:
         expected_output: str = "",
         gt_label: str = "",
         gt_relation: str = "",
+        chart_gt: str = "",
+        chart_label: str = "",
         comment_state: str = "all",
     ) -> list[dict[str, Any]]:
         projected, _ = self._project_labeling_cases(
@@ -545,6 +554,11 @@ class LabelingQueriesMixin:
             gt_relation=gt_relation,
             comment_state=comment_state,
         )
+        if chart_gt or chart_label:
+            projected, _ = self.labeling_gt_update_cases(
+                baseline_scopes=scopes, items=projected, task_id=task_id,
+                chart_gt=chart_gt, chart_label=chart_label,
+            )
         pair_counts: dict[tuple[str, str], int] = {}
         scenario_counts: dict[str, int] = {}
         for item in projected:

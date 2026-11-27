@@ -163,6 +163,8 @@ async def create_labeling_task(request: Request) -> dict[str, Any]:
                 gt_relation=filter_body.get("gt_relation", ""),
                 comment_state=normalized_comment_state,
                 cluster=normalized_cluster,
+                chart_gt=_as_text(filter_body.get("chart_gt")),
+                chart_label=_as_text(filter_body.get("chart_label")),
             )
         except ValueError as exc:
             raise _detail(400, str(exc)) from exc

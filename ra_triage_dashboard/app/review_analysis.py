@@ -354,6 +354,7 @@ def build_review_reason_analysis(
     page_size: int = 50,
     page_size_limit: int | None = 200,
     include_scope_issue_ids: bool = False,
+    issue_ids_only: bool = False,
 ) -> dict[str, Any]:
     """Aggregate latest-review rows and return one deterministic analysis page."""
 
@@ -453,6 +454,9 @@ def build_review_reason_analysis(
             in selected_annotation_labels
         ]
 
+    scope_issue_ids = list(dict.fromkeys(str(item["issue_id"]) for item in materialized)) if include_scope_issue_ids or issue_ids_only else []
+    if issue_ids_only:
+        return {"issue_ids": scope_issue_ids}
     total = len(materialized)
     evidence_counts: dict[str, int] = {}
     tag_counts: dict[str, int] = {}
@@ -671,7 +675,5 @@ def build_review_reason_analysis(
     }
 
     if include_scope_issue_ids:
-        result["_scope_issue_ids"] = list(
-            dict.fromkeys(str(item["issue_id"]) for item in materialized)
-        )
+        result["_scope_issue_ids"] = scope_issue_ids
     return result
