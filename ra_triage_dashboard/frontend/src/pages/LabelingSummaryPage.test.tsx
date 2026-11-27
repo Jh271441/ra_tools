@@ -122,6 +122,14 @@ describe("LabelingSummaryPage 1:1 parity", () => {
     // Zero native <select> elements
     expect(container.querySelectorAll("select").length).toBe(0);
 
+    const links = Array.from(container.querySelectorAll<HTMLAnchorElement>(".chart-detail-link"));
+    expect(links).toHaveLength(6);
+    expect(links.map(link => {
+      const url = new URL(link.href);
+      expect(url.hash).toBe("#labelSummaryCaseList");
+      return url.searchParams.get("chart_gt") || url.searchParams.get("chart_label");
+    }).sort()).toEqual(["aligned", "blocked", "conflict", "pending", "ready", "resolved"]);
+
     // 7 SVG donut charts (1 GT + 1 env + 1 intent + 2 trigger + 2 egress)
     expect(container.querySelectorAll(".analysis-pie-svg").length).toBe(7);
 

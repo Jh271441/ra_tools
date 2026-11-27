@@ -128,6 +128,8 @@ interface LabelSummaryRouteState {
   taskId: string;
   targetGroup: string;
   status: string[];
+  chartGt: string;
+  chartLabel: string;
   author: string[];
   assignee: string[];
   label: string[];
@@ -148,6 +150,8 @@ function defaultRouteState(): LabelSummaryRouteState {
     taskId: "",
     targetGroup: "",
     status: [],
+    chartGt: "",
+    chartLabel: "",
     author: [],
     assignee: [],
     label: [],
@@ -175,6 +179,8 @@ function readRouteFromUrl(): LabelSummaryRouteState {
     ),
     taskId: String(params.get("task") || "").trim(),
     targetGroup: ["sample", "low"].includes(rawTargetGroup) ? rawTargetGroup : "",
+    chartGt: params.get("chart_gt") || "",
+    chartLabel: params.get("chart_label") || "",
     status: normalizedLabelingStatusFilters(params.get("status"), {
       submittedOnly: true,
     }),
@@ -202,6 +208,8 @@ function buildLabelingSummaryUrl(
   baselines: string[],
 ): string {
   const params = new URLSearchParams();
+  if (state.chartGt) params.set("chart_gt", state.chartGt);
+  if (state.chartLabel) params.set("chart_label", state.chartLabel);
   if (state.search) params.set("q", state.search);
   if (state.gtRelations.length) params.set("gt_relation", joinFilterList(state.gtRelations));
   if (state.issueTags.length) params.set("issue_tags", joinFilterList(state.issueTags));
@@ -396,6 +404,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
       q: route.search,
       issue_ids: route.issueIds.join(","),
       status: joinFilterList(route.status),
+      chart_gt: route.chartGt, chart_label: route.chartLabel,
       author: joinFilterList(route.author),
       assignee: joinFilterList(route.assignee),
       exclusion: joinFilterList(route.exclusion),
@@ -422,6 +431,18 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
   });
 
   const data = summaryQuery.data;
+  const focusDetailOnLoad = useRef(window.location.hash === "#labelSummaryCaseList");
+  useEffect(() => {
+    if (active && data && !summaryQuery.isPlaceholderData && focusDetailOnLoad.current && caseListRef.current) {
+      focusDetailOnLoad.current = false;
+      caseListRef.current.focus({ preventScroll: true });
+      caseListRef.current.scrollIntoView({ block: "start" });
+    }
+  }, [active, data, summaryQuery.isPlaceholderData]);
+
+  const chartHref = (filters: Partial<typeof route>) =>
+    buildLabelingSummaryUrl({ ...route, ...filters, page: 1 }, selectedBaselines) + "#labelSummaryCaseList";
+
 
   // Debounced search handler matching classic 280ms behavior.
   const handleSearchInput = useCallback((value: string) => {
@@ -740,6 +761,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
       q: activeSearch,
       issue_ids: activeIssueIds.join(","),
       status: joinFilterList(route.status),
+      chart_gt: route.chartGt, chart_label: route.chartLabel,
       author: joinFilterList(route.author),
       assignee: joinFilterList(route.assignee),
       label: joinFilterList(route.label),
@@ -1188,6 +1210,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
             >
               <AnalysisGtCard
                 counts={data.gt_update_counts}
+                detailHref={chartGt => chartHref({ chartGt })}
                 prefix="labelSummary"
                 lang={lang}
                 onOpenRules={() => setRulesModalMode("gt")}
@@ -1216,6 +1239,8 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
                 <div className="analysis-review-status-chart" id="labelSummaryStatusChart">
                   <AnalysisStatusBar
                     statuses={statusItems}
+                    lang={lang}
+                    detailHref={chartLabel => chartHref({ chartLabel })}
                     emptyText={bilingual(lang, "暂无标注提交", "No annotations yet")}
                   />
                 </div>
@@ -1288,6 +1313,13 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
               <div className="section-heading label-summary-detail-heading">
                 <h3>{bilingual(lang, "标注依据明细", "Label rationales")}</h3>
                 <div className="label-summary-detail-actions">
+                  {(route.chartGt || route.chartLabel) && (
+                    <span className="chart-detail-filter">
+                      <a href={chartHref({ chartGt: "", chartLabel: "" })}>
+                        {bilingual(lang, "清除图表筛选", "Clear chart filter")}
+                      </a>
+                    </span>
+                  )}
                   <button
                     className="text-link label-summary-rules-button"
                     id="labelSummaryRulesButton"
@@ -1310,7 +1342,7 @@ export const LabelingSummaryPage: React.FC<LabelingSummaryPageProps> = ({
                 </div>
               </div>
 
-              <div className="analysis-case-list" id="labelSummaryCaseList" ref={caseListRef}>
+              <div className="analysis-case-list" id="labelSummaryCaseList" tabIndex={-1} ref={caseListRef}>
                 {items.length ? (
                   items.map((item) => {
                     const issueId = String(item.issue_id || "");

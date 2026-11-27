@@ -303,6 +303,8 @@ function bindEvents() {
   window.addEventListener("resize", () => closeAllMultiFilters());
   if (!analysisOwned) {
   $("#resetReviewAnalysisButton")?.addEventListener("click", async () => {
+    state.reviewAnalysis.chartGt = "";
+    state.reviewAnalysis.chartReview = "";
     $("#analysisRunFilter").value = "";
     setAnalysisComparisonStatus("all", { hasRun: false });
     [
@@ -1419,6 +1421,8 @@ async function bootstrap() {
     if (!isPageContextCurrent(bootstrapContext)) return;
     showPage(initialRoute.page, {
       historyMode: "replace",
+      preserveScroll: (initialRoute.page === "analysis" && document.activeElement?.id === "analysisCaseList")
+        || (initialRoute.page === "labeling-summary" && document.activeElement?.id === "labelSummaryCaseList"),
       issue: initialRoute.issue,
       issues: initialRoute.issues,
       source: initialRoute.source,

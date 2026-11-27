@@ -14,7 +14,8 @@ from ra_triage_dashboard.app.db import Database
 from ra_triage_dashboard.app.baseline_registry import BaselineEntry, BaselineRegistry
 from ra_triage_dashboard.app.dataset_partitions import load_partitions, SOURCE_IDS, SOURCE_SCOPES, PARTITION_IDS
 from ra_triage_dashboard.app.support import baselines
-from ra_triage_dashboard.app.routers import core, runs
+from ra_triage_dashboard.app.routers import analysis, core, runs
+from ra_triage_dashboard.app.support import catalogs, review_payloads
 
 
 class DatasetPartitionsTest(unittest.TestCase):
@@ -110,6 +111,21 @@ class DatasetPartitionsTest(unittest.TestCase):
             with self.assertRaises(HTTPException) as caught:
                 asyncio.run(runs.comparison_case_inputs(request, self.ids[0], candidate_run_id=self.run['id'], baselines=PARTITION_IDS[1]))
         self.assertEqual(caught.exception.status_code, 404)
+
+    def test_analysis_chart_and_export_follow_selected_partition_without_task_view(self):
+        for issue_id in (self.ids[0], self.ids[-1]):
+            self.db.create_model_review(issue_id=issue_id, model_run_id=self.run["id"],
+                                        status="in_progress", reason="test", missing_evidence=[], reviewer="alice")
+        request = Request(dict(type="http", query_string=b"", headers=[]))
+        with patch.object(review_payloads, "database", self.db), patch.object(catalogs, "database", self.db):
+            for partition, expected, other in [(PARTITION_IDS[0], self.ids[0], self.ids[-1]),
+                                                (PARTITION_IDS[1], self.ids[-1], self.ids[0])]:
+                params = {"baselines": partition, "chart_review": "in_progress"}
+                payload = asyncio.run(analysis.review_reason_analysis(request, **params))
+                self.assertEqual([row["issue_id"] for row in payload["items"]], [expected])
+                export = asyncio.run(analysis.export_review_reason_analysis(request, **params))
+                self.assertIn(expected.encode(), export.body)
+                self.assertNotIn(other.encode(), export.body)
 
     def test_visible_catalog_preserves_sources(self):
         result = baselines.operational_baseline_summaries(self.registry.public_summaries(), self.db)

@@ -158,6 +158,8 @@ async def labeling_summary(
     comment_state: str = "all",
     cluster: str = "",
     gt_update: str = "",
+    chart_gt: str = "",
+    chart_label: str = "",
     page: int = 1,
     page_size: int = 20,
 ) -> dict[str, Any]:
@@ -222,7 +224,7 @@ async def labeling_summary(
         items, gt_update_counts = await asyncio.to_thread(
             database.labeling_gt_update_cases,
             baseline_scopes=scopes, items=items,
-            task_id=normalized_task, gt_update=gt_update,
+            task_id=normalized_task, gt_update=gt_update, chart_gt=chart_gt, chart_label=chart_label,
         )
         result, labelers, assignees = await asyncio.gather(
             asyncio.to_thread(

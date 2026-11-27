@@ -12,11 +12,13 @@ let labelSummaryController = null;
 let labelSummaryData = null;
 const labelSummaryFilters = {
   search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
-  label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [], gtRelations: [],
+  chartGt: "", chartLabel: "", label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [], gtRelations: [],
 };
 
 function labelSummaryRouteOptions(overrides = {}) {
   return {
+    chartLabel: overrides.chartLabel ?? labelSummaryFilters.chartLabel,
+    chartGt: overrides.chartGt ?? labelSummaryFilters.chartGt,
     search: overrides.search ?? labelSummaryFilters.search,
     issueIds: overrides.issueIds ?? labelSummaryFilters.issueIds,
     issueTags: overrides.issueTags ?? labelSummaryFilters.issueTags ?? [],
@@ -40,6 +42,8 @@ function restoreLabelSummaryRoute({ force = false } = {}) {
   if (labelSummaryRouteRestored && !force) return;
   labelSummaryRouteRestored = true;
   const params = new URLSearchParams(window.location.search);
+  labelSummaryFilters.chartLabel = params.get("chart_label") || "";
+  labelSummaryFilters.chartGt = params.get("chart_gt") || "";
   labelSummaryFilters.search = String(params.get("q") || "").trim();
   labelSummaryFilters.issueTags = parseFilterList(params.get("issue_tags"));
   labelSummaryFilters.issueIds = parseFilterList(params.get("issue_ids")).filter((value) => ISSUE_QUERY_ID_RE.test(value));
@@ -193,6 +197,7 @@ function labelSummaryFilterPayload() {
     label: joinFilterList(labelSummaryFilters.label),
     gt: joinFilterList(labelSummaryFilters.gt),
     gt_relation: joinFilterList(labelSummaryFilters.gtRelations),
+    chart_gt: labelSummaryFilters.chartGt, chart_label: labelSummaryFilters.chartLabel,
     comment_state: joinFilterList(labelSummaryFilters.commentState),
     issue_tags: joinFilterList(labelSummaryFilters.issueTags),
     exclusion: joinFilterList(labelSummaryFilters.exclusion),
@@ -203,8 +208,8 @@ function labelSummaryFilterPayload() {
 function labelSummaryStatusItems(data) {
   const counts = data.submitted_states || {};
   return [
-    { key: "resolved", cssKey: "completed", label: uiText("已形成结论", "Resolved"), count: Number(counts.resolved || 0), description: "多来源聚合后已形成唯一结论" },
-    { key: "pending", cssKey: "pending", label: uiText("待形成结论", "Pending"), count: Number(counts.pending || 0), description: "已有提交，但还没有形成唯一结论" },
+    { key: "resolved", cssKey: "completed", label: uiText("已形成结论", "Resolved"), count: Number(counts.resolved || 0), description: uiText("多来源聚合后已形成唯一结论", "The label sources give a single result") },
+    { key: "pending", cssKey: "pending", label: uiText("待形成结论", "Pending"), count: Number(counts.pending || 0), description: uiText("已有提交，但还没有形成唯一结论", "Labels have been submitted and a final result is pending") },
     { key: "conflict", cssKey: "blocked_by_label", label: uiText("待裁决 / 需确认", "Needs adjudication / confirmation"), count: Number(counts.conflict || 0), description: uiText("分类意见有分歧，或裁决来源已变化", "Classification votes disagree or decision sources changed") },
   ];
 }
@@ -220,7 +225,7 @@ function labelSummaryStatusMarkup(data) {
     : '<span class="analysis-review-status-empty">暂无标注提交</span>';
   const legend = statuses.map((item) => {
     const percent = analysisPiePercent(item, total);
-    return `<div class="analysis-review-status-legend-item status-${escapeHtml(item.cssKey)}" data-review-status-key="${escapeHtml(item.key)}" role="listitem" tabindex="0" title="${escapeHtml(item.description)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(item.label)}</strong><small>${item.count} · ${percent}%</small></span></div>`;
+    return `<div class="analysis-review-status-legend-item status-${escapeHtml(item.cssKey)}" data-review-status-key="${escapeHtml(item.key)}" role="listitem" title="${escapeHtml(item.description)}"><span class="analysis-review-status-swatch"></span><span class="analysis-review-status-legend-copy"><strong>${escapeHtml(item.label)}</strong><small>${item.count} · ${percent}%</small></span>${chartDetailLink("labelSummary", item, "chart_label", item.key)}</div>`;
   }).join("");
   return `<div class="analysis-review-status-visual"><div class="analysis-review-status-bar" role="img" aria-label="${escapeHtml(statuses.map((item) => `${item.label} ${item.count}`).join("；"))}">${segments}</div><div class="analysis-review-status-legend" role="list">${legend}</div></div>`;
 }
@@ -369,7 +374,7 @@ function renderLabelingSummary(data) {
   root.innerHTML = `<nav class="mobile-summary-tools"><button class="button button-quiet" type="button" data-mobile-scroll-target="labelSummaryCaseList">${uiText("查看标注明细", "Go to annotations")}</button><button class="button button-quiet" type="button" data-mobile-disclosure="labelSummaryClusterPanels" aria-controls="labelSummaryClusterPanels" aria-expanded="false">${uiText("场景与标签图表", "Tag charts")}</button></nav><section class="analysis-summary-grid" aria-label="Labeling overview"><article class="analysis-stat-card"><span>问题标注</span><strong>${Number(data.annotated || 0)}</strong><small>当前范围 ${Number(data.total || 0)} 个 Case</small></article><article class="analysis-stat-card"><span>已填写依据</span><strong>${Number(data.reason_count || 0)}</strong><small>未填写 ${Number(data.empty_reason_count || 0)}</small></article><button class="analysis-stat-card label-summary-adjudicated" id="labelSummaryAdjudicated" type="button" aria-pressed="${labelSummaryFilters.cluster === "adjudicated"}"><span>已裁决 Case</span><strong>${Number(data.adjudicated_count || 0)}</strong><small>${labelSummaryFilters.cluster === "adjudicated" ? "正在筛选 · 点击取消" : "查看裁决记录"}</small></button></section>
     <section class="analysis-decision-grid analysis-has-gt" aria-label="Label state and GT comparison">${labelSummaryGtChartMarkup(data)}<section class="page-card analysis-review-status-card" aria-labelledby="labelSummaryStatusTitle"><div class="section-heading analysis-review-status-heading"><div><h3 id="labelSummaryStatusTitle">${uiText("标注状态", "Labeling status")}</h3></div><small>${escapeHtml(uiText(`已提交 ${Number(data.annotated || 0)} 个 Issue`, `${Number(data.annotated || 0)} submitted Issues`))}</small></div><div class="analysis-review-status-chart" id="labelSummaryStatusChart">${labelSummaryStatusMarkup(data)}</div></section><section class="page-card analysis-confusion-card"><div class="section-heading analysis-confusion-heading"><div><h3>GT × 标注结果混淆矩阵</h3></div><small>可比较 ${comparable} · 一致 ${matches}</small></div><div class="analysis-confusion-wrap" id="labelSummaryConfusionMatrix">${labelSummaryMatrixMarkup(data)}</div></section></section>
     <section class="analysis-cluster-grid" id="labelSummaryClusterPanels" aria-label="Structured labeling clusters">${labelSummaryClusterPanels(data)}</section>
-    <section class="page-card analysis-case-card"><div class="section-heading label-summary-detail-heading"><h3>${uiText("标注依据明细", "Label rationales")}</h3><div class="label-summary-detail-actions"><button class="text-link label-summary-rules-button" id="labelSummaryRulesButton" type="button" aria-haspopup="dialog"><span aria-hidden="true">ⓘ</span> ${uiText("期望输出规则", "Result rules")}</button><small>${escapeHtml(uiText(`共 ${Number(data.annotated || 0)} 个 Case · 当前页 ${(data.items || []).length} 个`, `${Number(data.annotated || 0)} ${Number(data.annotated || 0) === 1 ? "Case" : "Cases"} · ${(data.items || []).length} on this page`))}</small></div></div><div class="analysis-case-list" id="labelSummaryCaseList">${(data.items || []).length ? data.items.map(labelSummaryCaseMarkup).join("") : `<div class="analysis-empty">${uiText("当前范围暂无标注提交", "No annotations in this scope")}</div>`}</div><nav class="case-pagination gallery-pagination label-summary-pagination" aria-label="${escapeHtml(uiText("标注明细分页", "Annotation pagination"))}"><div class="case-pagination-main"><button class="button button-quiet" id="labelSummaryPrevious" type="button" ${page <= 1 ? "disabled" : ""}>${uiText("上一页", "Previous")}</button><span id="labelSummaryPageState">${page} / ${pageCount}</span><button class="button button-quiet" id="labelSummaryNext" type="button" ${page >= pageCount ? "disabled" : ""}>${uiText("下一页", "Next")}</button><span class="page-jump-control"><label for="labelSummaryPageJump">${uiText("跳至", "Go to")}</label><input id="labelSummaryPageJump" type="number" min="1" max="${pageCount}" value="${page}" inputmode="numeric" ${pageCount <= 1 ? "disabled" : ""}/><span>${uiText("页", "page")}</span><button class="button button-quiet" id="labelSummaryPageJumpButton" type="button" ${pageCount <= 1 ? "disabled" : ""}>${uiText("跳转", "Go")}</button></span></div><label class="case-page-size" for="labelSummaryPageSize"><span>${uiText("每页", "Per page")}</span><select id="labelSummaryPageSize">${CASE_PAGE_SIZES.map(value => `<option value="${value}">${value}</option>`).join("")}</select><span>${uiText("条", "items")}</span></label></nav></section>`;
+    <section class="page-card analysis-case-card"><div class="section-heading label-summary-detail-heading"><h3>${uiText("标注依据明细", "Label rationales")}</h3><div class="label-summary-detail-actions"><button class="text-link label-summary-rules-button" id="labelSummaryRulesButton" type="button" aria-haspopup="dialog"><span aria-hidden="true">ⓘ</span> ${uiText("期望输出规则", "Result rules")}</button><small>${escapeHtml(uiText(`共 ${Number(data.annotated || 0)} 个 Case · 当前页 ${(data.items || []).length} 个`, `${Number(data.annotated || 0)} ${Number(data.annotated || 0) === 1 ? "Case" : "Cases"} · ${(data.items || []).length} on this page`))}${chartDetailFilterNote("labeling-summary", data)}</small></div></div><div class="analysis-case-list" id="labelSummaryCaseList">${(data.items || []).length ? data.items.map(labelSummaryCaseMarkup).join("") : `<div class="analysis-empty">${uiText("当前范围暂无标注提交", "No annotations in this scope")}</div>`}</div><nav class="case-pagination gallery-pagination label-summary-pagination" aria-label="${escapeHtml(uiText("标注明细分页", "Annotation pagination"))}"><div class="case-pagination-main"><button class="button button-quiet" id="labelSummaryPrevious" type="button" ${page <= 1 ? "disabled" : ""}>${uiText("上一页", "Previous")}</button><span id="labelSummaryPageState">${page} / ${pageCount}</span><button class="button button-quiet" id="labelSummaryNext" type="button" ${page >= pageCount ? "disabled" : ""}>${uiText("下一页", "Next")}</button><span class="page-jump-control"><label for="labelSummaryPageJump">${uiText("跳至", "Go to")}</label><input id="labelSummaryPageJump" type="number" min="1" max="${pageCount}" value="${page}" inputmode="numeric" ${pageCount <= 1 ? "disabled" : ""}/><span>${uiText("页", "page")}</span><button class="button button-quiet" id="labelSummaryPageJumpButton" type="button" ${pageCount <= 1 ? "disabled" : ""}>${uiText("跳转", "Go")}</button></span></div><label class="case-page-size" for="labelSummaryPageSize"><span>${uiText("每页", "Per page")}</span><select id="labelSummaryPageSize">${CASE_PAGE_SIZES.map(value => `<option value="${value}">${value}</option>`).join("")}</select><span>${uiText("条", "items")}</span></label></nav></section>`;
   $("#labelSummaryRulesButton")?.addEventListener("click", () => showLabelSummaryRules());
   $("#labelSummaryGtRules")?.addEventListener("click", () => showLabelSummaryRules({ gt: true }));
   $("#labelSummaryAdjudicated")?.addEventListener("click", () => {
@@ -445,6 +450,7 @@ async function loadLabelingSummary() {
       label: joinFilterList(labelSummaryFilters.label),
       gt: joinFilterList(labelSummaryFilters.gt),
       gt_relation: joinFilterList(labelSummaryFilters.gtRelations),
+      chart_gt: labelSummaryFilters.chartGt, chart_label: labelSummaryFilters.chartLabel,
       comment_state: joinFilterList(labelSummaryFilters.commentState),
       issue_tags: joinFilterList(labelSummaryFilters.issueTags),
       cluster: labelSummaryFilters.cluster,
@@ -484,6 +490,7 @@ async function loadLabelingSummary() {
     renderLabelSummaryFilters({ items: labelSummaryTasks }, data);
     renderLabelingSummary(data);
     persistLabelSummaryRoute();
+    focusChartDetails("labelSummaryCaseList");
     pageContext = capturePageContext();
     if (!taskId) void tasksRead.then(tasks => {
       if (!isCurrent()) return;
@@ -536,7 +543,7 @@ document.getElementById("labelSummaryTask")?.addEventListener("change", (event) 
 document.getElementById("labelSummaryReset")?.addEventListener("click", () => {
   Object.assign(labelSummaryFilters, {
     search: "", issueIds: [], taskId: "", status: [], author: [], assignee: [],
-    label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [], gtRelations: [],
+    chartGt: "", chartLabel: "", label: [], gt: [], commentState: [], exclusion: [], cluster: "", issueTags: [], gtRelations: [],
   });
   if (typeof updateIssueQueryButton === "function") updateIssueQueryButton();
   labelSummaryPage = 1;

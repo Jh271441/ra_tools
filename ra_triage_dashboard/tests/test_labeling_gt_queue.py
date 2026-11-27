@@ -91,6 +91,15 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
                          {"cn104": "conflict", "cn105": "pending", "cn107": "stale"})
         self.assertEqual(self.db.change_revision(), before)
         self.writer.assert_awaited()
+        for bucket, ids in {"ready": {"cn101", "cn102", "cn108"}, "blocked": {"cn104", "cn105", "cn107"},
+                            "aligned": {"cn103"}}.items():
+            detail = await queries.labeling_summary(self.request(), chart_gt=bucket)
+            self.assertEqual({row["issue_id"] for row in detail["items"]}, ids)
+            self.assertEqual(detail["gt_update_counts"]["all"], len(ids))
+        task_detail = await queries.labeling_summary(self.request(), task_id=self.task_a, chart_gt="blocked")
+        self.assertEqual([row["issue_id"] for row in task_detail["items"]], ["cn104"])
+        self.assertEqual(task_detail["items"][0]["label_state"], "resolved")
+
 
     async def test_incomplete_filter_excludes_untouched_cases_across_gallery_summary_and_queue(self):
         # A Case without an assignment and an untouched assignment both belong
@@ -147,6 +156,14 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
             with self.assertRaises(HTTPException):
                 await queries.list_labeling_cases(self.request(), status="incomplete")
             project.assert_not_called()
+
+    async def test_chart_detail_total_matches_each_submitted_state(self):
+        for filters in ({}, {"task_id": self.task_a}, {"status": "decision_changed"}):
+            summary = await queries.labeling_summary(self.request(), **filters)
+            for bucket in ("pending", "resolved", "conflict"):
+                detail = await queries.labeling_summary(self.request(), chart_label=bucket, **filters)
+                self.assertEqual(detail["annotated"], summary["submitted_states"].get(bucket, 0))
+                self.assertTrue(all(item["label_state"] == bucket for item in detail["items"]))
 
     async def test_task_local_resolution_cannot_hide_global_conflict(self):
         local, _ = self.db._project_labeling_cases(baseline_scopes=["scope"], task_id=self.task_a)
@@ -213,6 +230,11 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
             self.assertEqual(first["gt_update_counts"], last["gt_update_counts"])
             self.assertNotIn("_scope_issue_ids", first)
             self.assertEqual(first["total"], 8)  # Empty Case assignment stays outside the GT denominator.
+            for bucket, expected in (("ready", 3), ("blocked", 3), ("aligned", 1)):
+                detail = query(chart_gt=bucket, chart_review="completed", page_size=1)
+                self.assertEqual((detail["total"], len(detail["items"])), (expected, 1))
+                self.assertEqual(query(chart_gt=bucket, unbounded=True)["total"], expected)
+            self.assertEqual(query(chart_review="in_progress")["total"], 0)
             alice = query(annotation_author="alice")
             self.assertEqual(alice["gt_update_counts"], {"all": 3, "ready": 2, "blocked": 0})
             blocked = query(issue_ids=["cn104", "cn107"])

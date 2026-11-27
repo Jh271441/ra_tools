@@ -498,6 +498,8 @@ function normalizedAnalysisRouteFilters(params) {
     modelLabel: modelLabels,
     annotationAuthor: parseFilterList(params.get("reviewer")),
     reviewStatus: statuses,
+    chartGt: params.get("chart_gt") || "",
+    chartReview: params.get("chart_review") || "",
     labelStates: parseFilterList(params.get("label_state")).filter(value => ["none", "pending", "resolved", "conflict", "exclusion_pending", "stale", "matches_gt", "needs_gt_review", "unknown"].includes(value)),
     gtRelations: normalizedGtRelationFilters(params.get("gt_relation")),
     missingEvidence: parseFilterList(params.get("evidence")),
@@ -929,6 +931,8 @@ function currentAnalysisRouteOptions(overrides = {}) {
         : "all",
     workAgreement: $("#analysisWorkAgreementFilter")?.value || state.reviewAnalysis.workAgreement || "all",
     workSplitId: state.reviewAnalysis.workSplitId || "",
+    chartGt: state.reviewAnalysis.chartGt || "",
+    chartReview: state.reviewAnalysis.chartReview || "",
     taskView: state.reviewAnalysis.taskView || '',
     page: state.reviewAnalysis.page,
     pageSize: state.reviewAnalysis.pageSize,
@@ -961,6 +965,8 @@ function applyAnalysisRouteControls(route) {
   if ($("#analysisCommentSearchInput")) $("#analysisCommentSearchInput").value = filters.commentSearch || "";
   if ($("#analysisCommentStateFilter")) $("#analysisCommentStateFilter").value = filters.commentState || "all";
   renderAnalysisCommentStatePicker?.(filters.commentState || "all");
+  state.reviewAnalysis.chartGt = filters.chartGt || "";
+  state.reviewAnalysis.chartReview = filters.chartReview || "";
   state.reviewAnalysis.workAgreement = filters.workAgreement || "all";
   state.reviewAnalysis.workSplitId = filters.workSplitId || "";
   state.reviewAnalysis.taskView = filters.workSplitId ? (filters.taskView || '') : '';
@@ -1066,6 +1072,8 @@ function pageUrl(page, options = {}) {
     const summary = typeof labelSummaryRouteOptions === "function"
       ? labelSummaryRouteOptions(options)
       : options;
+    if (summary.chartLabel) url.searchParams.set("chart_label", summary.chartLabel);
+    if (summary.chartGt) url.searchParams.set("chart_gt", summary.chartGt);
     if (summary.search) url.searchParams.set("q", summary.search);
     if (summary.gtRelations?.length) url.searchParams.set("gt_relation", joinFilterList(summary.gtRelations));
     if (summary.issueTags?.length) url.searchParams.set("issue_tags", joinFilterList(summary.issueTags));
@@ -1175,6 +1183,8 @@ function pageUrl(page, options = {}) {
         ? comparisonStatusParam(analysis.comparisonStatus || "all")
         : "all"
     );
+    if (analysis.chartGt) url.searchParams.set("chart_gt", analysis.chartGt);
+    if (analysis.chartReview) url.searchParams.set("chart_review", analysis.chartReview);
     if (analysis.search) url.searchParams.set("q", analysis.search);
     const issueIds = (analysis.issueIds || []).filter((value) =>
       ISSUE_QUERY_ID_RE.test(String(value))

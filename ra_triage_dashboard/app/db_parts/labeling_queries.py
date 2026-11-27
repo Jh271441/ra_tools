@@ -454,7 +454,7 @@ class LabelingQueriesMixin:
             "assignees": self.labeling_assignees(scopes, task),
         }
 
-    def labeling_gt_update_cases(self, *, baseline_scopes, items, task_id="", gt_update=""):
+    def labeling_gt_update_cases(self, *, baseline_scopes, items, task_id="", gt_update="", chart_gt="", chart_label=""):
         from ..labeling_gt import has_label_submission, normalize_gt_update, select_gt_update_cases
         view = normalize_gt_update(gt_update)
         if view and task_id:
@@ -467,7 +467,7 @@ class LabelingQueriesMixin:
         candidates = self.label_gt_candidates(
             baseline_scopes, issue_ids=[item["issue_id"] for item in items if has_label_submission(item)],
         )
-        return select_gt_update_cases(items, candidates, view)
+        return select_gt_update_cases(items, candidates, view, chart_gt=chart_gt, chart_label=chart_label)
 
     def labeling_case_issue_ids(
         self,
@@ -487,6 +487,8 @@ class LabelingQueriesMixin:
         comment_state: str = "all",
         cluster: str = "",
         gt_update: str = "",
+        chart_gt: str = "",
+        chart_label: str = "",
     ) -> list[str]:
         projected, _ = self._project_labeling_cases(
             baseline_scopes=baseline_scopes,
@@ -504,10 +506,10 @@ class LabelingQueriesMixin:
             comment_state=comment_state,
             cluster=cluster,
         )
-        if gt_update:
+        if gt_update or chart_gt or chart_label:
             projected, _ = self.labeling_gt_update_cases(
                 baseline_scopes=baseline_scopes, items=projected,
-                task_id=task_id, gt_update=gt_update,
+                task_id=task_id, gt_update=gt_update, chart_gt=chart_gt, chart_label=chart_label,
             )
         return [item["issue_id"] for item in projected]
 

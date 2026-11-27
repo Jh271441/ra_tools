@@ -292,6 +292,41 @@ function renderAnalysisClusterPanels(data, { animatePies = true } = {}) {
   clearAnalysisPieEnterAnimations(target);
 }
 
+// A normal link supports sharing, opening in a new tab and browser Back.
+let chartDetailTarget = typeof window !== "undefined" ? window.location?.hash?.slice(1) : "";
+
+function chartDetailLink(prefix, item, param, value) {
+  const analysis = prefix === "analysis";
+  const page = analysis ? "analysis" : "labeling-summary";
+  const listId = analysis ? "analysisCaseList" : "labelSummaryCaseList";
+  const url = new URL(pageUrl(page, { page: 1 }), window.location.origin);
+  const current = url.searchParams.get(param) === value;
+  url.searchParams.set(param, value);
+  url.hash = listId;
+  const label = uiText(`查看「${item.label}」的 ${item.count} 条明细`, `View ${item.count} ${item.count === 1 ? "record" : "records"} for ${item.label}`);
+  return `<a class="chart-detail-link"${current ? ' aria-current="true"' : ""} href="${escapeHtml(url.pathname + url.search + url.hash)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><span aria-hidden="true">→</span></a>`;
+}
+
+function chartDetailFilterNote(page, data) {
+  const options = page === "analysis" ? state.reviewAnalysis : labelSummaryFilters;
+  if (!options?.chartGt && !options?.chartReview && !options?.chartLabel) return "";
+  const gt = analysisGtChartItems(data).find(item => item.key === `gt_${options.chartGt}`);
+  const label = options.chartLabel && labelSummaryStatusItems(data).find(item => item.key === options.chartLabel)?.label;
+  const labels = [gt?.label, label, options.chartReview && reviewStatusLabel(options.chartReview)].filter(Boolean);
+  const href = pageUrl(page, { chartGt: "", chartReview: "", chartLabel: "", page: 1 });
+  return ` <span class="chart-detail-filter">${escapeHtml(labels.join(" · "))} <a href="${escapeHtml(href)}">${uiText("清除此筛选", "Clear chart filter")}</a></span>`;
+}
+
+function focusChartDetails(id) {
+  if (chartDetailTarget !== id) return;
+  chartDetailTarget = "";
+  const list = document.getElementById(id);
+  if (!list) return;
+  list.tabIndex = -1;
+  list.focus({ preventScroll: true });
+  list.scrollIntoView({ block: "start" });
+}
+
 function analysisGtChartItems(data) {
   const counts = data.gt_update_counts || {};
   const total = Number(counts.all || 0);
@@ -310,7 +345,7 @@ function analysisGtChartMarkup(data, { prefix = "labelSummary" } = {}) {
   const percent = (item) => total ? `${analysisPiePercent(item, total)}%` : "—";
   const label = uiText("当前筛选内已提交的 Issue", "Submitted Issues in the current filters");
   const accessible = `${label}: ${total}; ${items.map((item) => `${item.label} ${item.count} (${percent(item)})`).join("; ")}`;
-  const legend = items.map((item) => `<div class="analysis-pie-legend-row" title="${escapeHtml(item.description || item.label)}" data-pie-desc="${escapeHtml(item.description || "")}" data-pie-key="${item.key}" data-pie-label="${escapeHtml(item.label)}" data-pie-count="${item.count}" data-pie-percent="${total ? analysisPiePercent(item, total) : 0}" tabindex="0"><span class="analysis-pie-swatch" style="background:${item.color}"></span><span class="analysis-pie-legend-line"><strong>${escapeHtml(item.label)}</strong><small>${item.count} · ${percent(item)}</small></span></div>`).join("");
+  const legend = items.map((item) => `<div class="analysis-pie-legend-row" title="${escapeHtml(item.description || item.label)}" data-pie-desc="${escapeHtml(item.description || "")}" data-pie-key="${item.key}" data-pie-label="${escapeHtml(item.label)}" data-pie-count="${item.count}" data-pie-percent="${total ? analysisPiePercent(item, total) : 0}"><span class="analysis-pie-swatch" style="background:${item.color}"></span><span class="analysis-pie-legend-line"><strong>${escapeHtml(item.label)}</strong><small>${item.count} · ${percent(item)}</small></span>${chartDetailLink(prefix, item, "chart_gt", item.key.slice(3))}</div>`).join("");
   return `<section class="page-card analysis-gt-card" aria-labelledby="${prefix}GtTitle"><div class="section-heading analysis-review-status-heading"><div class="analysis-gt-title"><h3 id="${prefix}GtTitle">${uiText("GT 更新", "GT updates")}</h3><button class="text-link label-summary-rules-button" id="${prefix}GtRules" type="button" aria-haspopup="dialog" aria-label="${escapeHtml(uiText("GT 更新统计口径", "GT update counting rules"))}">ⓘ</button></div><small>${escapeHtml(uiText(`当前筛选 · Issue 标注 ${total} 个`, `Current filters · ${total} Issue ${total === 1 ? "annotation" : "annotations"}`))}</small></div><div class="analysis-pie-group analysis-gt-chart" id="${prefix}GtChart" role="group" aria-label="${escapeHtml(accessible)}"><div class="analysis-pie-figure">${renderAnalysisPieSvg(items, { size: 120, palette: items.map((item) => item.color), animatePies: false })}<div class="analysis-pie-center"><b>${percent(items[0])}</b><small>${uiText("待更新", "To update")}</small></div></div><div class="analysis-pie-legend">${legend}</div></div></section>`;
 }
 
@@ -372,7 +407,7 @@ function renderAnalysisReviewStatus(data) {
     .map((item) => {
       const percent = analysisPiePercent(item, total);
       return `<div class="analysis-review-status-legend-item status-${escapeHtml(item.key)}"
-        data-review-status-key="${escapeHtml(item.key)}" role="listitem" tabindex="0"
+        data-review-status-key="${escapeHtml(item.key)}" role="listitem"
         aria-label="${escapeHtml(`${item.label}: ${item.count}, ${percent}%. ${item.description}`)}"
         title="${escapeHtml(item.description)}">
         <span class="analysis-review-status-swatch"></span>
@@ -380,6 +415,7 @@ function renderAnalysisReviewStatus(data) {
           <strong>${escapeHtml(item.label)}</strong>
           <small>${item.count} · ${percent}%</small>
         </span>
+        ${chartDetailLink("analysis", item, "chart_review", item.key)}
       </div>`;
     })
     .join("");

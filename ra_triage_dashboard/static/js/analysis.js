@@ -148,6 +148,9 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
     ["issue_ids", joinFilterList(options.issueIds)],
     ["annotation_author", joinFilterList(options.annotationAuthor)],
     ["review_status", joinFilterList(options.reviewStatus)],
+    ["chart_review", options.chartReview],
+    ["chart_gt", options.chartGt],
+    ["task_view", options.taskView],
     ["label_state", joinFilterList(options.labelStates)],
     ["gt_relation", joinFilterList(options.gtRelations)],
     ["gt_label", joinFilterList(options.gtLabel)],
@@ -181,8 +184,9 @@ function buildAnalysisQueryParams({ format = "", includePagination = true } = {}
 function renderAnalysisCases(data) {
   const target = $("#analysisCaseList");
   const items = data.items || [];
-  $("#analysisCaseSummary").textContent =
-    t("analysis.case_summary", { total: data.total || 0, n: items.length });
+  $("#analysisCaseSummary").innerHTML =
+    escapeHtml(t("analysis.case_summary", { total: data.total || 0, n: items.length }))
+    + chartDetailFilterNote("analysis", data);
   if (!items.length) {
     target.innerHTML =
       `<div class="analysis-empty">${escapeHtml(t("analysis.case_empty"))}</div>`;
@@ -425,6 +429,7 @@ async function loadReviewReasonAnalysis({ keepPainted = false } = {}) {
   state.reviewAnalysis.data = data;
   // Spin on first paint / filter reloads; skip when quietly revalidating a painted tab.
   renderReviewReasonAnalysis(data, { animatePies: !keepPainted });
+  focusChartDetails("analysisCaseList");
 }
 
 function downloadReviewAnalysis(format) {

@@ -10956,6 +10956,26 @@
           },
           {
             "in": "query",
+            "name": "chart_gt",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Gt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_label",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Label",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "page",
             "required": false,
             "schema": {
@@ -13150,6 +13170,26 @@
           },
           {
             "in": "query",
+            "name": "chart_gt",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Gt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_review",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Review",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "label_state",
             "required": false,
             "schema": {
@@ -13447,6 +13487,26 @@
             "schema": {
               "default": "",
               "title": "Review Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_gt",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Gt",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "chart_review",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Chart Review",
               "type": "string"
             }
           },

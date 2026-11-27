@@ -41,6 +41,16 @@ from ..schemas import ModelReviewFacetsResponse, ModelReviewShadowComparisonResp
 
 router = APIRouter(dependencies=[Depends(get_container)])
 
+async def _analysis_issue_ids(request, baselines, issue_ids, work_split_id):
+    selected = _parse_issue_id_filter(issue_ids)
+    if issue_ids.strip() and not selected:
+        raise _detail(400, "Issue ID 筛选无效 / Invalid Issue ID filter")
+    return await asyncio.to_thread(
+        restrict_version_issue_ids, baselines, request=request,
+        issue_ids=selected, task_id=work_split_id,
+    )
+
+
 @router.get("/api/review-reason-analysis", responses={200: {"model": ReviewReasonAnalysisResponse}})
 async def review_reason_analysis(
     request: Request,
@@ -49,6 +59,8 @@ async def review_reason_analysis(
     failure_only: bool = False,
     annotation_author: str = "",
     review_status: str = "",
+    chart_gt: str = "",
+    chart_review: str = "",
     label_state: str = "",
     gt_relation: str = "",
     gt_label: str = "",
@@ -77,13 +89,10 @@ async def review_reason_analysis(
     # conflict/agreement projection for a shared dataset.
     include_multi_reviews = True
     scopes = resolve_request_baseline_scopes(baselines, request=request)
-    if request.query_params.get("task_view"):
-        issue_ids = await asyncio.to_thread(
-            restrict_version_issue_ids, baselines, request=request,
-            issue_ids=_parse_issue_id_filter(issue_ids), task_id=work_split_id,
-        )
+    selected_ids = await _analysis_issue_ids(request, baselines, issue_ids, work_split_id)
     payload = await asyncio.to_thread(
         _review_reason_analysis_payload,
+        chart_gt=chart_gt, chart_review=chart_review,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
@@ -100,7 +109,7 @@ async def review_reason_analysis(
         scene_tag=scene_tag,
         trigger_tag=trigger_tag,
         egress_tag=egress_tag,
-        issue_ids=issue_ids,
+        issue_ids=selected_ids,
         search=search,
         comment_state=comment_state,
         comment_search=comment_search,
@@ -433,6 +442,8 @@ async def export_review_reason_analysis(
     failure_only: bool = False,
     annotation_author: str = "",
     review_status: str = "",
+    chart_gt: str = "",
+    chart_review: str = "",
     label_state: str = "",
     gt_relation: str = "",
     issue_tags: str = "",
@@ -468,11 +479,8 @@ async def export_review_reason_analysis(
         raise _detail(400, "format 仅支持 csv、xlsx 或 trail_xlsx。")
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     export_issue_ids: str | list[str] = issue_ids
-    if request.query_params.get("task_view") and not gallery_scope:
-        export_issue_ids = await asyncio.to_thread(
-            restrict_version_issue_ids, baselines, request=request,
-            issue_ids=_parse_issue_id_filter(issue_ids), task_id=work_split_id,
-        )
+    if not gallery_scope:
+        export_issue_ids = await _analysis_issue_ids(request, baselines, issue_ids, work_split_id)
     export_search = search
     export_comment_state = comment_state
     gallery_items: list[dict[str, Any]] = []
@@ -535,6 +543,7 @@ async def export_review_reason_analysis(
             gallery_items.extend(gallery_result.get("items") or [])
     result = await asyncio.to_thread(
         _review_reason_analysis_payload,
+        chart_gt=chart_gt, chart_review=chart_review,
         model_run_id=model_run_id,
         comparison=comparison,
         failure_only=failure_only,
