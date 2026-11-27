@@ -45,10 +45,12 @@ async def _analysis_issue_ids(request, baselines, issue_ids, work_split_id):
     selected = _parse_issue_id_filter(issue_ids)
     if issue_ids.strip() and not selected:
         raise _detail(400, "Issue ID 筛选无效 / Invalid Issue ID filter")
-    return await asyncio.to_thread(
+    scoped = await asyncio.to_thread(
         restrict_version_issue_ids, baselines, request=request,
         issue_ids=selected, task_id=work_split_id,
     )
+    # Keep the original CSV contract when dataset membership leaves it intact.
+    return issue_ids if tuple(scoped) == tuple(selected) else scoped
 
 
 @router.get("/api/review-reason-analysis", responses={200: {"model": ReviewReasonAnalysisResponse}})

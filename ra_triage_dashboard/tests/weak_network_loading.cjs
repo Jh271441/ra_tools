@@ -67,7 +67,9 @@ function summaryFixture(taskId = '') {
       options.signal?.addEventListener('abort', () => read.reject(aborted()), {once: true});
       return read.promise;
     }};
-  vm.createContext(s); vm.runInContext(load('labeling-summary.js'), s);
+  vm.createContext(s);
+  vm.runInContext(load('analysis-charts.js'), s);
+  vm.runInContext(load('labeling-summary.js'), s);
   s.restoreLabelSummaryRoute = () => {};
   s.persistLabelSummaryRoute = () => {route = 'canonical';};
   s.renderLabelSummaryFilters = () => {};
