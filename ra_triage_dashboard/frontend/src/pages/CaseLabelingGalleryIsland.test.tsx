@@ -79,14 +79,28 @@ describe("CaseLabelingGalleryIsland", () => {
     );
   });
 
-  it("opens a chart selection as cards and lets the user clear its scope", async () => {
-    window.history.replaceState({}, "", "/manual-s6/case-labeling?baselines=0508&chart_label=conflict");
+  it("opens chart results as cards and clears the scope with the gallery reset", async () => {
+    window.history.replaceState({}, "", "/manual-s6/case-labeling?baselines=0508&chart_label=conflict&chart_gt=blocked");
     renderWithQuery(<CaseLabelingGalleryIsland active lang="zh" selectedBaselines={["0508"]} isAdmin canWrite />);
     await screen.findByText("cn37760285");
-    const requests = vi.mocked(fetch).mock.calls.map(([input]) => new URL(String(input), window.location.origin));
-    expect(requests.some(url => url.pathname.endsWith("/api/labeling/cases") && url.searchParams.get("chart_label") === "conflict")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "清除图表筛选" }));
-    expect(new URLSearchParams(window.location.search).has("chart_label")).toBe(false);
+    const caseRequests = () => vi.mocked(fetch).mock.calls
+      .map(([input]) => new URL(String(input), window.location.origin))
+      .filter(url => url.pathname.endsWith("/api/labeling/cases"));
+    const initialRequests = caseRequests();
+    expect(initialRequests.at(-1)?.searchParams.get("chart_label")).toBe("conflict");
+    expect(initialRequests.at(-1)?.searchParams.get("chart_gt")).toBe("blocked");
+    expect(screen.queryByRole("button", { name: "清除图表筛选" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重置" }));
+    const resetRoute = new URLSearchParams(window.location.search);
+    expect(resetRoute.has("chart_label")).toBe(false);
+    expect(resetRoute.has("chart_gt")).toBe(false);
+    await waitFor(() => {
+      const resetRequest = caseRequests().slice(initialRequests.length).at(-1);
+      expect(resetRequest?.searchParams.get("baselines")).toBe("0508");
+      expect(resetRequest?.searchParams.has("chart_label")).toBe(false);
+      expect(resetRequest?.searchParams.has("chart_gt")).toBe(false);
+    });
   });
 
   it("renders labeling gallery filters, resolved tag chips, zero native selects, and delegates card open", async () => {

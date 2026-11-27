@@ -1,4 +1,3 @@
-import { ChartQueueFilter } from "../components/gallery/ChartQueueFilter";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
@@ -1485,15 +1484,12 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       : bilingual(lang, "当前 Model Run 由任务锁定", "Current Model Run is locked by the task")
     : undefined;
 
-  const chartFilters = new URLSearchParams(filters.analysisScope);
   return (
     <div className="ra-review-gallery-root" data-react-island="review">
       <section
         className="review-commandbar"
         aria-label={bilingual(lang, "Review 筛选", "Review filters")}
       >
-        <ChartQueueFilter lang={lang} gt={chartFilters.get("chart_gt")} review={chartFilters.get("chart_review")}
-          onClear={() => updateFilters(prev => ({ ...prev, analysisScope: "", page: 1 }))} />
         <div className="mobile-filter-bar">
           <button
             className="button button-quiet mobile-filter-toggle"
