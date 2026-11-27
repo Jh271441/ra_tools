@@ -116,15 +116,18 @@ describe("ReviewGalleryIsland", () => {
   });
 
   it("opens chart results as cards and clears the scope with the gallery reset", async () => {
-    window.history.replaceState({}, "", "/manual-s6/review?baselines=0508&run=run-1&comparison=all&analysis_scope=chart_review%3Dcompleted");
+    window.history.replaceState({}, "", "/manual-s6/review?baselines=0508&run=run-1&comparison=all&analysis_scope=chart_review%3Dcompleted%26chart_gt%3Dblocked");
     renderWithQuery(<ReviewGalleryIsland active lang="zh" selectedBaselines={["0508"]} isAdmin canWrite identityPending={false} />);
     await screen.findByText("cn38048091");
     const caseRequests = () => vi.mocked(fetch).mock.calls
       .map(([input]) => new URL(String(input), window.location.origin))
       .filter(url => url.pathname.endsWith("/api/cases"));
     const initialRequests = caseRequests();
-    expect(initialRequests.at(-1)?.searchParams.get("analysis_scope")).toBe("chart_review=completed");
+    expect(initialRequests.at(-1)?.searchParams.get("analysis_scope")).toBe("chart_review=completed&chart_gt=blocked");
     expect(screen.queryByRole("button", { name: "清除图表筛选" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "模型判错复核" })).toHaveTextContent("已完成");
+    const gtPicker = screen.getByRole("button", { name: "标注状态与 GT 关系筛选" });
+    expect(gtPicker).toHaveTextContent("需确认");
 
     fireEvent.click(screen.getByRole("button", { name: "重置" }));
     expect(new URLSearchParams(window.location.search).has("analysis_scope")).toBe(false);
@@ -132,6 +135,15 @@ describe("ReviewGalleryIsland", () => {
       const resetRequest = caseRequests().slice(initialRequests.length).at(-1);
       expect(resetRequest?.searchParams.get("model_run_id")).toBe("run-1");
       expect(resetRequest?.searchParams.has("analysis_scope")).toBe(false);
+    });
+    fireEvent.click(gtPicker);
+    const confirmOption = screen.getByRole("checkbox", { name: "需确认" });
+    expect(confirmOption).not.toBeChecked();
+    fireEvent.click(confirmOption);
+    await waitFor(() => {
+      const scope = new URLSearchParams(caseRequests().at(-1)?.searchParams.get("analysis_scope") || "");
+      expect(scope.get("chart_gt")).toBe("blocked");
+      expect(scope.get("model_run_id")).toBe("run-1");
     });
   });
 

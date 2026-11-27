@@ -19,6 +19,8 @@ import { IssueQueryModal } from "../components/gallery/IssueQueryModal";
 import { showToast } from "../components/ui/Toast";
 import {
   buildLabelGtFilterOptions,
+  chartFilterOptions,
+  chartFilterSelection,
   comparisonStatusMeta,
   comparisonStatusParam,
   DashboardConfigPayload,
@@ -29,6 +31,7 @@ import {
   parseComparisonStatuses,
   parseFilterList,
   readLegacyConfig,
+  splitChartFilterSelection,
   splitLabelGtFilterSelection,
   UiInfoPopover,
 } from "../utils/analysisHelpers";
@@ -254,6 +257,25 @@ function readReviewFiltersFromUrl(): ReviewFilterState {
   };
 }
 
+function changeReviewChartFilter(
+  filters: ReviewFilterState,
+  field: "chart_gt" | "chart_review",
+  buckets: string,
+): string {
+  const params = new URLSearchParams(filters.analysisScope);
+  if (buckets) {
+    if (!filters.analysisScope) {
+      if (filters.runId) params.set("model_run_id", filters.runId);
+      if (filters.workSplitId) params.set("work_split_id", filters.workSplitId);
+      if (filters.runId && filters.comparisonStatus) params.set("comparison", filters.comparisonStatus);
+    }
+    params.set(field, buckets);
+  } else {
+    params.delete(field);
+  }
+  return params.has("chart_gt") || params.has("chart_review") ? params.toString() : "";
+}
+
 function buildIssueTagOptions(
   config: DashboardConfigPayload | null | undefined,
   selected: readonly string[],
@@ -294,13 +316,18 @@ function buildIssueTagOptions(
 export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
   active,
   lang,
-  selectedBaselines,
+  selectedBaselines: workbenchBaselines,
   isAdmin,
   canWrite,
   identityPending,
 }) => {
   const [filters, setFilters] = useState<ReviewFilterState>(() =>
     readReviewFiltersFromUrl(),
+  );
+  const routeBaselines = filters.analysisScope ? new URLSearchParams(window.location.search).get("baselines") : "";
+  const selectedBaselines = useMemo(
+    () => routeBaselines ? parseFilterList(routeBaselines) : workbenchBaselines,
+    [routeBaselines, workbenchBaselines],
   );
   const [searchDraft, setSearchDraft] = useState<string>(filters.search);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -729,6 +756,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
         nextUrl = win.pageUrl("review", {
           issue: currentIssue,
           runId: next.runId,
+          runExplicitNone: next.runExplicitNone,
           comparisonStatus: next.runId ? next.comparisonStatus : "all",
           failureOnly: Boolean(next.runId && next.comparisonStatus === "mismatch"),
           search: next.search,
@@ -949,9 +977,12 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
 
   const modelReviewStatusOptions: MultiSelectOption[] = useMemo(
     () => [
-      { value: "pending", label: bilingual(lang, "待开始", "Not started") },
-      { value: "in_progress", label: bilingual(lang, "待复核", "Needs review") },
-      { value: "completed", label: bilingual(lang, "已完成", "Completed") },
+      ...[
+        { value: "pending", label: bilingual(lang, "待开始", "Not started") },
+        { value: "in_progress", label: bilingual(lang, "待复核", "Needs review") },
+        { value: "completed", label: bilingual(lang, "已完成", "Completed") },
+      ].map(option => ({ ...option, group: bilingual(lang, "图库复核状态", "Gallery review status") })),
+      ...chartFilterOptions("chart_review", lang),
     ],
     [lang],
   );
@@ -961,7 +992,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
     [filters.labelStates, filters.gtRelations],
   );
   const labelGtOptions = useMemo(
-    () => buildLabelGtFilterOptions({ lang, labeling: false, selected: labelGtValues }),
+    () => [...buildLabelGtFilterOptions({ lang, labeling: false, selected: labelGtValues }), ...chartFilterOptions("chart_gt", lang)],
     [lang, labelGtValues],
   );
 
@@ -1091,6 +1122,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
   const handleExitTask = () => {
     updateFilters((prev) => ({
       ...prev,
+      analysisScope: "",
       workSplitId: "",
       taskView: "",
       taskProgress: [],
@@ -1124,7 +1156,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       );
       return;
     }
-    updateFilters((prev) => ({ ...prev, workSplitId: nextSplitId, page: 1 }));
+    updateFilters((prev) => ({ ...prev, analysisScope: "", workSplitId: nextSplitId, page: 1 }));
   };
 
   const handleReset = () => {
@@ -1489,6 +1521,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
       : bilingual(lang, "当前 Model Run 由任务锁定", "Current Model Run is locked by the task")
     : undefined;
 
+  const chartScope = new URLSearchParams(filters.analysisScope);
   return (
     <div className="ra-review-gallery-root" data-react-island="review">
       <section
@@ -1655,14 +1688,20 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
             </span>
             <MultiSelect
               id="reviewStatusFilter"
-              values={filters.reviewStatus}
+              values={[...filters.reviewStatus, ...chartFilterSelection("chart_review", chartScope.get("chart_review"))]}
               options={modelReviewStatusOptions}
               lang={lang}
               placeholder={bilingual(lang, "全部判错状态", "All model review statuses")}
               ariaLabel={bilingual(lang, "模型判错复核", "Model review")}
-              onChange={(vals) =>
-                updateFilters((prev) => ({ ...prev, reviewStatus: vals, page: 1 }))
-              }
+              onChange={(values) => {
+                const { ordinary, buckets } = splitChartFilterSelection("chart_review", values);
+                updateFilters((prev) => ({
+                  ...prev,
+                  reviewStatus: ordinary,
+                  analysisScope: changeReviewChartFilter(prev, "chart_review", buckets),
+                  page: 1,
+                }));
+              }}
             />
           </div>
 
@@ -1679,24 +1718,26 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
               >
                 {bilingual(
                   lang,
-                  "组内任一、组间同时满足。GT 关系比较当前有效标注结论与所选 GT；未形成结论或有分歧的 Case 不计入。GT 缺失只包含已有结论且 GT 为空的 Case。",
-                  "Selections within a group use OR; groups use AND. Compare the current resolved label with the selected GT. Unresolved or conflicting cases are excluded. GT missing includes resolved cases whose GT is empty.",
+                  "组内满足任一项，组间同时满足。GT 关系比较有效标注与 GT。GT 更新状态沿用原因聚类的分组。",
+                  "Match any within a group and all groups. GT relation compares resolved labels with GT. GT update status uses the reason analysis groups.",
                 )}
               </UiInfoPopover>
             </div>
             <MultiSelect
               id="sharedLabelStateFilter"
-              values={labelGtValues}
+              values={[...labelGtValues, ...chartFilterSelection("chart_gt", chartScope.get("chart_gt"))]}
               options={labelGtOptions}
               lang={lang}
               placeholder={bilingual(lang, "全部标注 / GT", "All labels / GT")}
               ariaLabel={bilingual(lang, "标注状态与 GT 关系筛选", "Label state / GT filter")}
-              onChange={(vals) => {
-                const { labelStates, gtRelations } = splitLabelGtFilterSelection(vals);
+              onChange={(values) => {
+                const { ordinary, buckets } = splitChartFilterSelection("chart_gt", values);
+                const { labelStates, gtRelations } = splitLabelGtFilterSelection(ordinary);
                 updateFilters((prev) => ({
                   ...prev,
                   labelStates,
                   gtRelations,
+                  analysisScope: changeReviewChartFilter(prev, "chart_gt", buckets),
                   page: 1,
                 }));
               }}

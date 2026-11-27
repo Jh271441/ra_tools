@@ -18,6 +18,8 @@ import { IssueQueryModal } from "../components/gallery/IssueQueryModal";
 import { showToast } from "../components/ui/Toast";
 import {
   BaselineCatalogItem,
+  chartFilterOptions,
+  chartFilterSelection,
   DashboardConfigPayload,
   ISSUE_QUERY_ID_RE,
   joinFilterList,
@@ -25,6 +27,7 @@ import {
   normalizedLabelingStatusFilters,
   parseFilterList,
   readLegacyConfig,
+  splitChartFilterSelection,
   UiInfoPopover,
 } from "../utils/analysisHelpers";
 
@@ -130,7 +133,7 @@ function readLabelingFiltersFromUrl(): LabelingFilterState {
     ),
     chartGt: params.get("chart_gt") || "",
     chartLabel: params.get("chart_label") || "",
-    status: normalizedLabelingStatusFilters(params.get("status"), { submittedOnly: params.has("chart_gt") || params.has("chart_label") }),
+    status: normalizedLabelingStatusFilters(params.get("status"), { allowDecisionChanged: true }),
     author: parseFilterList(params.get("author"))
       .map((v) => v.toLowerCase())
       .filter((v) => /^[a-z0-9._@-]{1,128}$/.test(v)),
@@ -228,12 +231,19 @@ function buildTaskScopeKey(
 export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps> = ({
   active,
   lang,
-  selectedBaselines,
+  selectedBaselines: workbenchBaselines,
   isAdmin,
   canWrite,
 }) => {
   const [filters, setFilters] = useState<LabelingFilterState>(() =>
     readLabelingFiltersFromUrl(),
+  );
+  const routeBaselines = filters.chartGt || filters.chartLabel
+    ? new URLSearchParams(window.location.search).get("baselines")
+    : "";
+  const selectedBaselines = useMemo(
+    () => routeBaselines ? parseFilterList(routeBaselines) : workbenchBaselines,
+    [routeBaselines, workbenchBaselines],
   );
   const [searchDraft, setSearchDraft] = useState<string>(filters.search);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -583,6 +593,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         value: "conflict",
         label: bilingual(lang, "有分歧 / 待复核", "Disagreement / Needs recheck"),
       },
+      { value: "decision_changed", label: bilingual(lang, "最新标注与旧裁决不同", "Label differs from prior decision") },
+      ...chartFilterOptions("chart_label", lang),
     ],
     [lang],
   );
@@ -617,9 +629,12 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
 
   const gtRelationOptions: MultiSelectOption[] = useMemo(
     () => [
-      { value: "matches_gt", label: bilingual(lang, "与 GT 一致", "Matches GT") },
-      { value: "differs_from_gt", label: bilingual(lang, "与 GT 不一致", "Differs from GT") },
-      { value: "fills_missing_gt", label: bilingual(lang, "GT 缺失", "GT missing") },
+      ...[
+        { value: "matches_gt", label: bilingual(lang, "与 GT 一致", "Matches GT") },
+        { value: "differs_from_gt", label: bilingual(lang, "与 GT 不一致", "Differs from GT") },
+        { value: "fills_missing_gt", label: bilingual(lang, "GT 缺失", "GT missing") },
+      ].map(option => ({ ...option, group: bilingual(lang, "与 GT 的关系", "Relation to GT") })),
+      ...chartFilterOptions("chart_gt", lang),
     ],
     [lang],
   );
@@ -1115,14 +1130,15 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
             <span>{bilingual(lang, "结果状态", "Result status")}</span>
             <MultiSelect
               id="caseLabelingStatusPicker"
-              values={filters.status}
+              values={[...filters.status, ...chartFilterSelection("chart_label", filters.chartLabel)]}
               options={statusOptions}
               lang={lang}
               placeholder={bilingual(lang, "全部状态", "All states")}
               ariaLabel={bilingual(lang, "结果状态", "Result status")}
-              onChange={(vals) =>
-                updateFilters((prev) => ({ ...prev, status: vals, cluster: "", page: 1 }))
-              }
+              onChange={(values) => {
+                const { ordinary, buckets } = splitChartFilterSelection("chart_label", values);
+                updateFilters((prev) => ({ ...prev, status: ordinary, chartLabel: buckets, cluster: "", page: 1 }));
+              }}
             />
           </div>
 
@@ -1203,21 +1219,22 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
               >
                 {bilingual(
                   lang,
-                  "比较当前有效标注结论与所选 GT；未形成结论或有分歧的 Case 不计入。GT 缺失只包含已有结论且 GT 为空的 Case。",
-                  "Compare the current resolved label with the selected GT. Unresolved or conflicting cases are excluded. GT missing includes resolved cases whose GT is empty.",
+                  "GT 关系比较当前有效标注与 GT。GT 更新状态沿用标注汇总的分组。组内满足任一项，组间同时满足。",
+                  "GT relation compares resolved labels with GT. GT update status uses the labeling summary groups. Match any within a group and all groups.",
                 )}
               </UiInfoPopover>
             </div>
             <MultiSelect
               id="caseLabelingGtRelationPicker"
-              values={filters.gtRelations}
+              values={[...filters.gtRelations, ...chartFilterSelection("chart_gt", filters.chartGt)]}
               options={gtRelationOptions}
               lang={lang}
               placeholder={bilingual(lang, "全部关系", "All relations")}
               ariaLabel={bilingual(lang, "GT 关系筛选", "GT relation filter")}
-              onChange={(vals) =>
-                updateFilters((prev) => ({ ...prev, gtRelations: vals, cluster: "", page: 1 }))
-              }
+              onChange={(values) => {
+                const { ordinary, buckets } = splitChartFilterSelection("chart_gt", values);
+                updateFilters((prev) => ({ ...prev, gtRelations: ordinary, chartGt: buckets, cluster: "", page: 1 }));
+              }}
             />
           </div>
 
@@ -1347,6 +1364,8 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
                 if (activeSearch) queryParams.q = activeSearch;
                 if (activeIssueIds.length) queryParams.issue_ids = activeIssueIds.join(",");
                 if (filters.issueTags.length) queryParams.issue_tags = joinFilterList(filters.issueTags);
+                if (filters.chartGt) queryParams.chart_gt = filters.chartGt;
+                if (filters.chartLabel) queryParams.chart_label = filters.chartLabel;
                 if (filters.gtRelations.length) queryParams.gt_relation = joinFilterList(filters.gtRelations);
                 if (filters.status.length) queryParams.status = joinFilterList(filters.status);
                 if (filters.author.length) queryParams.author = joinFilterList(filters.author);

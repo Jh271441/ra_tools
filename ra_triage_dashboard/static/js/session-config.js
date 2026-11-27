@@ -441,9 +441,10 @@ function renderConfig() {
   renderAnalysisCatalogFilters();
 }
 
-function renderLabelGtFilter(root, { selected = [], onChange = null, labeling = false } = {}) {
+function renderLabelGtFilter(root, { selected = [], onChange = null, labeling = false, includeChartGt = false } = {}) {
   if (!root) return;
   const groups = labelGtFilterGroups({ selected, labeling });
+  if (includeChartGt) groups.push(chartFilterMenuGroup("chart_gt"));
   if (relabelMultiFilter(root, groups.flatMap(group => group.items))) {
     relabelMultiFilterGroups(root, groups);
     setMultiFilterValues(root, selected);

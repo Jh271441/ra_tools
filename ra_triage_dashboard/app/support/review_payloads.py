@@ -56,12 +56,14 @@ def _review_reason_analysis_payload(
     page_size: int = 20,
     unbounded: bool = False,
     issue_ids_only: bool = False,
+    include_chart_issue_ids: bool = False,
     baselines: str = "",
     baseline_scopes: list[str] | None = None,
     work_agreement: str = "all",
     work_split_id: str = "",
     include_multi_reviews: bool = False,
 ) -> dict[str, Any]:
+    chart_revision = database.change_revision() if include_chart_issue_ids and not issue_ids_only else None
     if chart_review not in {"", "pending", "in_progress", "completed"}:
         raise _detail(400, "模型复核图表筛选无效 / Invalid model review chart filter")
     if chart_gt not in {"", "ready", "blocked", "aligned"}:
@@ -567,10 +569,9 @@ def _review_reason_analysis_payload(
         page_size=max(len(rows), 1) if unbounded else page_size,
         page_size_limit=None if unbounded else 200,
         include_scope_issue_ids=not unbounded,
+        include_chart_issue_ids=include_chart_issue_ids,
         issue_ids_only=issue_ids_only,
     )
-    if issue_ids_only:
-        return result
     if not unbounded:
         # The chart shares the final review filters, but GT eligibility comes
         # from all Case-label sources for those Issues, before pagination.
@@ -583,8 +584,20 @@ def _review_reason_analysis_payload(
             label_cases, _ = database._project_labeling_cases(
                 baseline_scopes=scopes, issue_ids=scope_issue_ids,
             ) if scope_issue_ids else ([], "")
-            _, counts = database.labeling_gt_update_cases(baseline_scopes=scopes, items=label_cases)
+            label_cases, counts = database.labeling_gt_update_cases(baseline_scopes=scopes, items=label_cases)
+            if include_chart_issue_ids:
+                from ..labeling_rules import has_label_submission
+                gt_issue_ids: dict[str, list[str]] = {}
+                for item in label_cases:
+                    if has_label_submission(item):
+                        bucket = (item.get("gt_update") or {}).get("state", "aligned")
+                        gt_issue_ids.setdefault(bucket, []).append(item["issue_id"])
+                result["_chart_gt_issue_ids"] = gt_issue_ids
         result["gt_update_counts"] = counts
+    if issue_ids_only:
+        return result
+    if chart_revision is not None:
+        result["_chart_revision"] = chart_revision
     for item in result["items"]:
         issue_id = _as_text(item.get("issue_id"))
         review_params = [f"issue={quote(issue_id, safe='')}"]
