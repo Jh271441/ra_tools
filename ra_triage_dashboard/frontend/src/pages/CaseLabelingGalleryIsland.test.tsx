@@ -90,6 +90,17 @@ describe("CaseLabelingGalleryIsland", () => {
     expect(initialRequests.at(-1)?.searchParams.get("chart_label")).toBe("conflict");
     expect(initialRequests.at(-1)?.searchParams.get("chart_gt")).toBe("blocked");
     expect(screen.queryByRole("button", { name: "清除图表筛选" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "结果状态" })).toHaveTextContent("待裁决 / 需确认");
+    const gtPicker = screen.getByRole("button", { name: "GT 关系筛选" });
+    expect(gtPicker).toHaveTextContent("需确认");
+    fireEvent.click(gtPicker);
+    const confirmOption = screen.getByRole("checkbox", { name: "需确认" });
+    expect(confirmOption).toBeChecked();
+    fireEvent.click(confirmOption);
+    expect(new URLSearchParams(window.location.search).has("chart_gt")).toBe(false);
+    fireEvent.click(confirmOption);
+    expect(new URLSearchParams(window.location.search).get("chart_gt")).toBe("blocked");
+    fireEvent.click(gtPicker);
 
     fireEvent.click(screen.getByRole("button", { name: "重置" }));
     const resetRoute = new URLSearchParams(window.location.search);

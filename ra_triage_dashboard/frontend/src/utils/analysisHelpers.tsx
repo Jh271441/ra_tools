@@ -178,9 +178,59 @@ export function normalizedGtRelationFilters(
   );
 }
 
+const chartFilterLabels = {
+  chart_gt: {
+    group: ["GT 更新状态", "GT update status"],
+    options: [
+      ["ready", "GT 待更新", "GT to update"],
+      ["blocked", "需确认", "Needs attention"],
+      ["aligned", "与 GT 一致", "Matches GT"],
+    ],
+  },
+  chart_label: {
+    group: ["已提交的标注", "Submitted labels"],
+    options: [
+      ["resolved", "已形成结论", "Resolved"],
+      ["pending", "待形成结论", "Pending conclusion"],
+      ["conflict", "待裁决 / 需确认", "Needs adjudication / confirmation"],
+    ],
+  },
+  chart_review: {
+    group: ["原因聚类中的复核", "Reviews in reason analysis"],
+    options: [
+      ["pending", "待开始", "Not started"],
+      ["in_progress", "待复核", "Needs review"],
+      ["completed", "已完成", "Completed"],
+    ],
+  },
+} as const;
+
+type ChartFilter = keyof typeof chartFilterLabels;
+
+export function chartFilterOptions(field: ChartFilter, lang: UiLanguage): MultiSelectOption[] {
+  const { group, options } = chartFilterLabels[field];
+  return options.map(([value, zh, en]) => ({
+    value: `${field}:${value}`,
+    label: bilingual(lang, zh, en),
+    group: bilingual(lang, group[0], group[1]),
+  }));
+}
+
+export function chartFilterSelection(field: ChartFilter, value: string | null): string[] {
+  return parseFilterList(value).map(bucket => `${field}:${bucket}`);
+}
+
+export function splitChartFilterSelection(field: ChartFilter, values: readonly string[]) {
+  const prefix = `${field}:`;
+  return {
+    ordinary: values.filter(value => !value.startsWith(prefix)),
+    buckets: values.filter(value => value.startsWith(prefix)).map(value => value.slice(prefix.length)).join(","),
+  };
+}
+
 export function normalizedLabelingStatusFilters(
   value: string | readonly string[] | null | undefined,
-  { submittedOnly = false }: { submittedOnly?: boolean } = {},
+  { submittedOnly = false, allowDecisionChanged = submittedOnly }: { submittedOnly?: boolean; allowDecisionChanged?: boolean } = {},
 ): string[] {
   const expanded = parseFilterList(value).flatMap((status) =>
     status === "pending"
@@ -190,7 +240,7 @@ export function normalizedLabelingStatusFilters(
       : [status],
   );
   return Array.from(new Set(expanded)).filter((status) =>
-    ["unannotated", "incomplete", "resolved", "conflict"].includes(status) || (submittedOnly && status === "decision_changed"),
+    ["unannotated", "incomplete", "resolved", "conflict"].includes(status) || (allowDecisionChanged && status === "decision_changed"),
   );
 }
 

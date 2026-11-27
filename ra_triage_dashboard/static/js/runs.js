@@ -177,7 +177,7 @@ function isCombinedTaskProgressFilter() {
 }
 
 function selectedModelReviewStatuses() {
-  return getMultiFilterValues($('#reviewStatusFilter'));
+  return splitChartFilterSelection("chart_review", getMultiFilterValues($('#reviewStatusFilter'))).ordinary;
 }
 
 function selectedCombinedTaskProgress() {
@@ -330,13 +330,25 @@ function renderReviewCatalogFilters() {
     { value: 'completed', label: uiText('已完成', 'Completed') },
   ];
   const modelStatusRoot = $('#reviewStatusFilter');
-  if (modelStatusRoot && !relabelMultiFilter(modelStatusRoot, modelStatusOptions)) {
-    renderMultiFilter(modelStatusRoot, {
-      options: modelStatusOptions, selected: selectedModelReviewStatuses(), onChange,
-    });
+  const modelStatusGroups = [
+    { label: uiText("图库复核状态", "Gallery review status"), items: modelStatusOptions },
+    chartFilterMenuGroup("chart_review"),
+  ];
+  const onChartFilterChange = () => {
+    updateReviewChartScope();
+    onChange();
+  };
+  if (modelStatusRoot) {
+    if (relabelMultiFilter(modelStatusRoot, modelStatusGroups.flatMap(group => group.items))) {
+      relabelMultiFilterGroups(modelStatusRoot, modelStatusGroups);
+    } else {
+      renderMultiFilter(modelStatusRoot, {
+        groups: modelStatusGroups, selected: getMultiFilterValues(modelStatusRoot), onChange: onChartFilterChange,
+      });
+    }
   }
   renderLabelGtFilter($("#sharedLabelStateFilter"), {
-    selected: getMultiFilterValues($("#sharedLabelStateFilter")), onChange,
+    selected: getMultiFilterValues($("#sharedLabelStateFilter")), onChange: onChartFilterChange, includeChartGt: true,
   });
   renderMultiFilter($("#reviewDiscussionFilter"), {
     options: [

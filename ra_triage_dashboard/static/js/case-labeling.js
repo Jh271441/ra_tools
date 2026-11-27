@@ -61,7 +61,7 @@ function restoreCaseLabelingRouteState(route = null) {
   state.caseLabeling.issueTags = parseFilterList(filters.issueTags || []);
   state.caseLabeling.search = filters.search ?? state.caseLabeling.search;
   state.caseLabeling.issueIds = filters.issueIds ?? state.caseLabeling.issueIds;
-  state.caseLabeling.status = normalizedLabelingStatusFilters(filters.status ?? state.caseLabeling.status, { submittedOnly: Boolean(filters.chartGt || filters.chartLabel) });
+  state.caseLabeling.status = normalizedLabelingStatusFilters(filters.status ?? state.caseLabeling.status, { allowDecisionChanged: true });
   state.caseLabeling.author = parseFilterList(filters.author ?? state.caseLabeling.author);
   state.caseLabeling.assignee = parseFilterList(filters.assignee ?? state.caseLabeling.assignee);
   state.caseLabeling.cluster = filters.cluster ?? state.caseLabeling.cluster;
@@ -244,23 +244,37 @@ function updateCaseLabelingMultiFilter(key, values) {
   loadCaseLabelingCases({ page: 1 }).catch((error) => showToast(error.message, true));
 }
 
-function renderCaseLabelingMultiPicker(selector, options, selected, key) {
+function renderCaseLabelingMultiPicker(selector, options, selected, key, groups = []) {
   if (typeof window !== "undefined" && (window.__RA_REACT_WORKBENCH__?.ownsPage?.("labeling") || window.__RA_REACT_OWNED_PAGES__?.includes?.("labeling"))) return;
   const root = $(selector);
   if (!root) return;
-  const fingerprint = JSON.stringify(options.map((item) => [item.value, item.label]));
+  const items = groups.length ? groups.flatMap(group => group.items) : options;
+  const fingerprint = JSON.stringify(items.map((item) => [item.value, item.label]));
   if (root.dataset.optionsFingerprint === fingerprint && root.querySelector(".multi-filter-trigger")) {
     setMultiFilterValues(root, selected);
     return;
   }
   if (root.classList.contains("is-open")) {
-    if (relabelMultiFilter(root, options)) root.dataset.optionsFingerprint = fingerprint;
+    if (relabelMultiFilter(root, items)) {
+      if (groups.length) relabelMultiFilterGroups(root, groups);
+      root.dataset.optionsFingerprint = fingerprint;
+    }
     return;
   }
   renderMultiFilter(root, {
-    options,
+    ...(groups.length ? { groups } : { options }),
     selected,
-    onChange: (values) => updateCaseLabelingMultiFilter(key, values),
+    onChange: (values) => {
+      const chart = key === "status" ? ["chart_label", "chartLabel"] : key === "gtRelations" ? ["chart_gt", "chartGt"] : null;
+      if (chart) {
+        const [field, stateKey] = chart;
+        const { ordinary, buckets } = splitChartFilterSelection(field, values);
+        state.caseLabeling[stateKey] = buckets;
+        updateCaseLabelingMultiFilter(key, ordinary);
+      } else {
+        updateCaseLabelingMultiFilter(key, values);
+      }
+    },
   });
   root.dataset.optionsFingerprint = fingerprint;
 }
@@ -281,7 +295,17 @@ function renderCaseLabelingStatusPicker() {
     persistCaseLabelingRoute({issue:'', page:1});
     loadCaseLabelingCases({page:1}).catch(error => showToast(error.message, true));
   });
-  renderCaseLabelingMultiPicker("#caseLabelingStatusPicker", labelingStatusFilterOptions(), state.caseLabeling.status, "status");
+  renderCaseLabelingMultiPicker("#caseLabelingStatusPicker", [], [
+    ...state.caseLabeling.status, ...chartFilterSelection("chart_label", state.caseLabeling.chartLabel),
+  ], "status", [
+    {
+      label: uiText("标注状态", "Label state"),
+      items: [...labelingStatusFilterOptions(), {
+        value: "decision_changed", label: uiText("最新标注与旧裁决不同", "Label differs from prior decision"),
+      }],
+    },
+    chartFilterMenuGroup("chart_label"),
+  ]);
 }
 
 function renderCaseLabelingAuthorPicker() {
@@ -311,7 +335,12 @@ function renderCaseLabelingLabelPicker() {
 }
 
 function renderCaseLabelingGtPicker() {
-  renderCaseLabelingMultiPicker("#caseLabelingGtRelationPicker", gtRelationFilterOptions(), state.caseLabeling.gtRelations, "gtRelations");
+  renderCaseLabelingMultiPicker("#caseLabelingGtRelationPicker", [], [
+    ...state.caseLabeling.gtRelations, ...chartFilterSelection("chart_gt", state.caseLabeling.chartGt),
+  ], "gtRelations", [
+    { label: uiText("与 GT 的关系", "Relation to GT"), items: gtRelationFilterOptions() },
+    chartFilterMenuGroup("chart_gt"),
+  ]);
   renderCaseLabelingMultiPicker("#caseLabelingGtPicker", [
     ...EXPECTED_OUTPUT_OPTIONS.filter((item) => item.value).map((item) => ({
       value: item.value, label: item.labelZh,

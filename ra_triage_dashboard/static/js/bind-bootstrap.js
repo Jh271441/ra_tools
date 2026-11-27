@@ -1277,7 +1277,9 @@ async function bootstrap() {
     if (["comparison", "run-collections"].includes(initialRoute.page)) {
       applyRunComparisonRoute(initialRoute.comparisonFilters);
     }
-    const sharedDataPromise = ["review", "analysis"].includes(initialRoute.page)
+    const chartReviewGallery = initialRoute.page === "review" && initialRoute.analysisScope
+      && typeof isReviewGalleryReactOwned === "function" && isReviewGalleryReactOwned();
+    const sharedDataPromise = ["review", "analysis"].includes(initialRoute.page) && !chartReviewGallery
       ? settleInitialRequests(
           [loadReviewers(), loadWorkAssignees()],
           "共享数据"

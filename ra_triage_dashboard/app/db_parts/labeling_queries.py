@@ -1,5 +1,6 @@
 """Labeling queries storage; composed by DatabaseLabelingMixin."""
 from __future__ import annotations
+from ..labeling_gt import filter_label_chart_cases
 from ..labeling_rules import (
     LABELING_FILTER_STATUSES, labeling_filter_state,
     current_adjudication, case_exclusion_projection,
@@ -438,10 +439,11 @@ class LabelingQueriesMixin:
             comment_state=comment_state,
             cluster=cluster,
         )
-        if chart_gt or chart_label:
+        projected = filter_label_chart_cases(projected, chart_label)
+        if chart_gt:
             projected, _ = self.labeling_gt_update_cases(
                 baseline_scopes=scopes, items=projected, task_id=task_id,
-                chart_gt=chart_gt, chart_label=chart_label,
+                chart_gt=chart_gt,
             )
         safe_page_size = min(100, max(1, int(page_size)))
         total = len(projected)
@@ -513,11 +515,13 @@ class LabelingQueriesMixin:
             comment_state=comment_state,
             cluster=cluster,
         )
-        if gt_update or chart_gt or chart_label:
+        if gt_update or chart_gt:
             projected, _ = self.labeling_gt_update_cases(
                 baseline_scopes=baseline_scopes, items=projected,
                 task_id=task_id, gt_update=gt_update, chart_gt=chart_gt, chart_label=chart_label,
             )
+        else:
+            projected = filter_label_chart_cases(projected, chart_label)
         return [item["issue_id"] for item in projected]
 
     def labeling_clusters(
@@ -554,10 +558,11 @@ class LabelingQueriesMixin:
             gt_relation=gt_relation,
             comment_state=comment_state,
         )
-        if chart_gt or chart_label:
+        projected = filter_label_chart_cases(projected, chart_label)
+        if chart_gt:
             projected, _ = self.labeling_gt_update_cases(
                 baseline_scopes=scopes, items=projected, task_id=task_id,
-                chart_gt=chart_gt, chart_label=chart_label,
+                chart_gt=chart_gt,
             )
         pair_counts: dict[tuple[str, str], int] = {}
         scenario_counts: dict[str, int] = {}

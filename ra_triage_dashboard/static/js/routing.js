@@ -16,6 +16,58 @@ function normalizedGtRelationFilters(values) {
   return parseFilterList(values).filter(value => ["matches_gt", "differs_from_gt", "fills_missing_gt"].includes(value));
 }
 
+function chartFilterMenuGroup(field) {
+  const groups = {
+    chart_gt: { label: ["GT 更新状态", "GT update status"], items: [
+      ["ready", "GT 待更新", "GT to update"], ["blocked", "需确认", "Needs attention"],
+      ["aligned", "与 GT 一致", "Matches GT"],
+    ] },
+    chart_label: { label: ["已提交的标注", "Submitted labels"], items: [
+      ["resolved", "已形成结论", "Resolved"], ["pending", "待形成结论", "Pending conclusion"],
+      ["conflict", "待裁决 / 需确认", "Needs adjudication / confirmation"],
+    ] },
+    chart_review: { label: ["原因聚类中的复核", "Reviews in reason analysis"], items: [
+      ["pending", "待开始", "Not started"], ["in_progress", "待复核", "Needs review"],
+      ["completed", "已完成", "Completed"],
+    ] },
+  };
+  const group = groups[field];
+  return {
+    label: uiText(...group.label),
+    items: group.items.map(([value, zh, en]) => ({ value: `${field}:${value}`, label: uiText(zh, en) })),
+  };
+}
+
+function chartFilterSelection(field, value) {
+  return parseFilterList(value).map(bucket => `${field}:${bucket}`);
+}
+
+function splitChartFilterSelection(field, values) {
+  const prefix = `${field}:`;
+  return {
+    ordinary: values.filter(value => !value.startsWith(prefix)),
+    buckets: values.filter(value => value.startsWith(prefix)).map(value => value.slice(prefix.length)).join(","),
+  };
+}
+
+function updateReviewChartScope() {
+  const previous = state.reviewAnalysisScope || "";
+  const scope = new URLSearchParams(previous);
+  if (!previous) {
+    if (state.selectedRunId) {
+      scope.set("model_run_id", state.selectedRunId);
+      scope.set("comparison", selectedReviewComparisonStatus());
+    }
+    if (state.reviewWorkSplitId) scope.set("work_split_id", state.reviewWorkSplitId);
+  }
+  for (const [field, selector] of [["chart_gt", "#sharedLabelStateFilter"], ["chart_review", "#reviewStatusFilter"]]) {
+    const { buckets } = splitChartFilterSelection(field, getMultiFilterValues($(selector)));
+    if (buckets) scope.set(field, buckets);
+    else scope.delete(field);
+  }
+  state.reviewAnalysisScope = scope.has("chart_gt") || scope.has("chart_review") ? scope.toString() : "";
+}
+
 function labelGtFilterGroups({ selected = [], labeling = false } = {}) {
   const states = [
     { value: labeling ? "unannotated" : "none", label: uiText("未标注", "Not labeled") },
@@ -51,7 +103,8 @@ function splitLabelGtFilterSelection(values) {
 }
 
 function selectedReviewLabelStates() {
-  return getMultiFilterValues($("#sharedLabelStateFilter")).filter(value => !value.startsWith("gt:"));
+  const { ordinary } = splitChartFilterSelection("chart_gt", getMultiFilterValues($("#sharedLabelStateFilter")));
+  return splitLabelGtFilterSelection(ordinary).labelStates;
 }
 
 function selectedReviewGtRelations() {
@@ -556,12 +609,12 @@ function normalizedRunsRouteFilters(params) {
   };
 }
 
-function normalizedLabelingStatusFilters(value, { submittedOnly = false } = {}) {
+function normalizedLabelingStatusFilters(value, { submittedOnly = false, allowDecisionChanged = submittedOnly } = {}) {
   // Old pending meant both untouched and incomplete. Preserve gallery scope;
   // summary already displays submitted Issues only.
   return [...new Set(parseFilterList(value).flatMap((status) => status === "pending"
     ? (submittedOnly ? ["incomplete"] : ["unannotated", "incomplete"])
-    : [status]))].filter((status) => ["unannotated", "incomplete", "resolved", "conflict"].includes(status) || (submittedOnly && status === "decision_changed"));
+    : [status]))].filter((status) => ["unannotated", "incomplete", "resolved", "conflict"].includes(status) || (allowDecisionChanged && status === "decision_changed"));
 }
 
 function labelingStatusFilterOptions({ submittedOnly = false } = {}) {
@@ -578,7 +631,7 @@ function normalizedCaseLabelingRouteFilters(params) {
   const rawPageSize = Number.parseInt(
     params.get("page_size") || String(DEFAULT_CASE_PAGE_SIZE), 10
   );
-  const status = normalizedLabelingStatusFilters(params.get("status"), { submittedOnly: params.has("chart_gt") || params.has("chart_label") });
+  const status = normalizedLabelingStatusFilters(params.get("status"), { allowDecisionChanged: true });
   const label = parseFilterList(params.get("label")).filter((value) =>
     LABELS.includes(value)
   );
@@ -880,8 +933,14 @@ function applyReviewRouteControls(route) {
   renderReviewWorkSplitPicker?.(state.reviewWorkSplitId);
   setMultiFilterValues($("#reviewerFilter"), route.annotationAuthor);
   renderReviewProgressFilter();
-  setMultiFilterValues($("#reviewStatusFilter"), route.reviewStatus);
-  setMultiFilterValues($("#sharedLabelStateFilter"), [...parseFilterList(route.labelStates), ...normalizedGtRelationFilters(route.gtRelations).map(value => `gt:${value}`)]);
+  const chartScope = new URLSearchParams(state.reviewAnalysisScope);
+  setMultiFilterValues($("#reviewStatusFilter"), [
+    ...(route.reviewStatus || []), ...chartFilterSelection("chart_review", chartScope.get("chart_review")),
+  ]);
+  setMultiFilterValues($("#sharedLabelStateFilter"), [
+    ...labelGtFilterSelection(route.labelStates, route.gtRelations),
+    ...chartFilterSelection("chart_gt", chartScope.get("chart_gt")),
+  ]);
   state.reviewIssueTags = route.issueTags || [];
   state.reviewTargetGroup = route.targetGroup || '';
   if (typeof renderReviewTargetGroupPicker === 'function') renderReviewTargetGroupPicker();
@@ -1139,6 +1198,7 @@ function pageUrl(page, options = {}) {
     );
     if (issueId) url.searchParams.set("issue", issueId);
     if (runId) url.searchParams.set("run", runId);
+    else if (review.runExplicitNone || scope) url.searchParams.set("run", "none");
     // Once the user has a Run overlay, persist even the explicit "all"
     // selection.  Omitting it is reserved for first-entry URLs, where the
     // product default remains MISMATCH.

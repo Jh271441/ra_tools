@@ -168,6 +168,42 @@ class LabelingGtQueueTest(IsolatedAsyncioTestCase):
                 self.assertTrue(all(item["label_state"] == bucket for item in detail["items"]))
                 gallery = await queries.list_labeling_cases(self.request(), chart_label=bucket, **filters)
                 self.assertEqual(set(gallery["queue_issue_ids"]), {item["issue_id"] for item in detail["items"]})
+        with patch.object(self.db, "label_gt_candidates") as gt_candidates:
+            gallery = await queries.list_labeling_cases(self.request(), chart_label="pending,conflict")
+            self.assertEqual(set(gallery["queue_issue_ids"]), {"cn104", "cn105", "cn107"})
+            gt_candidates.assert_not_called()
+
+    def test_gallery_reuses_chart_membership_until_label_data_changes(self):
+        from urllib.parse import urlencode
+        from ra_triage_dashboard.app.support.review_chart_scope import analysis_with_chart_membership, chart_issue_ids
+
+        run, _ = self.db.import_model_run(
+            name="review", source_name="review.json", source_sha256="a" * 64,
+            metadata={}, rows=[{"issue_id": "cn103", "model_label": "正确触发"}],
+        )
+        self.db.create_model_review(
+            issue_id="cn103", model_run_id=run["id"], status="completed",
+            reason="reviewed", missing_evidence=[], reviewer="alice",
+        )
+        with patch.object(review_payloads, "database", self.db), \
+             patch.object(review_payloads, "_missing_evidence_catalog", return_value=[]), \
+             patch.object(review_payloads, "_review_tag_catalog", return_value=[]), \
+             patch.object(review_payloads, "_review_reason_analysis_payload", wraps=review_payloads._review_reason_analysis_payload) as load:
+            payload = analysis_with_chart_membership(
+                load, baseline_scopes=["scope"], issue_ids="cn103",
+                model_run_id=run["id"], comparison="all", include_multi_reviews=True,
+            )
+            self.assertEqual(payload["gt_update_counts"], {"all": 1, "ready": 0, "blocked": 0})
+            self.assertFalse(any(key.startswith("_chart_") for key in payload))
+            scope = urlencode({"model_run_id": run["id"], "chart_gt": "aligned,blocked", "chart_review": "completed"})
+            self.assertEqual(chart_issue_ids(scope, ["scope"], ["cn103"]), ("cn103",))
+            scope = urlencode({"model_run_id": run["id"], "chart_gt": "aligned"})
+            self.assertEqual(chart_issue_ids(scope, ["scope"], ["cn103"]), ("cn103",))
+            self.assertEqual(load.call_count, 1)
+
+            self.submit("cn103", "alice", "误触发")
+            self.assertEqual(chart_issue_ids(scope, ["scope"], ["cn103"]), ("__empty_chart_scope__",))
+            self.assertEqual(load.call_count, 2)
 
     async def test_task_local_resolution_cannot_hide_global_conflict(self):
         local, _ = self.db._project_labeling_cases(baseline_scopes=["scope"], task_id=self.task_a)

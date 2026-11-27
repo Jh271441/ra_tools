@@ -31,6 +31,7 @@ from ..support.common import (
 from ..support.review_payloads import (
     _review_reason_analysis_payload,
 )
+from ..support.review_chart_scope import analysis_with_chart_membership
 from ..support.filter_parsing import _case_filter_kwargs
 from ..support.external_links import _voyager_issue_url
 from .cases import _case_issue_ids_with_status_filter
@@ -93,6 +94,7 @@ async def review_reason_analysis(
     scopes = resolve_request_baseline_scopes(baselines, request=request)
     selected_ids = await _analysis_issue_ids(request, baselines, issue_ids, work_split_id)
     payload = await asyncio.to_thread(
+        analysis_with_chart_membership,
         _review_reason_analysis_payload,
         chart_gt=chart_gt, chart_review=chart_review,
         model_run_id=model_run_id,
