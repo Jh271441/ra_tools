@@ -190,7 +190,7 @@ export function normalizedLabelingStatusFilters(
       : [status],
   );
   return Array.from(new Set(expanded)).filter((status) =>
-    ["unannotated", "incomplete", "resolved", "conflict"].includes(status),
+    ["unannotated", "incomplete", "resolved", "conflict"].includes(status) || (submittedOnly && status === "decision_changed"),
   );
 }
 
@@ -259,7 +259,9 @@ export function buildLabelGtFilterOptions({
       group: stateGroup,
     },
   ];
-  if (!labeling) {
+  if (labeling) {
+    stateItems.push({ value: "decision_changed", label: bilingual(lang, "最新标注与旧裁决不同", "Label differs from prior decision"), group: stateGroup });
+  } else {
     stateItems.push({value:"exclusion_pending", label:bilingual(lang, "排除待确定", "Exclusion pending"), group:stateGroup});
     const legacyExtras: Array<[string, string, string]> = [
       ["stale", "裁决需确认", "Decision needs review"],
