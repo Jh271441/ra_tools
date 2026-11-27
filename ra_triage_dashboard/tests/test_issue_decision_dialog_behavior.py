@@ -10,7 +10,9 @@ class IssueDecisionDialogBehaviorTest(unittest.TestCase):
         source = Path(__file__).resolve().parents[1] / 'static/js'
         script = r'''
 const fs = require('fs'), vm = require('vm'), path = require('path'), assert = require('node:assert/strict');
-async function scenario(before, after, {pendingImages = [], race = false, failList = false} = {}) {
+async function scenario(before, after, {
+  pendingImages = [], race = false, failList = false, label = false, lateEdit = false,
+} = {}) {
   const issue = 'cn34021313', calls = [], toasts = [];
   const form = {querySelectorAll:()=>[]}, error = {textContent:''}, confirmation = {checked:true};
   const data = {issue_id:issue, label_state:{state:'conflict',source_fingerprint:'original'}};
@@ -21,18 +23,21 @@ async function scenario(before, after, {pendingImages = [], race = false, failLi
   };
   const s = {
     state:{activePage:'labeling',caseLabeling:labeling,session:{username:'alice'}},
-    URLSearchParams, AbortController, DEFAULT_CASE_PAGE_SIZE:20,
+    URLSearchParams, AbortController, DEFAULT_CASE_PAGE_SIZE:20, document:{},
     $:selector=>({'#caseLabelingForm':form,'#caseDecisionEditorError':error,'#caseDecisionConfirmExclusion':confirmation})[selector]||null,
-    hasDashboardWriteRole:()=>true, isPageContextCurrent:()=>true, selectedBaselineQueryValue:()=> '0626',
+    hasDashboardWriteRole:()=>true, capturePageContext:()=>({page:'labeling'}),
+    isPageContextCurrent:()=>true, selectedBaselineQueryValue:()=> '0626',
     withBaselineQuery:p=>p, joinFilterList:values=>(values||[]).join(','),
-    enhanceDashboardSelects(){}, acknowledgeLocalChange(){}, hasFocusedTextInput:()=>false,
+    enhanceDashboardSelects(){}, acknowledgeLocalChange(){}, hasFocusedTextInput:()=>label,
+    isImeComposing:()=>false,
     uiText:(zh,en)=>en, showToast:message=>toasts.push(message),
     caseExclusionErrorMessage:error=>error.message,
     api:async(url, options={})=>{
       calls.push({url,options});
-      if (options.method==='POST') return {decision:{id:294}};
+      if (options.method==='POST') return {decision:{id:294},revision:{id:51}};
       if (url.startsWith('/api/labeling/cases?')) {
         if (race) labeling.detailSeq++;
+        if (lateEdit) labeling.dirty=true;
         if (failList) throw Error('list unavailable');
         return {queue_issue_ids:after,total:after.length,page:1};
       }
@@ -45,7 +50,8 @@ async function scenario(before, after, {pendingImages = [], race = false, failLi
   }
   Object.assign(s,{
     renderCaseLabelingList(){}, refreshCaseLabelDecisionLanguage(){},
-    caseLabelingFormPayload:()=>({expected_output:'正确触发',tags:[],rationale:'evidence',is_excluded:true}),
+    loadCaseLabelingCases:async()=>s.api('/api/labeling/cases?chart_gt=blocked'),
+    caseLabelingFormPayload:()=>({task_id:'',expected_output:'正确触发',tags:[],rationale:'evidence',is_excluded:true}),
     caseLabelingOutputValidation:()=>({conflict:false}),
     exitCaseDecisionEditor:()=>{
       vm.runInContext('caseLabelDecisionUi.editor=null',s);
@@ -54,10 +60,14 @@ async function scenario(before, after, {pendingImages = [], race = false, failLi
     selectCaseLabelingIssue:async(id,options)=>{labeling.issueId=id;labeling.historyMode=options.historyMode;},
     closeCaseLabelingDetail:options=>{labeling.issueId='';labeling.historyMode=options.historyMode;},
   });
-  vm.runInContext(`caseLabelDecisionUi.editor={key:'draft',baselines:'0626',pageContext:{},actor:'alice',
-    data:${JSON.stringify(data)}, excludedConfirmed:true, images:[],retained:[],
-    ordinary:{}, rationale:''}`,s);
-  await s.adjudicateIssueLabel();
+  if (label) {
+    await s.saveCaseLabelingRevision({preventDefault(){},submitter:{}});
+  } else {
+    vm.runInContext(`caseLabelDecisionUi.editor={key:'draft',baselines:'0626',pageContext:{},actor:'alice',
+      data:${JSON.stringify(data)}, excludedConfirmed:true, images:[],retained:[],
+      ordinary:{}, rationale:''}`,s);
+    await s.adjudicateIssueLabel();
+  }
   assert.equal(calls.filter(call=>call.options.method==='POST').length,1,error.textContent);
   const request=calls.find(call=>call.url.startsWith('/api/labeling/cases?'));
   assert(request, 'a saved decision must read the fresh filtered queue');
@@ -92,6 +102,20 @@ async function scenario(before, after, {pendingImages = [], race = false, failLi
   f=await scenario([issue,next],[next],{failList:true});
   assert.match(f.toasts.at(-1),/Decision saved.*filtered results/);
   assert.equal(f.labeling.caseData.label_state.decision.id,294);
+
+  f=await scenario([issue,next,last],[next,last],{label:true});
+  assert.equal(f.calls[0].url,'/api/labeling/cases/'+issue+'/revisions');
+  assert.equal(f.labeling.issueId,next,'an ordinary label can leave the GT queue');
+  assert.equal(f.labeling.historyMode,'replace');
+  assert.equal(f.calls.length,2);
+  f=await scenario([issue],[],{label:true});
+  assert.equal(f.labeling.issueId,'');
+  f=await scenario([issue,next],[next],{label:true,lateEdit:true});
+  assert.equal(f.labeling.issueId,issue,'new personal edits made during refresh stay open');
+  assert(f.labeling.dirty);
+  f=await scenario([issue,next],[next],{label:true,failList:true});
+  assert.match(f.toasts.at(-1),/Label saved.*filtered results/);
+  assert.equal(f.labeling.draftNotice,null,'a refresh error must not offer to replay a committed label');
 })().catch(error=>{console.error(error);process.exitCode=1;});
 '''
         result = subprocess.run(['node', '-e', script, str(source)], capture_output=True, text=True)
