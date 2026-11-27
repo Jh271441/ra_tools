@@ -4,7 +4,7 @@ No runtime, database or presentation dependencies. Query filters and summary
 projections must use this same decision precedence and freshness policy.
 """
 
-LABELING_FILTER_STATUSES = frozenset({"pending", "unannotated", "incomplete", "resolved", "conflict"})
+LABELING_FILTER_STATUSES = frozenset({"pending", "unannotated", "incomplete", "resolved", "conflict", "decision_changed"})
 
 
 def has_label_submission(item):

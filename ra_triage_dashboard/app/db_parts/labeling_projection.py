@@ -832,6 +832,17 @@ class LabelingProjectionMixin:
                     != sorted(item["label_case_id"] for item in source_payload))
                 )
                 if decision["stale"]:
+                    previous_ids = set(decision["source_revision_ids"])
+                    if human:
+                        votes = ((vote["id"], vote["label"]) for role in ("rd", "te")
+                                 for vote in human["lanes"][role]["source"]["votes"])
+                    else:
+                        votes = ((revision["id"], revision["expected_output"])
+                                 for source in sources for revision in source["revision_summaries"])
+                    decision["classification_changed"] = any(
+                        rid not in previous_ids and label in LABELS and label != decision["expected_output"]
+                        for rid, label in votes
+                    )
                     aggregate_state = "stale"
                     expected_output = ""
                 else:
