@@ -52,6 +52,7 @@ interface ModelRunItem {
   inferred_baseline_ids?: string[];
   baseline_prediction_count?: number;
   failure_count?: number;
+  selected_dataset_priority?: number;
 }
 
 interface ModelRunsResponse {
@@ -166,6 +167,7 @@ interface LegacyReviewBridgeWindow {
 }
 
 const REVIEW_ALLOCATION_DRAFT_KEY = "manual-review-allocation-draft-v1";
+const REVIEW_PICKER_MENU_WIDTH = 480;
 
 function readReviewFiltersFromUrl(): ReviewFilterState {
   const params = new URLSearchParams(
@@ -909,9 +911,12 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
 
   // Options for all filter pickers
   const runSelectOptions: UiSelectOption[] = useMemo(() => {
+    const orderedRuns = [...modelRuns].sort((a, b) =>
+      (b.selected_dataset_priority ?? 0) - (a.selected_dataset_priority ?? 0),
+    );
     return [
       { value: "", label: bilingual(lang, "未选择模型 Run", "No model Run") },
-      ...modelRuns.map((run) => {
+      ...orderedRuns.map((run) => {
         const tag = run.is_default ? bilingual(lang, "默认 · ", "Default · ") : "";
         const inferred = Array.isArray(run.inferred_baseline_ids)
           ? run.inferred_baseline_ids.filter(Boolean)
@@ -1552,6 +1557,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
               id="modelRunPickerTrigger"
               value={effectiveRunId}
               options={runSelectOptions}
+              menuWidth={REVIEW_PICKER_MENU_WIDTH}
               disabled={Boolean(activeTask)}
               title={runPickerLockedTitle}
               ariaLabel={bilingual(lang, "对比模型 Run", "Compare model Run")}
@@ -1872,6 +1878,7 @@ export const ReviewGalleryIsland: React.FC<ReviewGalleryIslandProps> = ({
                 id="reviewTaskPicker"
                 value={filters.workSplitId}
                 options={reviewTaskSelectOptions}
+                menuWidth={REVIEW_PICKER_MENU_WIDTH}
                 ariaLabel={bilingual(lang, "复核任务", "Review task")}
                 onChange={handleTaskSelect}
               />

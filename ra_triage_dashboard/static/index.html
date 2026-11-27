@@ -79,7 +79,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-926` + bundleRev;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-927` + bundleRev;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -149,7 +149,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-926` + cssRev;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-927` + cssRev;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -415,7 +415,7 @@
                       <span class="ui-select-summary" id="modelRunPickerSummary" data-i18n="filter.no_run">未选择模型 Run</span>
                       <span class="ui-select-caret" aria-hidden="true"></span>
                     </button>
-                    <div class="ui-select-panel" id="modelRunPickerPanel" role="listbox" hidden></div>
+                    <div class="ui-select-panel ui-select-wrap-options" id="modelRunPickerPanel" role="listbox" hidden></div>
                     <select id="modelRunFilter" class="ui-select-native gateway-model-native-select" aria-hidden="true" tabindex="-1">
                       <option value="" data-i18n="filter.no_run">未选择模型 Run</option>
                     </select>
@@ -489,7 +489,13 @@
                     </span>
                   </div>
                   <div class="review-task-filter-row">
-                    <div class="ui-select" id="reviewTaskPicker"><button class="ui-select-trigger" type="button"><span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span></button><div class="ui-select-panel" role="listbox" hidden></div><select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select></div>
+                    <div class="ui-select" id="reviewTaskPicker">
+                      <button class="ui-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="reviewTaskPickerPanel">
+                        <span class="ui-select-summary">综合结果</span><span class="ui-select-caret" aria-hidden="true"></span>
+                      </button>
+                      <div class="ui-select-panel ui-select-wrap-options" id="reviewTaskPickerPanel" role="listbox" hidden></div>
+                      <select class="ui-select-native" id="reviewTaskFilter" aria-hidden="true" tabindex="-1"><option value="">综合结果</option></select>
+                    </div>
                   </div>
                 </div>
                 <label id="reviewTaskProgressField" hidden>
@@ -2720,7 +2726,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-926` + (window.__RA_BUNDLE_REV__ || "");
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-927` + (window.__RA_BUNDLE_REV__ || "");
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>

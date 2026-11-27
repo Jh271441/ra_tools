@@ -49,8 +49,8 @@ function renderReviewTaskContext() {
   if (runTrigger) {
     runTrigger.disabled = true;
     runTrigger.title = task.legacy_no_run
-      ? "历史无 Run 任务仅用于查看原分配范围；退出任务后可选择 Model Run"
-      : "当前 Model Run 由任务锁定";
+      ? uiText("历史无 Run 任务仅用于查看原分配范围，退出任务后可选择模型 Run", "Exit this historical task to choose a model Run.")
+      : uiText("当前复核任务已锁定模型 Run", "The current review task locks the model Run.");
   }
 }
 
@@ -202,7 +202,8 @@ function workSplitOptionLabel(splitId) {
   if (!value) return uiText("综合结果", "Combined results");
   const task = state.reviewTaskContext;
   if (task && value === String(task.id || "")) {
-    return `${task.name || "当前任务"} · ${Number(task.issue_count || 0)} 个 Issue`;
+    const count = Number(task.issue_count || 0);
+    return `${task.name || uiText("当前任务", "Current task")} · ${uiText(`${count} 个 Issue`, `${count} ${count === 1 ? "issue" : "issues"}`)}`;
   }
   return uiText("当前复核任务", "Current review task");
 }
@@ -293,7 +294,7 @@ function renderReviewWorkSplitPicker(selected = state.reviewWorkSplitId, { load 
       loadReviewTaskContext(value).then(() => loadCases({ keepSelection: false, page: 1 }))
         .catch((error) => showToast(error.message, true));
     },
-    maxHeight: 320, maxWidth: 520,
+    maxHeight: 320, minWidth: 480,
   });
   renderReviewTaskPickerHint();
   if (!root.dataset.taskOptionsBound) {

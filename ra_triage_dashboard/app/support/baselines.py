@@ -298,6 +298,12 @@ def resolve_request_baseline_scopes(
     task_id: str = "",
 ) -> list[str]:
     ids = resolve_request_baseline_ids(raw, request=request, task_id=task_id)
+    return scopes_for_baseline_ids(ids)
+
+
+def scopes_for_baseline_ids(ids: Sequence[str]) -> list[str]:
+    """Map resolved dataset IDs to stored Issue provenance scopes."""
+
     scopes = ids_to_scopes([i for i in ids if not i.startswith("version-")], baseline_registry)
     if set(ids).intersection(PARTITION_IDS):
         scopes.extend(SOURCE_SCOPES)

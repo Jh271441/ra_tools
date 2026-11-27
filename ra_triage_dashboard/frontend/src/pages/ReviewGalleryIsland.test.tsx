@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReviewGalleryIsland } from "./ReviewGalleryIsland";
 
@@ -145,6 +145,33 @@ describe("ReviewGalleryIsland", () => {
       expect(scope.get("chart_gt")).toBe("blocked");
       expect(scope.get("model_run_id")).toBe("run-1");
     });
+  });
+
+  it("puts selected-dataset Runs first and preserves an explicit Run selection", async () => {
+    window.history.replaceState({}, "", "/manual-s6/review?baselines=0508&run=other");
+    const defaultFetch = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (!String(input).includes("/api/model-runs")) return defaultFetch(input, init);
+      return Promise.resolve(Response.json({
+        default_model_run_id: "other",
+        items: [
+          { id: "other", name: "Other dataset", selected_dataset_priority: 0 },
+          { id: "overlap", name: "Overlapping dataset", selected_dataset_priority: 1 },
+          { id: "match", name: "Selected dataset", selected_dataset_priority: 2 },
+        ],
+      }));
+    });
+    renderWithQuery(<ReviewGalleryIsland active lang="en" selectedBaselines={["0508"]} isAdmin canWrite identityPending={false} />);
+    const runPicker = screen.getByRole("combobox", { name: "Compare model Run" });
+    await waitFor(() => expect(runPicker).toHaveTextContent("Other dataset"));
+    fireEvent.click(runPicker);
+    const options = within(screen.getByRole("listbox", { name: "Compare model Run" })).getAllByRole("option");
+    expect(options).toHaveLength(4);
+    expect(options[0]).toHaveTextContent("No model Run");
+    expect(options[1]).toHaveTextContent("Selected dataset");
+    expect(options[2]).toHaveTextContent("Overlapping dataset");
+    expect(options[3]).toHaveTextContent("Other dataset");
+    expect(options[3]).toHaveAttribute("aria-selected", "true");
   });
 
   it("renders filters, issue cards, zero native selects, and delegates card open to classic detail", async () => {

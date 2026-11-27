@@ -298,7 +298,7 @@ function populateUiSelect(root, options, selectedValue = "", { preserveNative = 
   if (trigger) trigger.disabled = Boolean(native?.disabled);
 }
 
-function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeFocus = "trigger" } = {}) {
+function bindUiSelect(root, { onChange, maxHeight = 320, minWidth = 160, maxWidth = 420, escapeFocus = "trigger" } = {}) {
   if (!root) return;
   const trigger =
     root.querySelector(".ui-select-trigger") ||
@@ -329,9 +329,8 @@ function bindUiSelect(root, { onChange, maxHeight = 320, maxWidth = 420, escapeF
     const width = trigger.getBoundingClientRect().width;
     openAnchoredPanel(panel, trigger, {
       maxHeight,
-      minWidth: Math.max(width, 160),
-      matchAnchorWidth: true,
-      maxWidth: Math.max(width, maxWidth),
+      minWidth,
+      maxWidth: Math.max(width, minWidth, maxWidth),
     });
   });
 

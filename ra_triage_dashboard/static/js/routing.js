@@ -196,6 +196,7 @@ function applyUiLanguage(language, { persist = true } = {}) {
     "renderAnalysisCatalogFilters",
     "renderReviewerFilter",
     "renderWorkAssigneeFilter",
+    "renderReviewRunPicker",
     "renderReviewTaskContext",
     "renderReviewAssignmentPage",
     "renderTrailUpdateFilters",
@@ -235,35 +236,8 @@ function applyUiLanguage(language, { persist = true } = {}) {
     }
   } catch (_) {}
   try {
-    if (typeof loadRuns === "function" && state.modelRuns?.length) {
-      // Refresh model-run picker labels without network.
-      const picker = $("#modelRunPicker");
-      if (picker && typeof populateUiSelect === "function") {
-        const runOptions = [
-          { value: "", label: t("filter.no_run") },
-          ...state.modelRuns.map((run) => {
-            const tag = run.is_default ? t("runs.default_tag") : "";
-            const inferred = Array.isArray(run.inferred_baseline_ids)
-              ? run.inferred_baseline_ids.filter(Boolean)
-              : [];
-            const setHint = inferred.length ? ` · ${inferred.join("+")}` : "";
-            return {
-              value: run.id,
-              label: `${tag}${run.name}${setHint} · ${t("runs.set_count")} ${run.baseline_prediction_count ?? 0} · ${t("runs.err_count")} ${run.failure_count ?? 0}`,
-            };
-          }),
-        ];
-        populateUiSelect(picker, runOptions, state.selectedRunId || "");
-      }
-      // Keep empty-option labels in sync with locale.
-      const emptySummary = $("#modelRunPickerSummary");
-      if (emptySummary && !state.selectedRunId) emptySummary.textContent = t("filter.no_run");
-      const analysisEmpty = $("#analysisRunPickerSummary");
-      if (analysisEmpty && !state.analysis?.runId) {
-        // only if native empty selected
-        const native = $("#analysisRunFilter");
-        if (native && !native.value) analysisEmpty.textContent = t("filter.no_overlay_run");
-      }
+    if (typeof renderReviewWorkSplitPicker === "function") {
+      renderReviewWorkSplitPicker(state.reviewWorkSplitId, { load: false });
     }
   } catch (_) {}
   document.querySelectorAll(".multi-filter").forEach((root) => {
