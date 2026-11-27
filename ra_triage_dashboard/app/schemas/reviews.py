@@ -48,6 +48,7 @@ class LabelingSummaryResponse(DashboardBaseModel):
     page: int = 1
     page_size: int = 20
     summary: Dict[str, Any] = Field(default_factory=dict)
+    matrix_exclusions: Dict[str, int] = Field(default_factory=dict)
 
 
 class RdResultsResponse(DashboardBaseModel):

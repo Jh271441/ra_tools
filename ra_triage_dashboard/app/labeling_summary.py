@@ -40,6 +40,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
     states, submitted_states, outputs, pairs, tags, evidence, scenarios = (
         Counter() for _ in range(7)
     )
+    matrix_exclusions = Counter()
     people = defaultdict(set)
     compact_items = []
     reason_count = structured_evidence_count = adjudicated_count = 0
@@ -47,10 +48,16 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
         status = item.get("label_state", "pending")
         states[status] += 1
         output, gt = item.get("expected_output"), item.get("gt_label")
-        if status == "resolved" and output in LABELS:
+        if status != "resolved" or output not in LABELS:
+            matrix_exclusions["no_final_label"] += 1
+        else:
             outputs[output] += 1
             if gt in LABELS:
                 pairs[(gt, output)] += 1
+            elif str(gt or "").strip():
+                matrix_exclusions["unsupported_gt"] += 1
+            else:
+                matrix_exclusions["missing_gt"] += 1
         heads = _current_heads(item)
         primary_result = current_adjudication(item)
         original_conflict = any(
@@ -150,6 +157,7 @@ def summarize_labeling_cases(items, *, page=1, page_size=20):
         "outputs": dict(outputs),
         "pairs": [{"gt": gt, "label": output, "count": count}
                   for (gt, output), count in sorted(pairs.items())],
+        "matrix_exclusions": dict(matrix_exclusions),
         "tags": dict(tags), "evidence": dict(evidence),
         "scenarios": dict(scenarios),
         "people": [{"name": name, "count": len(ids)} for name, ids in

@@ -181,6 +181,11 @@ function bindEvents() {
   bindShortcutGuide();
   bindGlobalRefreshShortcut();
   bindGlobalSidebarShortcut();
+  const reviewCountDialog = $("#reviewCountDialog");
+  $("#reviewCountHelp")?.addEventListener("click", () => reviewCountDialog.showModal());
+  reviewCountDialog?.addEventListener("click", (event) => {
+    if (event.target === reviewCountDialog) reviewCountDialog.close();
+  });
   if (typeof bindIntentLabelingEvents === "function") bindIntentLabelingEvents();
   if (typeof bindCaseLabelingEvents === "function") bindCaseLabelingEvents();
   bindWorkSplitControls();

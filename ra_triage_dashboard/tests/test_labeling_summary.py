@@ -56,10 +56,27 @@ class LabelingSummaryTest(unittest.TestCase):
         data = summarize_labeling_cases([])
         self.assertEqual(data['total'], 0)
         self.assertEqual(data['pairs'], [])
+        self.assertEqual(data['matrix_exclusions'], {})
         self.assertEqual(data['people'], [])
         self.assertEqual(data['outputs'], {})
         self.assertEqual(data['items'], [])
         self.assertEqual(data['page_count'], 0)
+
+    def test_matrix_exclusions_account_for_the_whole_scope_before_paging(self):
+        items = [
+            {"issue_id": "match", "label_state": "resolved", "expected_output": "误触发", "gt_label": "误触发"},
+            {"issue_id": "missing", "label_state": "resolved", "expected_output": "正确触发", "gt_label": ""},
+            {"issue_id": "other", "label_state": "resolved", "expected_output": "正确触发", "gt_label": "其他"},
+            {"issue_id": "unresolved", "label_state": "conflict", "gt_label": ""},
+        ]
+        for item in items:
+            item["label_cases"] = [{"resolution": {"heads": [{"author": "alice"}]}}]
+        data = summarize_labeling_cases(items, page=2, page_size=1)
+
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(data["pairs"], [{"gt": "误触发", "label": "误触发", "count": 1}])
+        self.assertEqual(data["matrix_exclusions"], {"missing_gt": 1, "unsupported_gt": 1, "no_final_label": 1})
+        self.assertEqual(data["total"], 4)
 
     def test_task_adjudication_is_primary_and_original_conflict_is_retained(self):
         heads=[{"id":1,"author":"alice","expected_output":"正确触发","rationale":"original a","tags":["old"]},{"id":2,"author":"bob","expected_output":"误触发","rationale":"original b"}]

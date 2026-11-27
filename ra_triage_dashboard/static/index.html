@@ -79,7 +79,7 @@
         const appPreload = document.createElement("link");
         appPreload.rel = "preload";
         appPreload.as = "script";
-        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-928` + bundleRev;
+        appPreload.href = `${activeBase}/static/app-bundle.js?v=manual-triage-929` + bundleRev;
         document.head.appendChild(appPreload);
         // These same-origin reads are required on every route. Begin them
         // while the bundle downloads; consume once through the normal API
@@ -149,7 +149,7 @@
         stylesheetRequests.forEach((path) => {
           const styles = document.createElement("link");
           styles.rel = "stylesheet";
-          styles.href = `${activeBase}/static/${path}?v=manual-triage-928` + cssRev;
+          styles.href = `${activeBase}/static/${path}?v=manual-triage-929` + cssRev;
           styles.addEventListener("load", settleStylesheet, { once: true });
           styles.addEventListener("error", settleStylesheet, { once: true });
           document.head.appendChild(styles);
@@ -373,7 +373,12 @@
           <div class="header-metrics" aria-label="概览">
             <div><span class="ui-lang-zh">基线</span><span class="ui-lang-en">Baseline</span><strong id="statIssues">—</strong></div>
             <div class="metric-fail"><span class="ui-lang-zh">判断失败</span><span class="ui-lang-en">Mismatches</span><strong id="statFailures">—</strong></div>
-            <div class="metric-reviewed"><span class="ui-lang-zh">人工复核</span><span class="ui-lang-en">Human reviews</span><strong id="statReviewed">—</strong></div>
+            <div class="metric-reviewed">
+              <button class="metric-review-count" id="reviewCountHelp" type="button" aria-haspopup="dialog" aria-controls="reviewCountDialog" data-i18n-title="topbar.review_count_help">
+                <span data-i18n="topbar.reviewed">复核记录</span><strong id="statReviewed">—</strong>
+                <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9.1v4.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="6.3" r=".9" fill="currentColor"/></svg>
+              </button>
+            </div>
             <div class="metric-shared-labels"><span class="ui-lang-zh">共享标签结论</span><span class="ui-lang-en">Labels resolved</span><strong id="statSharedLabels">—</strong></div>
             <div><span class="ui-lang-zh">模型输出</span><span class="ui-lang-en">Predictions</span><strong id="statPredictions">—</strong></div>
           </div>
@@ -2038,6 +2043,17 @@
       </div>
     </div>
 
+    <dialog class="dialog" id="reviewCountDialog" aria-labelledby="reviewCountTitle" aria-describedby="reviewCountDescription">
+      <form class="dialog-card" method="dialog">
+        <div class="dialog-heading">
+          <h2 id="reviewCountTitle" data-i18n="topbar.review_count_help">复核记录统计说明</h2>
+          <button class="icon-button" type="submit" aria-label="关闭" data-i18n-aria-label="common.close">×</button>
+        </div>
+        <p class="dialog-copy" id="reviewCountDescription" data-i18n="topbar.review_count_description"></p>
+        <div class="dialog-actions"><button class="button button-quiet" type="submit" data-i18n="common.close">关闭</button></div>
+      </form>
+    </dialog>
+
     <dialog class="dialog intent-delete-confirm-dialog" id="intentDeleteConfirmDialog" aria-labelledby="intentDeleteConfirmTitle">
       <form class="dialog-card" method="dialog">
         <div class="dialog-heading">
@@ -2726,7 +2742,7 @@
         }
       })();
       const appScript = document.createElement("script");
-      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-928` + (window.__RA_BUNDLE_REV__ || "");
+      appScript.src = `${window.__RA_TRIAGE_BASE__ || ""}/static/app-bundle.js?v=manual-triage-929` + (window.__RA_BUNDLE_REV__ || "");
       appScript.async = false;
       document.body.appendChild(appScript);
     </script>
