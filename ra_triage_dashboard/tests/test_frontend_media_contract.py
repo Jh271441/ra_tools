@@ -17,7 +17,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn('html[data-color-theme="light"] .issue-id', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .run-source-tab em', STYLES_CSS)
         self.assertIn('html[data-color-theme="light"] .button-primary', STYLES_CSS)
-        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-922`', INDEX_HTML)
+        self.assertIn('`${activeBase}/static/${path}?v=manual-triage-923`', INDEX_HTML)
         self.assertIn(".review-exclude-toggle { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center;", STYLES_CSS)
         self.assertIn("display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;", STYLES_CSS)
         self.assertIn("max-height: min(70dvh, 640px); overflow: auto;", STYLES_CSS)
@@ -172,7 +172,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn("function renderAnalysisReviewStatus", APP_JS)
         self.assertIn("function bindAnalysisReviewStatusHover", APP_JS)
         self.assertIn('data-review-status-key=', APP_JS)
-        self.assertIn('role="listitem" tabindex="0"', APP_JS)
+        self.assertIn('<a class="chart-detail-link"', APP_JS)
         self.assertIn("data.summary?.model_review_status_counts", APP_JS)
         self.assertNotIn('key: "blocked_by_label"', APP_JS)
         self.assertIn('["needs_gt_review", "GT 待复核", "GT needs review"]', APP_JS)
@@ -730,7 +730,7 @@ class FrontendMediaContractTest(unittest.TestCase):
         self.assertIn("function jumpToQueueIndex", APP_JS)
         self.assertIn("function bindDetailQueueIndexJump", APP_JS)
         self.assertIn(".detail-queue-index-input", STYLES_CSS)
-        self.assertIn("manual-triage-922", APP_ENTRY_JS)
+        self.assertIn("manual-triage-923", APP_ENTRY_JS)
 
     def test_desktop_layout_panels_are_mouse_and_keyboard_resizable(self) -> None:
         self.assertIn('id="sidebarResizer" role="separator"', INDEX_HTML)

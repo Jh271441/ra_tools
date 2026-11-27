@@ -110,6 +110,8 @@ async def create_gt_export_preview(request: Request) -> dict[str, Any]:
                 comment_state=normalized_comment_state,
                 cluster=_as_text(filter_body.get("cluster")).strip(),
                 gt_update=_as_text(filter_body.get("gt_update")).strip(),
+                chart_label=_as_text(filter_body.get("chart_label")).strip(),
+                chart_gt=_as_text(filter_body.get("chart_gt")).strip(),
             )
         except ValueError as exc:
             raise _detail(400, str(exc)) from exc

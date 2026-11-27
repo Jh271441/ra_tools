@@ -1404,3 +1404,12 @@
 @media (max-width: 359px) {
   .allocation-setup-member .assignment-ratio-box { width: 62px; }
 }
+
+@media (max-width: 639px), (pointer: coarse) {
+  .analysis-decision-grid :is(.analysis-review-status-legend-item, .analysis-pie-legend-row):has(.chart-detail-link) {
+    min-height: 44px;
+  }
+  .analysis-decision-grid .analysis-review-status-legend-copy { flex-wrap: wrap; }
+  .analysis-decision-grid .analysis-review-status-legend-copy strong { white-space: normal; }
+  #analysisCaseList, #labelSummaryCaseList { scroll-margin-top: calc(var(--mobile-topbar-height, 62px) + 12px); }
+}

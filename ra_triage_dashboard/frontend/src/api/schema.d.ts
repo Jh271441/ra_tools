@@ -10615,6 +10615,8 @@ export interface operations {
                 comment_state?: string;
                 cluster?: string;
                 gt_update?: string;
+                chart_gt?: string;
+                chart_label?: string;
                 page?: number;
                 page_size?: number;
             };
@@ -12028,6 +12030,8 @@ export interface operations {
                 failure_only?: boolean;
                 annotation_author?: string;
                 review_status?: string;
+                chart_gt?: string;
+                chart_review?: string;
                 label_state?: string;
                 gt_relation?: string;
                 gt_label?: string;
@@ -12085,6 +12089,8 @@ export interface operations {
                 failure_only?: boolean;
                 annotation_author?: string;
                 review_status?: string;
+                chart_gt?: string;
+                chart_review?: string;
                 label_state?: string;
                 gt_relation?: string;
                 issue_tags?: string;

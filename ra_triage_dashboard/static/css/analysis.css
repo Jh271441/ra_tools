@@ -572,3 +572,27 @@ html[data-color-theme="light"] .analysis-stat-card > strong { color: var(--analy
 .analysis-gt-chart .analysis-pie-legend-line { flex-wrap: wrap; gap: 2px 8px; }
 .analysis-gt-chart .analysis-pie-legend-line strong { color: var(--text); font-size: 12px; white-space: normal; }
 .analysis-gt-chart .analysis-pie-legend-line small { color: var(--muted); font-size: 12px; }
+
+/* Keep the legend's geometry stable while making its row a native detail link. */
+.analysis-decision-grid :is(.analysis-review-status-legend-item, .analysis-pie-legend-row):has(.chart-detail-link) {
+  position: relative;
+  padding-inline-end: 1.5rem;
+}
+.chart-detail-link {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-inline-end: 4px;
+  border-radius: inherit;
+  color: var(--muted);
+  text-decoration: none;
+}
+.chart-detail-link span { opacity: .65; }
+.chart-detail-link:is(:hover, :focus-visible, [aria-current="true"]) { color: var(--accent); }
+.chart-detail-link:is(:hover, :focus-visible, [aria-current="true"]) span { opacity: 1; }
+.chart-detail-link:focus-visible { outline: 2px solid var(--accent); }
+#analysisCaseList, #labelSummaryCaseList { scroll-margin-top: 5rem; }
+.chart-detail-filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4em; }
+.chart-detail-filter a { color: var(--accent); }

@@ -204,6 +204,8 @@ interface AnalysisRouteState {
   modelLabel: string[];
   annotationAuthor: string[];
   reviewStatus: string[];
+  chartGt: string;
+  chartReview: string;
   labelStates: string[];
   gtRelations: string[];
   missingEvidence: string[];
@@ -234,6 +236,8 @@ function defaultAnalysisRouteState(): AnalysisRouteState {
     modelLabel: [],
     annotationAuthor: [],
     reviewStatus: [],
+    chartGt: "",
+    chartReview: "",
     labelStates: [],
     gtRelations: [],
     missingEvidence: [],
@@ -297,6 +301,8 @@ function readAnalysisRouteFromUrl(): AnalysisRouteState {
       params.get("model_label") || params.get("annotation") || "",
     ).filter((v) => (MODEL_LABELS as readonly string[]).includes(v)),
     annotationAuthor: parseFilterList(params.get("reviewer")),
+    chartGt: params.get("chart_gt") || "",
+    chartReview: params.get("chart_review") || "",
     reviewStatus: parseFilterList(params.get("status")).filter((v) =>
       [
         "pending",
@@ -341,6 +347,8 @@ function buildAnalysisUrl(state: AnalysisRouteState, baselines: string[]): strin
   const params = new URLSearchParams();
   params.set("run", state.runId || "none");
   params.set("comparison", state.runId ? comparisonStatusParam(state.comparisonStatus) : "all");
+  if (state.chartGt) params.set("chart_gt", state.chartGt);
+  if (state.chartReview) params.set("chart_review", state.chartReview);
   if (state.search) params.set("q", state.search);
   const validIds = state.issueIds.filter((v) => ISSUE_QUERY_ID_RE.test(v));
   if (validIds.length) params.set("issue_ids", validIds.join(","));
@@ -383,6 +391,7 @@ function buildAnalysisApiParams(
     ["issue_ids", joinFilterList(state.issueIds)],
     ["annotation_author", joinFilterList(state.annotationAuthor)],
     ["review_status", joinFilterList(state.reviewStatus)],
+    ["chart_gt", state.chartGt], ["chart_review", state.chartReview],
     ["label_state", joinFilterList(state.labelStates)],
     ["gt_relation", joinFilterList(state.gtRelations)],
     ["gt_label", joinFilterList(state.gtLabel)],
@@ -684,6 +693,18 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
   });
 
   const data = analysisQuery.data;
+  const focusDetailOnLoad = useRef(window.location.hash === "#analysisCaseList");
+  useEffect(() => {
+    if (active && data && !analysisQuery.isPlaceholderData && focusDetailOnLoad.current && caseListRef.current) {
+      focusDetailOnLoad.current = false;
+      caseListRef.current.focus({ preventScroll: true });
+      caseListRef.current.scrollIntoView({ block: "start" });
+    }
+  }, [active, data, analysisQuery.isPlaceholderData]);
+
+  const chartHref = (filters: Partial<typeof route>) =>
+    buildAnalysisUrl({ ...route, ...filters, page: 1 }, selectedBaselines) + "#analysisCaseList";
+
 
   // Debounced text inputs (Issue IDs, Comment content, Search reasons)
   const scheduleDraftCommit = useCallback(
@@ -1634,6 +1655,8 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
             {data ? (
               <AnalysisStatusBar
                 statuses={statusItems}
+                lang={lang}
+                detailHref={chartReview => chartHref({ chartReview })}
                 emptyText={bilingual(lang, "暂无 Review", "No reviews")}
               />
             ) : (
@@ -1648,6 +1671,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
           {data && (
             <AnalysisGtCard
               counts={data.gt_update_counts}
+              detailHref={chartGt => chartHref({ chartGt })}
               prefix="analysis"
               lang={lang}
               onOpenRules={() => setRulesModalMode("gt")}
@@ -1752,6 +1776,13 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
             <h3>{bilingual(lang, "Review 原因明细", "Review reason details")}</h3>
           </div>
           <small id="analysisCaseSummary">
+            {(route.chartGt || route.chartReview) && (
+              <span className="chart-detail-filter">
+                <a href={chartHref({ chartGt: "", chartReview: "" })}>
+                  {bilingual(lang, "清除图表筛选", "Clear chart filter")}
+                </a>
+              </span>
+            )}
             {analysisQuery.isLoading && !data
               ? bilingual(lang, "正在加载最新 Review…", "Loading latest reviews…")
               : bilingual(
@@ -1762,7 +1793,7 @@ export const ReviewAnalysisPage: React.FC<ReviewAnalysisPageProps> = ({
           </small>
         </div>
 
-        <div className="analysis-case-list" id="analysisCaseList" ref={caseListRef} aria-live="polite">
+        <div className="analysis-case-list" id="analysisCaseList" tabIndex={-1} ref={caseListRef} aria-live="polite">
           {analysisQuery.isError && !data ? (
             <div className="analysis-empty">
               {analysisQuery.error instanceof Error

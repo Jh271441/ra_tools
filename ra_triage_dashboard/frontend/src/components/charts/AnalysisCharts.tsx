@@ -379,6 +379,11 @@ export const AnalysisDonutGroup: React.FC<{
   );
 };
 
+function ChartDetailLink({ href, label, count, lang }: { href: string; label: string; count: number; lang: UiLanguage }) {
+  const name = bilingual(lang, `查看「${label}」的 ${count} 条明细`, `View ${count} ${count === 1 ? "record" : "records"} for ${label}`);
+  return <a className="chart-detail-link" href={href} title={name} aria-label={name}><span aria-hidden="true">→</span></a>;
+}
+
 export interface GtUpdateCounts {
   all?: number;
   ready?: number;
@@ -387,6 +392,7 @@ export interface GtUpdateCounts {
 
 export const AnalysisGtCard: React.FC<{
   counts: GtUpdateCounts | null | undefined;
+  detailHref?: (bucket: string) => string;
   prefix: "labelSummary" | "analysis";
   lang: UiLanguage;
   onOpenRules: () => void;
@@ -396,7 +402,7 @@ export const AnalysisGtCard: React.FC<{
     percent: number,
   ) => void;
   onHideTooltip: () => void;
-}> = ({ counts, prefix, lang, onOpenRules, onShowTooltip, onHideTooltip }) => {
+}> = ({ counts, prefix, lang, detailHref, onOpenRules, onShowTooltip, onHideTooltip }) => {
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
   const total = Number(counts?.all || 0);
   const ready = Number(counts?.ready || 0);
@@ -559,7 +565,7 @@ export const AnalysisGtCard: React.FC<{
                 className={`analysis-pie-legend-row${isHover ? " is-hover" : ""}`}
                 title={item.description || item.label}
                 data-pie-key={item.key}
-                tabIndex={0}
+                tabIndex={detailHref ? undefined : 0}
                 onPointerEnter={(e) => {
                   setHoveredKey(item.key);
                   onShowTooltip(e, item, percent);
@@ -575,6 +581,7 @@ export const AnalysisGtCard: React.FC<{
                   <strong>{item.label}</strong>
                   <small>{`${item.count} · ${pctStr(item)}`}</small>
                 </span>
+                {detailHref && <ChartDetailLink href={detailHref(item.key.slice(3))} label={item.label} count={item.count} lang={lang} />}
               </div>
             );
           })}
@@ -594,8 +601,10 @@ export interface StatusSegmentItem {
 
 export const AnalysisStatusBar: React.FC<{
   statuses: StatusSegmentItem[];
+  detailHref?: (status: string) => string;
+  lang?: UiLanguage;
   emptyText: string;
-}> = ({ statuses, emptyText }) => {
+}> = ({ statuses, emptyText, detailHref, lang = "zh" }) => {
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const total = statuses.reduce((sum, item) => sum + item.count, 0);
   const ariaSummary = statuses
@@ -642,7 +651,7 @@ export const AnalysisStatusBar: React.FC<{
               }`}
               data-review-status-key={item.key}
               role="listitem"
-              tabIndex={0}
+              tabIndex={detailHref ? undefined : 0}
               aria-label={`${item.label}: ${item.count}, ${percent}%. ${item.description}`}
               title={item.description}
               onPointerEnter={() => setActiveKey(item.key)}
@@ -654,6 +663,7 @@ export const AnalysisStatusBar: React.FC<{
                 <strong>{item.label}</strong>
                 <small>{`${item.count} · ${percent}%`}</small>
               </span>
+              {detailHref && <ChartDetailLink href={detailHref(item.key)} label={item.label} count={item.count} lang={lang} />}
             </div>
           );
         })}

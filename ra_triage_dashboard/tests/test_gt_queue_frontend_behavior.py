@@ -41,10 +41,10 @@ const get=id=>missing.has(id)?null:(nodes.has(id)?nodes.get(id):(nodes.set(id,no
 const matrix=node('matrix');get('#labelSummaryConfusionMatrix').querySelector=()=>matrix;
 const nav=[node('labelingSummaryNavButton')];
 Object.assign(global,{
- $:get,state:{activePage:'labeling-summary',uiLanguage:'zh',colorTheme:'dark',selectedBaselineIds:['version-20261009'],session:{is_admin:false}},
+ $:get,state:{activePage:'labeling-summary',uiLanguage:'zh',colorTheme:'dark',selectedBaselineIds:['version-20261009'],session:{is_admin:false},reviewAnalysis:{page:2,pageSize:20}},
  document:{getElementById:id=>get('#'+id),querySelectorAll:()=>nav,activeElement:null},
  window:{location:{origin:'http://localhost',pathname:'/manual/labeling-summary',search:'?gt_update=ready&task=task-a&page=2'},clearTimeout(){},history:{state:{},replaceState(_,__,url){const next=new URL(url,'http://localhost');window.location.pathname=next.pathname;window.location.search=next.search;}}},
- PAGE_ROUTES:{'labeling-summary':{path:'/labeling-summary',titleZh:'标注汇总',titleEn:'Labeling summary'},labeling:{path:'/case-labeling'},review:{path:'/review'}},
+ getMultiFilterValues:()=>[],parseIssueIdsInput:()=>({ids:[]}),PAGE_ROUTES:{analysis:{path:'/review-analysis'},'labeling-summary':{path:'/labeling-summary',titleZh:'标注汇总',titleEn:'Labeling summary'},labeling:{path:'/case-labeling'},review:{path:'/review'}},
  withBase:path=>'/manual'+path,ISSUE_QUERY_ID_RE:/^[A-Za-z0-9_-]{3,128}$/,DEFAULT_CASE_PAGE_SIZE:20,CASE_PAGE_SIZES:[10,20,50,100],LABELS:['误触发','正确触发','无需协助'],
  uiText:(zh,en)=>state.uiLanguage==='en'?en:zh,escapeHtml:value=>String(value),formatTime:value=>value,labelBadge:value=>value,tagLabel:value=>value,evidenceLabel:value=>value,
  parseFilterList:value=>Array.isArray(value)?value:String(value||'').split(',').filter(Boolean),joinFilterList:value=>(value||[]).join(','),
@@ -85,7 +85,16 @@ assert.match(markup,/42.9%/);assert.match(markup,/14.3%/);assert.match(markup,/G
 assert.match(markup,/section-heading analysis-review-status-heading/);
 assert.match(markup,/标注尚未齐备、来源冲突/);
 const analysisMarkup=analysisGtChartMarkup(data,{prefix:'analysis'});
-assert.equal(analysisMarkup.replaceAll('analysisGt','labelSummaryGt'),markup);
+for(const [html,page,listId] of [[markup,'labeling-summary','labelSummaryCaseList'],[analysisMarkup,'review-analysis','analysisCaseList']]){
+ const links=Array.from(html.matchAll(/class="chart-detail-link"[^>]* href="([^"]+)"/g),m=>new URL(m[1],'http://localhost'));
+ assert.deepEqual(links.map(u=>u.searchParams.get('chart_gt')),['ready','blocked','aligned']);
+ for(const u of links){
+   assert.equal(u.pathname,'/manual/'+page);assert.equal(u.hash,'#'+listId);
+   assert.equal(u.searchParams.get('baselines'),'version-20261009');
+   assert.equal(u.searchParams.has('page'),false);
+   if(page==='labeling-summary')assert.equal(u.searchParams.get('task'),'task-a');
+ }
+}
 // Zero states must not shift the remaining slices onto another legend color.
 for (const [ready,blocked,aligned] of [[281,0,374],[0,3,4],[3,4,0],[0,0,7],[0,7,0],[7,0,0],[0,0,0]]) {
   const sample={gt_update_counts:{all:ready+blocked+aligned,ready,blocked}};

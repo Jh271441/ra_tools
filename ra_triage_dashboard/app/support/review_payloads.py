@@ -34,6 +34,8 @@ def _review_reason_analysis_payload(
     failure_only: bool = False,
     annotation_author: str = "",
     review_status: str = "",
+    chart_gt: str = "",
+    chart_review: str = "",
     label_state: str = "",
     gt_relation: str = "",
     gt_label: str = "",
@@ -59,6 +61,10 @@ def _review_reason_analysis_payload(
     work_split_id: str = "",
     include_multi_reviews: bool = False,
 ) -> dict[str, Any]:
+    if chart_review not in {"", "pending", "in_progress", "completed"}:
+        raise _detail(400, "模型复核图表筛选无效 / Invalid model review chart filter")
+    if chart_gt not in {"", "ready", "blocked", "aligned"}:
+        raise _detail(400, "GT 图表筛选无效 / Invalid GT chart filter")
     label_states = tuple(value for value in _csv_filter_values(label_state) if value != "all")
     if any(value not in ISSUE_LABEL_STATE_FILTERS for value in label_states):
         raise _detail(400, "标注状态筛选不合法 / Invalid label state filter")
@@ -525,6 +531,18 @@ def _review_reason_analysis_payload(
     if label_states or gt_relations:
         rows = filter_reason_rows_by_label_gt(database, rows, scopes=scopes,
             label_states=label_states, gt_relations=gt_relations)
+    if chart_review:
+        rows = [row for row in rows if (row.get("annotation") or {}).get("review_domain") == "model_review"
+                and row["model_review_progress"] == chart_review]
+    if chart_gt and rows:
+        label_cases, _ = database._project_labeling_cases(
+            baseline_scopes=scopes, issue_ids=[row["issue_id"] for row in rows],
+        )
+        selected, _ = database.labeling_gt_update_cases(
+            baseline_scopes=scopes, items=label_cases, chart_gt=chart_gt,
+        )
+        selected_ids = {item["issue_id"] for item in selected}
+        rows = [row for row in rows if row["issue_id"] in selected_ids]
     tag_catalog_for_analysis = {
         str(item["key"]): {
             "label": str(item["label"]),
@@ -553,10 +571,15 @@ def _review_reason_analysis_payload(
         # The chart shares the final review filters, but GT eligibility comes
         # from all Case-label sources for those Issues, before pagination.
         scope_issue_ids = result.pop("_scope_issue_ids")
-        label_cases, _ = database._project_labeling_cases(
-            baseline_scopes=scopes, issue_ids=scope_issue_ids,
-        ) if scope_issue_ids else ([], "")
-        _, counts = database.labeling_gt_update_cases(baseline_scopes=scopes, items=label_cases)
+        if chart_gt:
+            total = len(scope_issue_ids)
+            counts = {"all": total, "ready": total if chart_gt == "ready" else 0,
+                      "blocked": total if chart_gt == "blocked" else 0}
+        else:
+            label_cases, _ = database._project_labeling_cases(
+                baseline_scopes=scopes, issue_ids=scope_issue_ids,
+            ) if scope_issue_ids else ([], "")
+            _, counts = database.labeling_gt_update_cases(baseline_scopes=scopes, items=label_cases)
         result["gt_update_counts"] = counts
     for item in result["items"]:
         issue_id = _as_text(item.get("issue_id"))

@@ -28,19 +28,28 @@ def gt_update_projection(candidate: dict) -> dict | None:
     return {"state": "blocked", "reason": reason, "expected_output": ""}
 
 
-def select_gt_update_cases(items: list[dict], candidates: list[dict], view: str = "") -> tuple[list[dict], dict]:
+def select_gt_update_cases(items: list[dict], candidates: list[dict], view: str = "", *, chart_gt: str = "", chart_label: str = "") -> tuple[list[dict], dict]:
     """Count submitted Issues before applying the queue view, then filter before paging.
 
     Empty assignments are not GT work. A task-local result never establishes
     eligibility: callers must supply globally evaluated label_gt_candidates.
     """
     view = normalize_gt_update(view)
+    if chart_gt not in {"", "ready", "blocked", "aligned"}:
+        raise ValueError("GT 图表筛选无效 / Invalid GT chart filter")
+    if chart_label not in {"", "pending", "resolved", "conflict"}:
+        raise ValueError("标注状态图表筛选无效 / Invalid labeling chart filter")
     by_issue = {item["issue_id"]: gt_update_projection(item) for item in candidates}
     counts = {"all": 0, "ready": 0, "blocked": 0}
     selected = []
     for item in items:
         submitted = has_label_submission(item)
+        if chart_label and (not submitted or item.get("label_state") != chart_label):
+            continue
         update = by_issue.get(item["issue_id"]) if submitted else None
+        bucket = (update or {}).get("state", "aligned") if submitted else ""
+        if chart_gt and bucket != chart_gt:
+            continue
         if submitted:
             counts["all"] += 1
             if update:
