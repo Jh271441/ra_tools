@@ -596,6 +596,3 @@ html[data-color-theme="light"] .analysis-stat-card > strong { color: var(--analy
 #analysisCaseList, #labelSummaryCaseList { scroll-margin-top: 5rem; }
 .chart-detail-filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4em; }
 .chart-detail-filter a { color: var(--accent); }
-
-.chart-queue-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 0 12px; color: var(--muted); font-size: 12px; }
-.chart-queue-filter button { color: var(--accent); cursor: pointer; min-height: 44px; }

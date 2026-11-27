@@ -1,4 +1,3 @@
-import { ChartQueueFilter } from "../components/gallery/ChartQueueFilter";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../api/client";
@@ -1036,8 +1035,6 @@ export const CaseLabelingGalleryIsland: React.FC<CaseLabelingGalleryIslandProps>
         aria-label={bilingual(lang, "标注筛选", "Labeling filters")}
         hidden={isInactiveScope}
       >
-        <ChartQueueFilter lang={lang} gt={filters.chartGt} label={filters.chartLabel}
-          onClear={() => updateFilters(prev => ({ ...prev, chartGt: "", chartLabel: "", page: 1 }))} />
         <div className="mobile-filter-bar">
           <button
             className="button button-quiet mobile-filter-toggle"
