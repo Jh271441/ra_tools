@@ -634,7 +634,7 @@ function installVitePreloadErrorGuard() {
   window.addEventListener("vite:preloadError", (event) => {
     event.preventDefault();
     if (document.getElementById("raVersionUpdateNotice")) return;
-    const isEn =
+    const isEnglish = () =>
       (document.documentElement?.dataset?.uiLang || document.documentElement?.lang || "")
         .toLowerCase()
         .startsWith("en");
@@ -643,24 +643,33 @@ function installVitePreloadErrorGuard() {
     banner.className = "ra-version-update-banner";
     banner.setAttribute("role", "status");
     banner.setAttribute("aria-live", "polite");
-    const text = document.createElement("span");
-    text.textContent = isEn
-      ? "A newer dashboard version is live. Reload to load the latest page; unsaved local drafts are preserved."
-      : "检测到新版看板已发布，请刷新页面以加载最新资源（本地未保存草稿已保留）。";
-    const actions = document.createElement("div");
-    actions.className = "ra-version-update-actions";
-    const reloadBtn = document.createElement("button");
-    reloadBtn.type = "button";
-    reloadBtn.className = "button button-primary";
-    reloadBtn.textContent = isEn ? "Reload page" : "立即刷新";
-    reloadBtn.addEventListener("click", () => window.location.reload());
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "button button-quiet";
-    closeBtn.textContent = isEn ? "Later" : "稍后";
-    closeBtn.addEventListener("click", () => banner.remove());
-    actions.append(reloadBtn, closeBtn);
-    banner.append(text, actions);
+    const dual = (zh: string, en: string) =>
+      `<span class="ui-lang-zh">${zh}</span><span class="ui-lang-en">${en}</span>`;
+    banner.innerHTML = `<span class="ra-version-update-icon" aria-hidden="true"><svg viewBox="0 0 20 20"><path d="M16.2 10a6.2 6.2 0 1 1-1.6-4.15"/><path d="M16.2 3.8v3.1h-3.1"/></svg></span><div class="ra-version-update-body"><div class="ra-version-update-head"><strong>${dual("新版看板已发布", "New version available")}</strong><button type="button" class="ra-version-update-dismiss"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 4.2 11.8 11.8M11.8 4.2 4.2 11.8"/></svg></button></div><p class="ra-version-update-desc">${dual("刷新即可加载最新资源，本地未保存草稿已保留。", "Reload to get the latest build. Unsaved drafts are kept.")}</p><div class="ra-version-update-actions"><button type="button" class="button button-primary ra-version-update-reload">${dual("立即刷新", "Reload now")}</button><button type="button" class="button button-quiet ra-version-update-later">${dual("稍后", "Later")}</button></div></div>`;
+    const dismissBtn = banner.querySelector<HTMLButtonElement>(".ra-version-update-dismiss");
+    const syncDismissCopy = () => {
+      if (!dismissBtn) return;
+      const en = isEnglish();
+      dismissBtn.setAttribute("aria-label", en ? "Dismiss update notice" : "关闭更新提示");
+      dismissBtn.title = en ? "Dismiss" : "关闭";
+    };
+    syncDismissCopy();
+    const langObserver = new MutationObserver(syncDismissCopy);
+    if (document.documentElement) {
+      langObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-ui-lang", "lang"] });
+    }
+    const onKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === "Escape") dismiss();
+    };
+    const dismiss = () => {
+      langObserver.disconnect();
+      window.removeEventListener("keydown", onKeyDown);
+      banner.remove();
+    };
+    banner.querySelector(".ra-version-update-reload")?.addEventListener("click", () => window.location.reload());
+    banner.querySelector(".ra-version-update-later")?.addEventListener("click", dismiss);
+    dismissBtn?.addEventListener("click", dismiss);
+    window.addEventListener("keydown", onKeyDown);
     document.body.append(banner);
   });
 }
