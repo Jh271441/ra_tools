@@ -22,6 +22,7 @@ function syncCaseLabelingGalleryState(snapshot = {}) {
         : snapshot[key];
     }
   }
+  if ("data" in snapshot) syncCaseLabelingDetailQueue();
 }
 
 function caseLabelingRouteOptions(overrides = {}) {
@@ -864,6 +865,13 @@ function caseLabelingListParams({page = 1, pageSize = state.caseLabeling.pageSiz
   });
 }
 
+function applyCaseLabelingListResult(result) {
+  state.caseLabeling.page = result.page || 1;
+  state.caseLabeling.data = result;
+  renderCaseLabelingList(result);
+  syncCaseLabelingDetailQueue();
+}
+
 async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRoute = true } = {}) {
   if (isCaseLabelingGalleryReactOwned()) {
     window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling");
@@ -885,8 +893,6 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
   const params = caseLabelingListParams({page});
   const result = await api(`/api/labeling/cases?${params}`);
   if (seq !== state.caseLabeling.requestSeq || !isPageContextCurrent(pageContext)) return;
-  state.caseLabeling.page = result.page || 1;
-  state.caseLabeling.data = result;
   state.caseLabeling.labelers = result.labelers || [];
   state.caseLabeling.author = parseFilterList(state.caseLabeling.author).filter((value) =>
     state.caseLabeling.labelers.includes(value)
@@ -897,7 +903,7 @@ async function loadCaseLabelingCases({ page = state.caseLabeling.page, persistRo
   );
   renderCaseLabelingAuthorPicker();
   renderCaseLabelingAssigneePicker();
-  renderCaseLabelingList(result);
+  applyCaseLabelingListResult(result);
   if (persistRoute) persistCaseLabelingRoute({ issue: "", page: state.caseLabeling.page });
   loadCaseLabelingClusters().catch((error) => showToast(error.message, true));
   await loadCaseLabelingSnapshotReferences();
@@ -945,6 +951,73 @@ function caseLabelingQueueItems() {
   return data?.items || [];
 }
 
+function captureCaseLabelingDecisionQueue() {
+  return {
+    ids: caseLabelingQueueItems().map(item => item.issue_id),
+    filterKey: caseLabelingListParams().toString(),
+    detailSeq: state.caseLabeling.detailSeq,
+  };
+}
+
+async function refreshCaseLabelingDecisionQueue(context) {
+  const labeling = state.caseLabeling;
+  const seq = ++labeling.requestSeq;
+  const current = () => seq === labeling.requestSeq && caseDecisionResultIsCurrent(context);
+  const params = caseLabelingListParams({page: labeling.page});
+  let result;
+  try {
+    result = await api(`/api/labeling/cases?${params}`, {
+      cache: "no-store", signal: new AbortController().signal,
+    });
+  } catch (_) {
+    if (current()) showToast(uiText(
+      "裁决已保存，筛选结果刷新失败。请刷新后继续。",
+      "Decision saved. The filtered results could not refresh. Reload to continue."
+    ), true);
+    return;
+  }
+  if (!current()) return;
+  applyCaseLabelingListResult(result);
+
+  const {ids} = context.labelingQueue;
+  const index = ids.indexOf(context.caseData.issue_id);
+  const remaining = result.queue_issue_ids;
+  if (index < 0 || !Array.isArray(remaining) || remaining.includes(context.caseData.issue_id)) return;
+  if (caseLabelDecisionUi.editor || $("#caseLabelDecisionDialog")?.open || labeling.pendingImages.length
+    || hasFocusedTextInput($("#caseLabelingForm"))
+    || (labeling.dirty && !persistCurrentCaseLabelingDraft(labeling.caseData)?.persisted)) {
+    showToast(uiText(
+      "裁决已保存。此 Issue 已移出当前筛选，可以继续编辑。",
+      "Decision saved. This Issue left the filter. You can keep editing here."
+    ));
+    return;
+  }
+  if (!remaining.length) {
+    closeCaseLabelingDetail({historyMode: "replace"});
+    return;
+  }
+  const matching = new Set(remaining);
+  const nextId = ids.slice(index + 1).find(id => matching.has(id));
+  const previousId = ids.slice(0, index).reverse().find(id => matching.has(id));
+  const targetId = nextId || previousId || remaining[Math.min(index, remaining.length - 1)];
+  await selectCaseLabelingIssue(targetId, {historyMode: "replace"});
+}
+
+function syncCaseLabelingDetailQueue() {
+  const input = $("#caseLabelingQueueIndex");
+  if (!input) return;
+  const items = caseLabelingQueueItems();
+  const index = items.findIndex(item => item.issue_id === state.caseLabeling.issueId);
+  const value = index >= 0 ? String(index + 1) : "";
+  input.max = String(items.length);
+  input.disabled = index < 0;
+  input.defaultValue = value;
+  if (document.activeElement !== input || input.disabled) input.value = value;
+  $("#caseLabelingPreviousIssue").disabled = index <= 0;
+  $("#caseLabelingNextIssue").disabled = index < 0 || index >= items.length - 1;
+  $("#caseLabelingMedia .detail-queue-total").textContent = `/ ${items.length || "—"}`;
+}
+
 function navigateCaseLabelingIssue(direction) {
   const items = caseLabelingQueueItems();
   const current = String(state.caseLabeling.issueId || "");
@@ -966,8 +1039,6 @@ function renderCaseLabelingDetailMedia(caseData) {
     : `<span class="detail-id">${issueId}</span>`;
   const issueIdMarkup = `<span class="detail-issue-id-group">${issueIdLink}<button class="detail-copy-id-button" type="button" data-copy-issue-id aria-label="复制 Issue ID ${issueId}" title="复制 Issue ID"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="7" y="6" width="9" height="10" rx="2"></rect><path d="M13 6V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg></button></span>`;
   ensureDetailMediaState(caseData);
-  const items = caseLabelingQueueItems();
-  const index = items.findIndex((item) => item.issue_id === issueIdValue);
   $("#caseLabelingMedia").innerHTML = `
     <div class="detail-header">
       <div class="detail-title-row">
@@ -976,12 +1047,12 @@ function renderCaseLabelingDetailMedia(caseData) {
         </div>
         <div class="detail-navigation">
           <div class="case-detail-pager">
-            <button class="button button-quiet" id="caseLabelingPreviousIssue" type="button" aria-keyshortcuts="[" ${index <= 0 ? "disabled" : ""}><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">[</kbd></button>
+            <button class="button button-quiet" id="caseLabelingPreviousIssue" type="button" aria-keyshortcuts="[" disabled><span class="ui-lang-zh">← 上一 Issue</span><span class="ui-lang-en">← Prev</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">[</kbd></button>
             <span class="detail-queue-position" title="${escapeHtml(uiText("输入全部筛选结果中的序号，按回车跳转", "Enter a position in all filtered issues and press Enter"))}">
-              <input class="detail-queue-index-input" id="caseLabelingQueueIndex" type="number" min="1" max="${items.length}" step="1" inputmode="numeric" aria-label="${escapeHtml(uiText("跳转到全部筛选结果中的第几条 Issue", "Jump to an issue in all filtered results"))}" value="${index >= 0 ? index + 1 : ""}" ${index < 0 ? "disabled" : ""} />
-              <span class="detail-queue-total">/ ${items.length || "—"}</span>
+              <input class="detail-queue-index-input" id="caseLabelingQueueIndex" type="number" min="1" step="1" inputmode="numeric" aria-label="${escapeHtml(uiText("跳转到全部筛选结果中的第几条 Issue", "Jump to an issue in all filtered results"))}" disabled />
+              <span class="detail-queue-total">/ —</span>
             </span>
-            <button class="button button-quiet" id="caseLabelingNextIssue" type="button" aria-keyshortcuts="]" ${index < 0 || index >= items.length - 1 ? "disabled" : ""}><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">]</kbd></button>
+            <button class="button button-quiet" id="caseLabelingNextIssue" type="button" aria-keyshortcuts="]" disabled><span class="ui-lang-zh">下一 Issue →</span><span class="ui-lang-en">Next →</span><kbd class="review-control-shortcut review-nav-shortcut" aria-hidden="true">]</kbd></button>
           </div>
         </div>
       </div>
@@ -1017,9 +1088,9 @@ function renderCaseLabelingDetailMedia(caseData) {
     event.preventDefault();
     event.stopPropagation();
     const requested = Number(event.currentTarget.value);
-    const target = Number.isInteger(requested) ? items[requested - 1] : null;
+    const target = Number.isInteger(requested) ? caseLabelingQueueItems()[requested - 1] : null;
     if (!target?.issue_id) {
-      event.currentTarget.value = index >= 0 ? String(index + 1) : "";
+      event.currentTarget.value = event.currentTarget.defaultValue;
       return;
     }
     event.currentTarget.blur();
@@ -1028,6 +1099,7 @@ function renderCaseLabelingDetailMedia(caseData) {
   if (typeof bindDetailExternalLinks === "function") {
     bindDetailExternalLinks(caseData, $("#caseLabelingExternalLinks"));
   }
+  syncCaseLabelingDetailQueue();
   bindDetailMedia(caseData);
 }
 
@@ -1643,7 +1715,7 @@ function renderCaseLabelingEditor(caseData, {decision = null, skipDraftRestore =
   if (decision) bindCaseDecisionEditor(decision);
 }
 
-async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
+async function selectCaseLabelingIssue(issueId, { updateRoute = true, historyMode = "push" } = {}) {
   const normalized = String(issueId || "").trim();
   if (!normalized || state.activePage !== "labeling" || caseLabelDecisionUi.saving) return;
   if (caseLabelDecisionUi.editor) exitCaseDecisionEditor();
@@ -1669,7 +1741,7 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   caseData.trail_metadata_status = "pending";
   renderCaseLabelingDetailMedia(caseData);
   renderCaseLabelingEditor(caseData);
-  if (updateRoute) persistCaseLabelingRoute({ issue: normalized }, "push");
+  if (updateRoute) persistCaseLabelingRoute({ issue: normalized }, historyMode);
   pageContext = capturePageContext();
   window.setTimeout(() => {
     if (seq !== state.caseLabeling.detailSeq || state.caseLabeling.issueId !== normalized || !isPageContextCurrent(pageContext)) return;
@@ -1699,7 +1771,7 @@ async function selectCaseLabelingIssue(issueId, { updateRoute = true } = {}) {
   }
 }
 
-function closeCaseLabelingDetail({ updateRoute = true } = {}) {
+function closeCaseLabelingDetail({ updateRoute = true, historyMode = "push" } = {}) {
   if (caseLabelDecisionUi.saving) return;
   if (caseLabelDecisionUi.editor) exitCaseDecisionEditor();
   pauseBevVideoPlayers($("#caseLabelingMedia"));
@@ -1713,7 +1785,7 @@ function closeCaseLabelingDetail({ updateRoute = true } = {}) {
   $("#caseLabelingDetail").classList.add("hidden");
   $("#caseLabelingGalleryView")?.classList.remove("hidden");
   $("#caseLabelingGallery")?.classList.remove("hidden");
-  if (updateRoute) persistCaseLabelingRoute({ issue: "" }, "push");
+  if (updateRoute) persistCaseLabelingRoute({ issue: "" }, historyMode);
   if (isCaseLabelingGalleryReactOwned()) {
     window.__RA_REACT_WORKBENCH__?.refreshPage?.("labeling");
   }

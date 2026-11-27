@@ -543,6 +543,7 @@ async function adjudicateIssueLabel(event) {
       ? await reviewSaveNavigationContext(c.data.issue_id) : null;
     if (navigationContext && !reviewSaveNavigationIsCurrent(navigationContext)) return;
     if (navigationContext) navigationContext.savedKind = "decision";
+    const labelingQueue = state.activePage === "labeling" ? captureCaseLabelingDecisionQueue() : null;
     const pendingAttachments = typeof normalizeCaseLabelPendingAttachments === "function"
       ? normalizeCaseLabelPendingAttachments(c.images)
       : [];
@@ -579,7 +580,7 @@ async function adjudicateIssueLabel(event) {
     caseLabelDecisionUi.saving=false;
     if(caseLabelDecisionUi.editor===c)exitCaseDecisionEditor({discard:true,clearStoredDraft:false});
     showToast(uiText("完整裁决已保存。","Complete decision saved."));
-    await refreshCaseDecisionResult({caseData:c.data,pageContext:c.pageContext,baselines:c.baselines,actor:c.actor,navigationContext});
+    await refreshCaseDecisionResult({caseData:c.data,pageContext:c.pageContext,baselines:c.baselines,actor:c.actor,navigationContext,labelingQueue});
   }catch(e){
     if(!committed && caseLabelDecisionUi.editor===c){
       const baseText = caseExclusionErrorMessage(e);
@@ -592,6 +593,13 @@ async function adjudicateIssueLabel(event) {
   }
   finally{caseLabelDecisionUi.saving=false;formNode.querySelectorAll("[data-decision-was-disabled]").forEach(n=>{n.disabled=n.dataset.decisionWasDisabled==="true";delete n.dataset.decisionWasDisabled;});enhanceDashboardSelects(formNode);}
 }
+function caseDecisionResultIsCurrent(c) {
+  return isPageContextCurrent(c.pageContext) && caseDecisionCurrentIssueId() === c.caseData.issue_id
+    && selectedBaselineQueryValue() === c.baselines && (!c.actor || c.actor === state.session?.username)
+    && (!c.labelingQueue || (c.labelingQueue.detailSeq === state.caseLabeling.detailSeq
+      && c.labelingQueue.filterKey === caseLabelingListParams().toString()));
+}
+
 async function refreshCaseDecisionResult(c) {
   try{
     if (c.navigationContext) {
@@ -600,10 +608,15 @@ async function refreshCaseDecisionResult(c) {
       await refreshReviewAfterSave(c.navigationContext);
       if (!reviewSaveNavigationIsCurrent(c.navigationContext)) return;
     }
+    if (!caseDecisionResultIsCurrent(c)) return;
+    if (c.labelingQueue) {
+      await refreshCaseLabelingDecisionQueue(c);
+      if (!caseDecisionResultIsCurrent(c)) return;
+    }
     const fresh=await api(withBaselineQuery(`/api/labeling/cases/${encodeURIComponent(c.caseData.issue_id)}`), {
       cache:"no-store", signal:new AbortController().signal,
     });
-    if(!isPageContextCurrent(c.pageContext) || caseDecisionCurrentIssueId()!==c.caseData.issue_id || selectedBaselineQueryValue()!==c.baselines || (c.actor && c.actor !== state.session?.username))return;
+    if (!caseDecisionResultIsCurrent(c)) return;
     if (state.activePage === "review") { await refreshReviewDecisionResult(fresh); return; }
     for(const key of ["label_cases","label_state","label_source_contexts","decision_history","exclusion_summary"])state.caseLabeling.caseData[key]=fresh[key];
     if (caseLabelDecisionUi.context?.caseData.issue_id === fresh.issue_id) caseLabelDecisionUi.context.caseData = fresh;
