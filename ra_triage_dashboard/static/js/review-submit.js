@@ -33,12 +33,15 @@ async function reviewSaveNavigationContext(issueId) {
     const ids = await reviewSaveQueueIds(params);
     let absolute = ids.indexOf(context.issueId);
     context.hadNext = absolute >= 0 && absolute < ids.length - 1;
-    if (absolute < 0 && (params.has("task_progress") || params.has("label_state"))) {
-      const taskOrder = new URLSearchParams(params);
-      taskOrder.delete("task_progress");
-      taskOrder.delete("label_state");
-      if (taskOrder.get("task_view") === "pending") taskOrder.set("task_view", "targets");
-      const ordered = await reviewSaveQueueIds(taskOrder);
+    if (absolute < 0 && ids.length && (
+      params.has("task_progress") || params.has("label_state") || params.has("analysis_scope")
+    )) {
+      const orderParams = new URLSearchParams(params);
+      orderParams.delete("task_progress");
+      orderParams.delete("label_state");
+      orderParams.delete("analysis_scope");
+      if (orderParams.get("task_view") === "pending") orderParams.set("task_view", "targets");
+      const ordered = await reviewSaveQueueIds(orderParams);
       const anchor = ordered.indexOf(context.issueId);
       if (anchor >= 0) {
         const remaining = new Set(ids);
@@ -82,21 +85,36 @@ function reviewSaveNavigationIsCurrent(context) {
     && reviewSaveQueueParams().toString() === context.filterKey);
 }
 
+function reviewDraftBlocksQueueAdvance(context) {
+  if (state.pendingReviewImages?.length
+    || (typeof caseRationalePendingImages === "function" && caseRationalePendingImages(state.selectedCase).length)) {
+    return true;
+  }
+  if (context.savedKind !== "decision" || typeof persistReviewDraft !== "function") return state.reviewFormDirty;
+  // A committed Issue decision is independent of the personal Review draft.
+  if (hasFocusedTextInput($("#annotationForm"))) return true;
+  return state.reviewFormDirty && !persistReviewDraft(state.selectedCase, { requireStorage: true });
+}
+
 async function reconcileReviewQueueAfterSave(context) {
   if (!reviewSaveNavigationIsCurrent(context)) return false;
   const ids = await reviewSaveQueueIds(new URLSearchParams(context.filterKey));
   if (!reviewSaveNavigationIsCurrent(context)) return false;
   const retainedIndex = ids.indexOf(context.issueId);
-  const hasDraft = state.reviewFormDirty || state.pendingReviewImages?.length
-    || (typeof caseRationalePendingImages === "function" && caseRationalePendingImages(state.selectedCase).length);
-  if (retainedIndex >= 0 || hasDraft) {
+  if (retainedIndex >= 0 || reviewDraftBlocksQueueAdvance(context)) {
     await loadCases({keepSelection:true, fresh:true, queueIds:ids,
       page:retainedIndex >= 0 ? Math.floor(retainedIndex / state.casePageSize) + 1 : context.page});
+    if (retainedIndex < 0 && context.savedKind === "decision" && reviewSaveNavigationIsCurrent(context)) {
+      showToast(uiText(
+        "裁决已保存。此 Issue 已移出当前筛选，你可以继续编辑。",
+        "Decision saved. This Issue left the filter. You can keep editing here."
+      ));
+    }
     return false;
   }
   if (!ids.length) {
     await loadCases({keepSelection:true, page:1, fresh:true, queueIds:ids});
-    if (!reviewSaveNavigationIsCurrent(context) || state.reviewFormDirty) return false;
+    if (!reviewSaveNavigationIsCurrent(context) || reviewDraftBlocksQueueAdvance(context)) return false;
     clearDetail({ showGallery: true });
     showPage("review", { historyMode: "replace", issue: "" });
     showToast(uiText("已保存；当前筛选已没有更多 Issue。", "Saved; no Issues remain in this filter."));
@@ -107,7 +125,6 @@ async function reconcileReviewQueueAfterSave(context) {
   if (targetIndex < 0) targetIndex = Math.min(Math.max(0, context.absoluteIndex), ids.length - 1);
   const targetId = ids[targetIndex];
   const targetPage = Math.floor(targetIndex / state.casePageSize) + 1;
-  if (!reviewSaveNavigationIsCurrent(context) || state.reviewFormDirty) return false;
   state.casePage = targetPage;
   state.caseTotal = ids.length;
   state.reviewNavigationQueue = {ids, pageSize:state.casePageSize,
